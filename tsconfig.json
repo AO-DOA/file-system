@@ -1,0 +1,11 @@
+{
+  // Solution-only root: it owns no program of its own. `tsc -b tsconfig.json`
+  // builds the three leaf projects below in their dependency order; each leaf
+  // is a real program with its own compiler face (see PROGRESS.md D-6).
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.host.json" },
+    { "path": "./tsconfig.client.json" },
+    { "path": "./tsconfig.tests.json" }
+  ]
+}

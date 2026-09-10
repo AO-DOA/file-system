@@ -1,0 +1,27 @@
+{
+  // Client face: typecheck-only. tsdown bundles src/client into client/client.js,
+  // so this project never emits; it exists to give the browser sources the DOM
+  // lib and React JSX types the host face deliberately withholds.
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "rootDir": "src/client",
+    "noEmit": true,
+    "composite": true,
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "allowImportingTsExtensions": true,
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/client"]
+}

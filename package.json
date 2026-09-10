@@ -1,0 +1,98 @@
+{
+  "name": "dsh-plugin-file-system-zc",
+  "version": "0.1.0",
+  "description": "文件系统文件查看器（TypeScript 重构版）：在 DSH 对话页签行新增「文件系统」页签，左侧宿主文件树 + 右侧查看/编辑器",
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "src",
+    "cordis.patch.yml",
+    "agent.cordis.yml",
+    "preset.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b tsconfig.json",
+    "lint": "oxlint . --config .oxlintrc.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc -b tsconfig.host.json && tsdown && node scripts/normalize-client-banner.mjs && node scripts/verify-client-banner.mjs",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "file-system",
+    "fs",
+    "file-viewer"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "eslint-plugin-sonarjs": "^4.1.0",
+    "jsdom": "29.1.1",
+    "oxlint": "1.76.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "tsdown": "^0.22.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-client-runtime": "*",
+    "@deepseek-ai/dsh-client-ui-primitives": "*",
+    "@deepseek-ai/dsh-client-ui-slots": "*",
+    "@deepseek-ai/dsh-client-web-react": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "react": ">=18.2.0 <20.0.0",
+    "react-dom": ">=18.2.0 <20.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-runtime": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-web-react": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  // Host face: compiled to lib/ (main entry) with declarations under lib/types.
+  // rootDir is src/host so the emitted entry is exactly lib/index.js, which is
+  // what package.json main and exports["."] point at.
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["ES2024"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "rootDir": "src/host",
+    "outDir": "lib",
+    "declaration": true,
+    "declarationDir": "lib/types",
+    "composite": true,
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "esModuleInterop": true,
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/host"]
+}
