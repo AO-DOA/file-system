@@ -191,3 +191,4 @@
 | 2026-09-11 | 规格体系齐备：P1 骨架 / P2 纯逻辑 / P3 路由状态机 / P4 client / P5-P6 测试与切换，五份规格全部落盘并提交 |
 | 2026-09-11 | **并行任务（非本重构范围）**：会话压缩能力由子智能体实现并激活（`cmpct-2/pkg-2`）；工具 `compact_context` 经 `Tool.listTools` 验收确认**对主智能体可见**。主智能体**未使用**用户授予的破例定义权（`cmpct-1/pkg-3` 保持未激活）。决策 R-2 的"父会话不可用"判断已推翻并修正（工具注册为进程级） |
 | 2026-09-11 | T-10（P1-A）产物齐备（含构建产物）但连续 8 轮仍在调试 `tsdown`/banner/vitest 配置；主智能体发送 **steer**：要求先交**最小可验收集合**（四条命令真实输出 + client 产物头部契约 + D-6 专项结论 + 卡点自述），不为完美反复调试 |
+| 2026-09-11 | 主智能体对 T-10 产出做**验收预检**（读 `vitest.config.ts` / `src/host/index.ts`）：覆盖率门槛已按 D-2 正确配置（`perFile: true` + 四项 100%，注释载明实测"空集不假红、P2 首个源文件立即被门禁"）；导出形态合规（named-export、无 default）。**两项待办入账**：① **P3 必须**把 `src/host/index.ts` 移出 `vitest.config.ts` 的覆盖率排除项——它迁移后是 494 行真实路由文件，留着排除即形成覆盖缺口；② **P1-B 必须**把 host 导出的 `name` 与 `inject` 对齐 `feature-baseline.md` §2.1（`name='fs'`、`inject=['webServer','sandboxPolicy','sessions','agentLoop']`），现骨架为包名与空数组 |
