@@ -159,7 +159,7 @@ window.__ModuleLoader__.load({ id: "<package.json 的 name>", factory: (require)
   name: '@deepseek-ai/dsh-tool-skill'
 ```
 
-`-zc/agent.cordis.yml:19-26` 正是照此形态桥接（**同一目录双身份**：`cordis.patch.yml` = bundle 层，`agent.cordis.yml` = agent 预设层）。**注意**：agent 预设身份与 P6 的 profile bundle 身份是两条独立链路，切换 profile 不涉及预设名册；`~/.dsh/.agent-presets/` 当前只有 `lian-lian` / `liangshen` / `xin-ren-lei` 与两个 `robot.*`，不含本插件 —— 预设层由 DSH 的 preset 机制独立发现，**不是** P6 的验收项。
+`-zc/agent.cordis.yml:19-26` 正是照此形态桥接（**同一目录双身份**：`cordis.patch.yml` = bundle 层，`agent.cordis.yml` = agent 预设层）。**注意**：agent 预设身份与 P6 的 profile bundle 身份是两条独立链路，切换 profile 不涉及预设名册；`~/.dsh/.agent-presets/` 当前只有 `lian-lian` / `liangshen` / `xin-ren-lei` 与两个 `robot.*`，不含本插件 —— 预设层由 DSH 的 preset 机制独立发现。**进一步查实**（见 §2.6）：把插件仓 `link:` 进 profile **不会**让它成为预设来源，5 个技能当前也不是靠这里可见的，而是靠用户级技能根 `~/.agents/skills/` 的软链 —— 因此技能可用性**是** P6 要验证的项（§4 第 5 项）。
 
 ### 1.7 与既有规格的一致性核对
 
@@ -170,6 +170,35 @@ window.__ModuleLoader__.load({ id: "<package.json 的 name>", factory: (require)
 | `PROGRESS.md` T-60「先备份 + `--dump-config` 验层」 | §2.0、§2.4 | 一致 |
 | `PROGRESS.md` T-61「重启 + 人工冒烟 4 项（需用户在座）」 | §3、§4 | 一致 |
 | `PROGRESS.md` §6 冒烟第 2 项「悬停可打开」 | §4 第 2 项按 `spec §P6-4` 的 G-11 修正 | **修正**（见 §4） |
+
+### 1.8 `dsh.client` 字段规范：`-zc` 是否需要补 `inject`（原 §8-Q2，已查实）
+
+旧插件的 `package.json` 声明了 `"client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-slots"] }`，`-zc` 只有 `"client": { "platform": "web" }`。查实结果如下。
+
+**字段读取点**：`packages/client/modules/src/index.ts` 的 `parseDshClient()`（`:186-206`）校验 `platform`（必填，string）与 `inject` / `external` / `immediately`（可选，含类型校验）；解析结果存进每行的 `PkgMeta`（`:757-776`），再由 `graphRow()`（`:402-410`）写进 `window.__DSH_BOOT__` 的 entry。host 侧除「解析 → 存 meta → 写 graph」外**没有别的消费点**（`grep -n "\.inject" packages/client/modules/src/index.ts` 只命中 `:195`、`:407`、`:771`）。
+
+**字段语义**（`packages/client/modules/src/client/manifest.ts:44-58` 的 `WebBootEntry` JSDoc）：
+
+| 字段 | 语义 | 消费点 |
+|---|---|---|
+| `platform` | 必须是 `'web'`，否则该行不进客户端 graph | `modules/src/index.ts:761-764` |
+| `inject` | **包名**依赖边，用于 factory 到达顺序：「names package rows whose factories must arrive before this row materializes」 | 客户端 `ClientModuleSystem.arriveGraphRow()`（`client/system.ts:155-175`）：逐个查 `graphRows`，**查到就先递归到达该行，查不到就静默跳过** |
+| `external` | 本行从模块表请求的**非 inject** 模块说明符（同步 factory 依赖 + 环检测） | `orderByModuleGraph()`（`modules/src/index.ts:423-448`）与 `arriveGraphRow()` 的 external 循环 |
+| `immediately` | 阶段一预取标记（首屏 prefetch），**不是包身份** | 客户端 kernel 的 prefetch 阶段（ADR `2026-07-23-client-plugin-loading-model.md` §Phase one） |
+
+**决定 fiber 是否 PENDING 的不是它**：客户端 kernel 创建 entry 时只传 `{ name }`（`packages/client/web/src/boot.ts:135`），因此 boot gate 用的 `entry.fiber.inject`（同文件 `:149`）来自**插件模块自身导出的 `inject`**。新旧插件这一项**完全一致**：旧 `dsh/client.js:224` 与 `-zc` `client/client.js:10` 都是 `var inject = ["slots"]`。
+
+**结论：`-zc` 不需要补 `inject`。** 三条依据：
+
+1. 字段本身**可选**，缺省即空数组（`manifest.ts:196-210` 的 `inject === undefined ? [] : [...]`）→ 不写既不报错，也不改变激活结果；
+2. 它唯一的语义是「把被注入的**客户端包行**提前到达」，而 `-zc` 的 client bundle **自包含**（`client/client.js` 全文不 require 任何外部模块，只用 `ctx.get("slots")`）→ 没有任何需要提前的包行；
+3. **旧插件写的两个名字在本机客户端 graph 里都不存在**，即旧插件这一项本来就是空转：
+   - `@deepseek-ai/dsh-client-runtime` —— 主仓无此包（全仓 `package.json` 中无该 `name`）；
+   - `@deepseek-ai/dsh-client-ui-slots` —— 包存在（`packages/client/ui-slots/package.json`），但它**没有 `dsh` 声明**，且**不在 profile 组合里**（只读复现 dump：`ui-slots` 出现次数 **0**）→ 不是 graph row；
+   - 两个名字都会被 `arriveGraphRow()` 的 `if (dependency !== undefined)` 静默跳过。
+   → **不写 = 与旧插件的行为完全等价**，可记为「有意差异」。
+
+**若将来真要显式表达依赖**（可选，非遗漏）：只有当确实存在一个**被装载的、声明了 `dsh.client` 的包**必须先到达时才填，值是那个包的**包名**。当前不存在这种依赖，保持不写即可。
 
 ---
 
@@ -278,6 +307,66 @@ grep -n -A20 '"bundles"' ~/.dsh/profiles/web/package.json
 ```
 如无特殊要求可不调整。理由：本插件 patch 只做顶层 insert，层顺序不影响最终行集合（§1.3、§1.4）。若必须保原位，用编辑器把 `dsh-plugin-file-system-zc` 那行移回原第 29 行位置（`dsh-session-preamble` 与 `dsh-self-update` 之间）——这是**纯顺序调整，仍需重启才生效**。
 
+### 2.6 技能链路：切换后 5 个技能怎么办（原 §8-Q6，已查实）
+
+**这条链路与 profile 切换完全独立 —— 但仍需一步人工动作，否则技能会继续引用旧仓。**
+
+**A. 预设发现根恰有三处**（`packages/preset/agent-presets/src/discovery.ts:51,60` 与 `index.ts:179-181`，按优先级排列）：
+
+1. 随包分发的 shipped root = `<checkout>/packages/preset/agent-presets/presets/`（`SHIPPED_PRESET_ROOT`，trust `system`）；
+2. 部署配置的 `config.roots`（**本机 web profile 的 `agent-presets` 行只有 `default: standard`，没有 `roots`** —— 只读复现 dump 第 540-543 行）；
+3. 用户根 `$DSH_HOME/.agent-presets/`（`USER_PRESET_DIR`，trust `user`）。
+
+`scanRoot()` 只扫每个根下的**子目录**（目录名须匹配 `PRESET_ID`），文件名为 `agent.cordis.yml`（`COMPOSITION_FILE`，`discovery.ts:282-320`）。
+
+**结论：把插件仓以 `link:` 装进 profile，不会让它被当作 agent 预设来源。** 预设发现不看 profile 的 `node_modules`，也不看 `dsh.profile.bundles`。`-zc/agent.cordis.yml` + `preset.yml` 要生效，必须有人把该目录放进上面某个根（例如软链 `~/.dsh/.agent-presets/<预设名> -> .../dsh-plugin-file-system-zc`）——**这是一步额外人工动作，P6 不做**（§8-Q6 已按此结案）。
+
+**B. 那 5 个技能现在靠什么可见？** 实测（`ls -la`）：
+
+| 技能根 | 实测内容 |
+|---|---|
+| `~/.dsh/skills/`（`packages/skill/skill-filesystem/src/index.ts:253` 的 user-dsh 根） | 只有 `dsh-plugin-standards-audit`、`dsh-plugin-upgrade-check`、`exploration-report`、`restart-dsh`、`session-finder` —— **不含**本插件 5 个技能 |
+| `~/.agents/skills/`（同文件 `:254` 的 user-agents 根） | `file-doc`、`folder-doc`、`source-doc` 三条软链，**目标全部指向旧插件目录** `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system/skills/*` |
+| 两仓 `skills/` | 各有 5 个目录（`file-doc`/`folder-doc`/`session-review`/`source-doc`/`translate-doc`），mtime 一致 |
+
+即：**当前对会话可见的只有 3 个技能（folder-doc / file-doc / source-doc），走的是用户级 `~/.agents/skills/` 软链，而不是 `agent.cordis.yml`**；`translate-doc`、`session-review` 在这两个根里都没有 → 当前不可见（本会话的技能目录可以印证）。
+
+**C. 切换后的影响**：改 profile **不会改变**这三条软链 → 技能**仍然可见**，但读到的是**旧插件目录的文本**（未迁移版本）。因为旧仓在验收前保持只读原样（§8-Q5），所以不会立刻坏，但「技能随包走」的语义断了。
+
+**D. 可选人工步骤（`[改环境]`，若要让技能跟随新仓）**：
+
+```bash
+# 只读：先确认现状与两仓内容一致（迁移应逐字保留）
+ls -la ~/.agents/skills/
+diff -r ~/.agents/skills/folder-doc /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc/skills/folder-doc
+
+# 改环境：三条软链改指新仓（逐条执行，先 diff 无差异再改）
+ln -sfn /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc/skills/folder-doc ~/.agents/skills/folder-doc
+ln -sfn /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc/skills/file-doc   ~/.agents/skills/file-doc
+ln -sfn /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc/skills/source-doc ~/.agents/skills/source-doc
+```
+- 是否**需要重启**：技能 provider 带监视与失效通道（`FileSystemSkillProvider` 的 `SkillWatchManager` + `control.invalidate`，`skill-filesystem/src/index.ts:141,152`），理论上改链可被感知；但本次调研**未实测**其刷新时机 → 以**新会话/新轮次**验证为准，若仍读到旧内容则随下次重启生效。
+- 想让 `translate-doc`、`session-review` 也可见，加同样两条软链即可（属新增可见性，非 P6 必需）。
+- **回滚**：把三条软链改回旧仓路径即可（`ln -sfn .../dsh-plugin-file-system/skills/<name> ~/.agents/skills/<name>`）。
+
+**E. 切换后如何验证 5 个技能仍可用**（全部 `[只读]`）：
+
+```bash
+# 1) 软链在不在、指向哪、目标是否可读
+ls -la ~/.agents/skills/ ~/.dsh/skills/
+readlink -f ~/.agents/skills/folder-doc ~/.agents/skills/file-doc ~/.agents/skills/source-doc
+# 2) 目标目录内确有 SKILL.md（技能发现的必要条件）
+ls ~/.agents/skills/folder-doc/SKILL.md ~/.agents/skills/file-doc/SKILL.md ~/.agents/skills/source-doc/SKILL.md
+# 3) 内容与 -zc 逐字一致（迁移等价性）
+diff -r ~/.agents/skills/folder-doc /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc/skills/folder-doc
+# 4) 两仓技能集合一致（各 5 个）
+ls /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system/skills/
+ls /home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc/skills/
+```
+
+**预期**：步骤 1 输出三条软链（若执行了 D，则指向 `-zc`）；步骤 2 三条都有输出；步骤 3 `diff` 无输出；步骤 4 两边同为 `file-doc folder-doc session-review source-doc translate-doc`。
+**会话内验证**：新开一轮，技能目录应仍列出 `folder-doc` / `file-doc` / `source-doc`；或直接要求「用 folder-doc 技能分析某目录」，能加载即通过（对应 §4 第 5 项）。
+
 ---
 
 ## 3. 重启（**时序警告：本轮最后一个动作**）
@@ -341,7 +430,13 @@ grep -c "dsh-plugin-file-system-zc" ~/.dsh/logs/web.log
 | 3 | 「源码」页签编辑保存 | 打开任一源码文件 → 改一个字符 → 观察标签 → 点保存 | 出现「● 未保存」提示；保存后提示消失且文件落盘（`git diff` 可见改动） | 提示不出现 → 前端状态位；保存 400/500 → 看 `/api/fs/write` 的响应体与 web.log（路径越权统一映射 400） |
 | 4 | 「生成解读」L1/L2/L3 与「翻译」 | 对某目录点「生成解读」走 L1，对某文件走 L2/L3；对某 md 点「翻译」 | 按钮出现；任务进入轮询并**能收尾**（不无限等待，5 分钟上限）；产物可在书库读到 | 任务不收尾 → `/api/fs/gen-status` 轮询是否卡住；400 立即失败 → 生成入口预检（目标不存在时直接 400）；产物为空 → 看子会话是否以 `ptc` 预设正常起（`FS_GEN_PRESET` 可临时覆盖为 `standard`） |
 
-**额外（非 4 项之内、但切换特有）**：确认页面上**只有一份**「文件系统」页签 —— 若出现两个同名页签，说明新旧插件同时被装载（§6-R1）。
+（第 5 项为本次收口新增，技能链路见 §2.6。）
+
+| # | 项 | 怎么操作 | 看到什么算通过 | 失败时先查什么 |
+|---|---|---|---|---|
+| 5 | **技能仍可用** | 新开一轮，确认技能目录里仍有 `folder-doc` / `file-doc` / `source-doc`；或直接要求「用 folder-doc 技能分析某目录」 | 技能可加载、可执行；`readlink -f ~/.agents/skills/folder-doc` 指向预期仓库 | 技能消失 → 软链是否断（`ls -la ~/.agents/skills/`）；技能内容仍是旧版 → 软链仍指旧仓，按 §2.6-D 改链；技能没刷新 → 新会话或下次重启再看 |
+
+**额外（非清单之内、但切换特有）**：确认页面上**只有一份**「文件系统」页签 —— 若出现两个同名页签，说明新旧插件同时被装载（§6-R1）。
 
 ---
 
@@ -401,6 +496,8 @@ dsh --profile web --dump-default-config | grep -n -B1 -A1 -- '^- id: fs$'
 | **R9** | **bundles 顺序变化**（新插件被追加到末尾） | `reconcilePlugins` 用 `plugins.push(...)` | `grep -n -A20 '"bundles"' package.json`；本插件各层 patch 互不按 id 覆盖，**判定为无实质影响**（§1.4） |
 | **R10** | **误以为热重载能顶替重启** | profile 的 `patchReload` 缺省 `'live'`（`profile.ts:142`），用户层 `cordis.patch.yml` 确实热重载；但 **bundle 层列表是 boot 期拼装的**，改 `bundles`/`dependencies` 必须重启 | 改完不重启时页签不会变 —— 不要把它当故障；对照 §1.3 的装载链路 |
 | **R11** | **验层命令被当成纯只读** | `--dump-config` 会重写 `cordis.yml`（内容幂等，mtime 变） | §2.3 的警告；若要求 mtime 也不变，改用 `--dump-default-config`（同样经 `prepareProfile`，**不能避免**）——唯一完全只读的办法是手工按 §1.3 复现组合 |
+| **R12** | **技能仍指向旧仓**：切完 profile 后，`folder-doc`/`file-doc`/`source-doc` 三个技能读到的还是**旧插件目录**的文本 | 三个技能的真实来源是用户级技能根 `~/.agents/skills/` 的三条软链，指向 `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system/skills/*`（§2.6-B），与 profile 切换完全解耦 | `readlink -f ~/.agents/skills/folder-doc ~/.agents/skills/file-doc ~/.agents/skills/source-doc` → 若仍指旧仓，按 §2.6-D 改链；`translate-doc`/`session-review` 当前在 `~/.dsh/skills/` 与 `~/.agents/skills/` 里都不存在，**天然不可见**，不要误判为迁移丢功能 |
+| **R13** | **客户端声明字段差异被误判为回归**：`-zc` 的 `dsh.client` 只有 `platform`，旧插件还写了 `inject`（两个包名） | 已查实：该字段只影响客户端 factory 到达顺序、目标 row 不存在时静默跳过，且旧插件写的两个名字在本机 graph 里都不存在（§1.8）→ **行为等价，非遗漏** | 对照 §1.8；若客户端 boot gate 报 `pending (waiting for service: …)`，那是**插件模块自身导出**的 `inject = ["slots"]`（新旧一致）在等服务，与 `dsh.client.inject` 无关 |
 
 ---
 
@@ -428,20 +525,35 @@ dsh --profile web --dump-default-config | grep -n -B1 -A1 -- '^- id: fs$'
 | 当前 dump 组合的旧行位置（569-571 行） | 本手册调研期以 `loadProfileDirectory + renderConfigDump` **只读复现** `dump-config` 得到（未执行 `dsh` 命令） | ✅（实测） |
 | 旧/新 banner 首行 | `head -1` 两份产物 | ✅（实测） |
 | **pnpm 对本地目录默认写 `link:`** | 未在主仓源码中找到规定 —— 依据是现有 profile 第 9 行的既有形态推断 | ⚠ **推断**，执行后用 §2.2 的 grep 确认 |
-| **`dsh client.inject` 在各处的确切语义** | 只确认了「被读取」（`modules/src/index.ts:757-776`）与「boot gate 用它判 pending」（`client/web/src/boot.ts:149`），未找到它的取值规范 | ⚠ **未核实**（§8-Q2） |
+| `dsh.client` 四字段的解析与校验、写入 graph row | `packages/client/modules/src/index.ts:186-206`（parseDshClient）、`:402-410`（graphRow）、`:757-776`（resolveMeta） | ✅ |
+| `inject` 的语义与唯一消费点 | `packages/client/modules/src/client/manifest.ts:44-58`（WebBootEntry JSDoc）；`packages/client/modules/src/client/system.ts:155-175`（arriveGraphRow，查不到即跳过） | ✅ |
+| `external` / `immediately` 的语义 | `manifest.ts:44-58`；`packages/client/modules/src/index.ts:423-448`（orderByModuleGraph） | ✅ |
+| **客户端 entry 只传 `{ name }`** → `fiber.inject` 来自插件模块自身导出 | `packages/client/web/src/boot.ts:135`；boot gate 读 `entry.fiber.inject` 于 `:149` | ✅ |
+| 新旧 client 产物的 `inject` 导出一致（均为 `["slots"]`） | 旧 `dsh/client.js:224`；`-zc client/client.js:10` | ✅（实测） |
+| 旧插件 `dsh.client.inject` 两个名字在客户端 graph 里不存在 | 只读复现 dump：`ui-slots` 与 `client-runtime` 出现次数均为 0；`packages/client/ui-slots/package.json` 无 `dsh` 段 | ✅（实测） |
+| 预设发现根恰有三处（shipped / config.roots / 用户根） | `packages/preset/agent-presets/src/discovery.ts:51,60`；`index.ts:179-181` | ✅ |
+| 预设扫描规则（子目录 + `PRESET_ID` + `agent.cordis.yml`） | `discovery.ts:282-320`；`COMPOSITION_FILE` 同文件导出 | ✅ |
+| 本机 `agent-presets` 行无 `roots`（只有 `default: standard`） | 只读复现 dump 第 540-543 行 | ✅（实测） |
+| 技能根清单（project 两处 / custom / user-dsh / user-agents） | `packages/skill/skill-filesystem/src/index.ts:246-256`；`dshHome` / `agentsHome` 取值见 `:161-165` | ✅ |
+| 技能 provider 的监视与失效通道（改链能否热感知） | `skill-filesystem/src/index.ts:129-142`（registerProvider + `control.invalidate`）、`:152`（SkillWatchManager） | ✅（存在性）；**改链后的实际刷新时机 ⚠ 未实测** |
+| 本机技能软链的真实指向（三条指向旧仓） | `ls -la ~/.agents/skills/`、`ls -la ~/.dsh/skills/`、`readlink -f` 输出 | ✅（实测） |
 
 ---
 
 ## 8. 未解问题 / 需决策
 
+> 原 Q2（`dsh.client` 字段规范）与原 Q6（技能链路）**已查实结案**，分别写进 §1.8 与 §2.6，不再列为未解项。
+
 | # | 问题 | 影响 | 建议 |
 |---|---|---|---|
 | **Q1** | **切换时机**：`-zc` 当前是 P1 骨架（`lib/index.js` 37 行、client 是占位视图），P3/P4/P5 未完成 | 现在切换 = 功能全失 | 等 P5 销账 + §0 五条门禁全绿后再执行；本手册可作为 T-60 的执行稿 |
-| **Q2** | 新插件 `dsh.client` 只有 `platform`，旧插件还声明了 `inject: [...两个包名]` 与 `immediately`。这两者在真实 web 壳里的确切语义未在源码中定位到规范 | 若新插件需要它们才能被等待就绪，可能出现 boot gate pending | P4 收尾时由实现方给出结论（或切到 `standard` 对照实测）；未定论前不要凭猜回填 |
+| **Q2** | ~~新插件 `dsh.client` 字段规范~~ → **已结案**：不需要补 `inject`，不写与旧插件行为等价 | — | 见 §1.8（三条依据 + 实测反证）；如需记账，作为「有意差异」写入交付摘要 |
 | **Q3** | bundles 顺序是否要求保持原位（新插件被追加到末尾） | 判定为无实质影响（§1.4），但可读性/审计性下降 | 由主智能体决定：接受追加，或手工把行移回原位 |
 | **Q4** | 备份保留策略：`~/.dsh/backups/` 下会再增一份整目录备份（含 node_modules） | 磁盘占用 | 建议保留至 P6 验收 7 天后清理；不要在同一次切换里覆盖同一备份 |
-| **Q5** | 切换后旧插件仓库是否保留 | 回滚依赖它 | 建议至少在 P6 验收通过前保持原样、只读（D-3 已冻结迁移源 `3a3f89e`） |
-| **Q6** | 是否需要同时验证 agent 预设身份（`agent.cordis.yml` 的「文件系统」预设） | 与 profile 切换是两条链路，不在 T-60/T-61 范围 | 若要验证，需另起任务；本手册不覆盖 |
+| **Q5** | 切换后旧插件仓库是否保留 | 回滚依赖它；且 §2.6 的三条技能软链当前仍指它 | 建议至少在 P6 验收通过前保持原样、只读（D-3 已冻结迁移源 `3a3f89e`）；改技能软链后它才真正退出运行路径 |
+| **Q6** | ~~是否要验证 agent 预设身份~~ → **已结案**：`link:` 进 profile **不会**让插件目录成为预设来源；且 5 个技能当前**不是**靠 `agent.cordis.yml` 可见 | — | 见 §2.6；技能跟随新仓需一步人工改链（§2.6-D），**是否执行由主智能体决定** |
+| **Q7** | `translate-doc` / `session-review` 当前在两个用户技能根里都不存在 → 对会话不可见 | 迁移前就如此，非本次切换引入 | 若需要它们可见，加两条软链到 `~/.agents/skills/`；不属 P6 必需，由主智能体决定 |
+| **Q8** | 技能软链改指新仓后，技能目录的刷新时机（是否要重启） | 影响验证方式 | provider 带 watcher/invalidate（`skill-filesystem/src/index.ts:129-152`）但**未实测**；以新会话验证为准，未刷新则随下次重启生效 |
 
 ---
 
@@ -460,7 +572,9 @@ dsh --profile web --dump-config | grep -n -B1 -A1 -- '^- id: fs$'
 # 4) 重启（本轮最后动作，中断当前对话）
 systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
   --setenv=DSH_SESSION_ID="$DSH_SESSION_ID" ~/.local/bin/dsh-restart
-# 5) 新轮次：先读 ~/.dsh/restart-state.json 接手，再跑 §4 四项冒烟
+# 5) 新轮次：先读 ~/.dsh/restart-state.json 接手，再跑 §4 四项冒烟 + 第 5 项技能核对
+# 5b) 技能链路核对（详见 §2.6）：三条软链当前指向旧仓，若要让技能跟随新仓需另行改链
+readlink -f ~/.agents/skills/folder-doc ~/.agents/skills/file-doc ~/.agents/skills/source-doc
 # 6) 回滚（任一项失败）
 TS=$(cat /tmp/p6-cutover-ts); rm -rf ~/.dsh/profiles/web
 cp -a ~/.dsh/backups/web-profile-before-zc-$TS ~/.dsh/profiles/web
