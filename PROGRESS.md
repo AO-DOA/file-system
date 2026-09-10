@@ -38,6 +38,27 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 - **并行跑 coverage 必须隔离**：`--coverage.reportsDirectory=/tmp/...`。共用 `coverage/.tmp` 会让生成崩溃（实测 4 次跑崩 3 次）。
 - `dsh plugin` 命令在本机**会失败**：profile 的 node_modules 来自 pnpm store **v11**，而 `/usr/local/bin/pnpm` 想用 **v10**（`ERR_PNPM_UNEXPECTED_STORE`）。改 profile 请走手工路径（改 `dependencies` + `dsh.profile.bundles` + 补 node_modules 软链）。
 
+## 2.5 会话压缩能力（动态插件 —— **不持久化，重启即失**）
+
+主智能体的上下文压缩能力由**动态 Cordis 插件**提供，**只存在于当前进程**：dsh web 一重启就消失（`cordis_inspect_self` 返回空列表，**旧授权同样不持久**）。
+
+**源码已存盘，可一键重建**：
+```
+~/.dsh/dynamic-plugins/compact-tool.host.js   # v5 源码（含 AbortSignal 修正）
+~/.dsh/dynamic-plugins/README.md              # 重建三步 + 需重新查证的契约 + 沙箱限制 + 版本史
+```
+重建 = 读该文件 → `cordis_define(kind:"new", idPrefix:"cmpct", code.host=文件全文)` → `cordis_run(mode:"run")`。host-only 包**无需审批**。（`kind:"existing"` 不可用——旧 pluginId 随进程消失。）
+
+**调用**：空对象 `{}` 即可（唯一可选字段 `reason`，仅写日志）。返回 `status: scheduled` = 已排到**本轮结束后的 idle 窗口**后台执行；真实结果打在 host 日志：`[cordis:cmpct-1] compact_context [<sessionId>] compacted N items (~M tokens)`。
+
+**关键契约（子智能体查证所得，出处为 Inspect + 主仓源码）**：
+- **realm 通道**：compaction 只在 **preset 的 isolate realm** 内，**host 平面不可见**（主仓 `bundle/web-app/cordis.patch.yml:427` 有意把三行设 `disabled: true`）⇒ 唯一通道是 `ctx.get('agentPresets').serviceFor(agent, 'compaction')`；
+- **agent 从哪来**：优先 `exec.agent`，fallback `agents.currentInitiator()`；
+- **为何必须排队**：`compactNow` 内部走 `runMaintenance`，**非 idle 时同步抛 `ManualCompactionError('busy')`** ⇒ 「排队到 idle」是**插件自己监听 `agent/status` 事件**实现的（**不是**官方 API —— 先前记忆里的 "runDeferred" 有误，已更正）；
+- **沙箱限制**：动态插件沙箱**没有 `AbortSignal`/`AbortController`**（只有 `ctx`/`harness`/`console`/`btoa`/`atob`/`TextEncoder`/`TextDecoder`）⇒ 造信号必须用宿主类的 `Ctor.any([])`，**不能** `new AbortSignal()`；`parameters` 根对象须显式 `additionalProperties: true`。
+
+⚠ **一个必须知道的限制**：该工具**注册后不会进入主智能体当前会话的 function schema** —— 主智能体**看不到、也调不了它**（schema 是会话级确定的）。要压缩只能：① 用户发 `/compact` 命令；或 ② 由子智能体代调（但工具语义是「压调用者自身」，代调压的是子智能体，不是主智能体）。
+
 ## 3. ⚠ 已知行为与风险
 
 ### G-1 ✅ **已修复**（2026-09-11，用户要求；**本项目唯一有意的行为差异**）
