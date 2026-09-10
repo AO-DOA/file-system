@@ -96,7 +96,9 @@
 
 ## 5. 迁移映射表（P2–P5 派发依据）
 
-| 现文件 | 行数 | 目标 | 阶段 |
+> **本表是迁移映射（旧仓 → 本仓），不是本仓现状清单**：`迁移前文件` 列的行数与该列的 `.js`/`.jsx` 路径**全部指旧仓 `dsh-plugin-file-system`**（冻结于 commit `3a3f89e`）；本仓 `src/` 已全部为 `.ts`/`.tsx`，无任何 `.js`/`.jsx` 残留。
+
+| 迁移前文件（旧仓 dsh-plugin-file-system） | 行数 | 目标 | 阶段 |
 |---|---|---|---|
 | `src/host/fs-utils.js` | 238 | `src/host/fs-utils.ts` | P2 |
 | `src/host/book-store.js` | — | `src/host/book-store.ts` | P2 |
