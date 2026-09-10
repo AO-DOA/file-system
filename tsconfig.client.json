@@ -8,7 +8,12 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "rootDir": "src/client",
+    // rootDir is src (not src/client) because the client half imports the shared
+    // locale dictionary `src/shared/locale.ts` — the single source of truth for
+    // product copy. A narrower rootDir rejects that import outright (TS6059 and
+    // TS6307: the file is neither under rootDir nor in the program). Widening it
+    // costs nothing here: this project is noEmit, so rootDir shapes no output.
+    "rootDir": "src",
     "noEmit": true,
     "composite": true,
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
@@ -23,5 +28,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["src/client"]
+  "include": ["src/client", "src/shared"]
 }

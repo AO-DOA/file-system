@@ -1,13 +1,20 @@
 {
   // Host face: compiled to lib/ (main entry) with declarations under lib/types.
-  // rootDir is src/host so the emitted entry is exactly lib/index.js, which is
-  // what package.json main and exports["."] point at.
+  // rootDir is src (not src/host) because the host half imports the shared locale
+  // dictionary `src/shared/locale.ts` — the single source of truth for product
+  // copy. A narrower rootDir rejects that import outright (TS6059 plus TS6307)
+  // and, worse, would still emit an entry whose `../shared/locale.js` resolves
+  // outside lib/ to <pkg>/shared/locale.js — a file that never exists, because
+  // the previous JS plugin bundled both faces into one file and so never hit it.
+  // With rootDir at src the emitted layout mirrors the sources: the entry is
+  // lib/host/index.js, and its sibling lib/shared/locale.js is what the emitted
+  // `../shared/locale.js` actually resolves to.
   "compilerOptions": {
     "target": "es2024",
     "lib": ["ES2024"],
     "module": "esnext",
     "moduleResolution": "bundler",
-    "rootDir": "src/host",
+    "rootDir": "src",
     "outDir": "lib",
     "declaration": true,
     "declarationDir": "lib/types",
@@ -26,5 +33,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["src/host"]
+  "include": ["src/host", "src/shared"]
 }
