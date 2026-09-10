@@ -85,8 +85,8 @@
 
 | # | 任务 | 状态 | 负责 | 验收证据 | commit |
 |---|---|---|---|---|---|
-| T-10 | **P1-A 工程基础**：`package.json` / tsconfig 四面 / `.oxlintrc.json` / `vitest.config.ts` / `tsdown.config.ts` / `.gitignore` / `LICENSE` + 最小 host、client 入口桩 | 进行中 | 子P1A | 四门禁可跑通 + 产物头部契约自检 | - |
-| T-11 | **P1-B 装载与挂载**：`cordis.patch.yml` / `agent.cordis.yml` / `preset.yml` + 占位槽（id `fs`，order 12）与占位路由 + REAL-composition 测试 | 待办 | - | 过真 Loader 挂载，断言外部可观测状态 | - |
+| T-10 | **P1-A 工程基础**：`package.json` / tsconfig 四面 / `.oxlintrc.json` / `vitest.config.ts` / `tsdown.config.ts` / `.gitignore` / `LICENSE` + 最小 host、client 入口桩 | **已销账** | 子P1A（主智能体代验收） | 四条命令 exit=0：typecheck / lint（0 warn 0 err）/ test（passWithNoTests）/ build（banner 自检通过）；产物头部契约为 `window.__ModuleLoader__.load({ id: "dsh-plugin-file-system-zc", ...`；覆盖率门槛 `perFile: true` + 四项 100% | `1c418aa` |
+| T-11 | **P1-B 装载与挂载**：`cordis.patch.yml` / `agent.cordis.yml` / `preset.yml`（内容照 `docs/baseline/contracts.md` §B 搬）+ 占位槽（id `fs`，order 12）与占位路由 + REAL-composition 测试；**并须**① 把 host/client 的 `name` 与 `inject` 对齐 `feature-baseline.md` §2.1；② 补做 T-10 未交付的 **D-6 专项**（host/client 同 program 是否触发 `Context` 声明合并冲突） | 进行中 | 子P1B | 过真 Loader 挂载，断言外部可观测状态 | - |
 | T-12 | README（对齐主仓结构） | 待办 | - | - | - |
 
 ### P2 host 纯逻辑迁移
