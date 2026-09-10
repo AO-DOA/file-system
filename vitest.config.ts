@@ -39,7 +39,7 @@ export default defineConfig({
       //     - serveFile's not-a-file arm and stat-failure callback (335/337/338),
       //       reachable only inside the firstExistingFile->stat TOCTOU window
       //     - genTasks.delete + rethrow after the handle pre-check already
-      //       rejected the same rel against the same root (453/454, 505/506)
+      //       rejected the same rel against the same root (485/486, 537/538)
       //     - applyGenScope's empty allow-list (186): all four descriptors'
       //       scopes are in GEN_SCOPE_TOOLS, so genScopeAllow() is never empty
       //
