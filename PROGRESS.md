@@ -39,7 +39,7 @@
 
 | # | 任务 | 状态 | 负责 | 验收证据 | commit |
 |---|---|---|---|---|---|
-| T-10 | **P1-A 工程基础**：`package.json` / tsconfig 四面 / `.oxlintrc.json` / `vitest.config.ts` / `tsdown.config.ts` / `.gitignore` / `LICENSE` + 最小 host、client 入口桩 | 待办 | - | 四门禁可跑通 + 产物头部契约自检 | - |
+| T-10 | **P1-A 工程基础**：`package.json` / tsconfig 四面 / `.oxlintrc.json` / `vitest.config.ts` / `tsdown.config.ts` / `.gitignore` / `LICENSE` + 最小 host、client 入口桩 | 进行中 | 子P1A | 四门禁可跑通 + 产物头部契约自检 | - |
 | T-11 | **P1-B 装载与挂载**：`cordis.patch.yml` / `agent.cordis.yml` / `preset.yml` + 占位槽（id `fs`，order 12）与占位路由 + REAL-composition 测试 | 待办 | - | 过真 Loader 挂载，断言外部可观测状态 | - |
 | T-12 | README（对齐主仓结构） | 待办 | - | - | - |
 
