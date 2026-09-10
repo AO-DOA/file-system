@@ -17,8 +17,8 @@
 | 仓库 | `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc` |
 | 迁移源（**只读，全程未改动一字节**） | `../dsh-plugin-file-system` @ `3a3f89e` |
 | profile | `~/.dsh/profiles/web`：`dependencies` 与 `dsh.profile.bundles` 均已指向 `-zc` |
-| 运行态 | dsh web PID 496327，端口 3080；boot manifest 已装载 `-zc`（rev `ceedbcfa…`） |
-| 五项门禁 | **全绿**：typecheck 0 输出 / lint 0 错 0 警告 / 547 例 / coverage 100×4 / build 成功 |
+| 运行态 | dsh web 运行中，端口 3080；boot manifest 已装载 `-zc`（rev `ceedbcfa…`）。PID 每次重启都变：以 `~/.dsh/logs/web.log` 最近一次「启动命令」行或 `pgrep -f 'dsh web'` 为准（2026-09-11 05:18 实测 516551） |
+| 五项门禁 | **全绿**：typecheck 0 输出 / lint 0 错 0 警告 / 553 例 / coverage 100×4 / build 成功 |
 | 技术栈 | TypeScript(strict) + vitest/jsdom + tsdown；产物 `lib/host/index.js` + `client/client.js` |
 | 功能基线 | 171 功能点（155 已迁移 / 10 不适用 / 6 有意保留）；11 条路由三方一致；135 例逐条对账矩阵 0 处待填 |
 
@@ -27,7 +27,7 @@
 ```bash
 npm run typecheck      # tsc -b tsconfig.json（5 个 leaf）
 npm run lint           # oxlint，0 错 0 警告
-npm test               # vitest，19 spec / 547 例
+npm test               # vitest，19 spec / 553 例
 npm run test:coverage  # per-file 100% + scripts/verify-coverage-scope.mjs 分母守卫
 npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banner 校验
 ```
@@ -123,8 +123,8 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 | # | 待办 | 说明 |
 |---|---|---|
 | 1 | T-62 交付摘要 | 应写「**G-1 已加固**（唯一有意的行为差异，含运行时前后对照）」+ G-2~G-12 逐字保留项 + 与主仓风格的差异 + D-13 覆盖率例外 |
-| 2 | `src/host/abilities/README.md` 的 4 处 `.js` 文件名 | 目标文件现已存在（`prompt-loader.ts` / `gen-executor.ts` / `translate-executor.ts` / `tests/gen-scope.spec.ts`），引用可更新为 `.ts` |
-| 3 | `docs/spec-p5-tests-detail.md` 的 2 处行号 | 引主仓 `docs/testing.zh.md` 写的 `:41`/`:47`，实测应为 **`:40`/`:45`** |
+| 2 | ~~`src/host/abilities/README.md` 的 4 处 `.js` 文件名~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **6 处**替换点 / 6 个位置 —— L16、L34 行内 3 个不同文件名、L115、L116。原记「4 处」为误） |
+| 3 | ~~`docs/spec-p5-tests-detail.md` 的 2 处行号~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **10 项**替换 / **9 个位置** —— 第一轮 6 处 L477/L478/L555/L559/L561/L563 + 补改 L419、L425 行内 2 项（行号 + 加粗）、L549。原记「2 处」为误。与 #2 合计 **16 项替换 / 15 个位置 / 2 文件**） |
 | 4 | ~~G-1 是否开新账目修~~ | ✅ **2026-09-11 已完成**（见 §3，两道闸门 + 运行时对照 + 80 例测试） |
 | 5 | `R3`：两个 leaf 的 compilerOptions 手抄 | 6 项严格设置重复维护，可提取 `tsconfig.base.json` |
 | 6 | pnpm store v10/v11 冲突 | 会让 `dsh plugin` 命令失败；需统一 store 或重装 profile |
