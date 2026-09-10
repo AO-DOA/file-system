@@ -1,5 +1,5 @@
-// dsh-plugin-file-system — Host 侧纯工具函数。
-// 这些函数不依赖 DSH ctx，便于单元测试；dsh/index.js 直接 import 使用。
+// dsh-plugin-file-system-zc — Host 侧纯工具函数。
+// 这些函数不依赖 DSH ctx，便于单元测试；宿主入口 lib/index.js 直接 import 使用。
 import { resolve, basename, extname, join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -102,7 +102,7 @@ export function bookBucketValid(bucket: string | null | undefined): boolean {
   return /^[A-Za-z0-9._~-]+$/.test(b) && b !== '..' && !b.includes('..')
 }
 
-// 书库四层名（与 dsh/index.js BOOK_LAYERS 保持一致）。
+// 书库四层名（须与宿主侧其它四层名声明逐字一致，如 src/host/book-store.ts 的 BOOK_LAYERS）。
 export const BOOK_REL_LAYERS: string[] = ['目录概览', '文件摘要', '源码注解', '文章翻译']
 
 // 书库逻辑文档 rel 形状校验：<层名>/<stem>.md 或 @<桶名>/<层名>/<stem>.md，
