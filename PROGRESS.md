@@ -35,15 +35,13 @@
 
 ### P1 骨架
 
+> 执行规格见 `docs/spec-p1-skeleton.md`（含官方依据与验收标准）。派发单元：**P1-A 工程基础**、**P1-B 装载与挂载**。
+
 | # | 任务 | 状态 | 负责 | 验收证据 | commit |
 |---|---|---|---|---|---|
-| T-10 | `package.json`：name/exports/files/`dsh.bundle`/`dsh.client`/engines/scripts | 待办 | - | - | - |
-| T-11 | tsconfig 面分离（host / client / tests 三叶 + solution-only root） | 待办 | - | - | - |
-| T-12 | 构建链路（tsdown + 客户端产物） | 待办 | - | - | - |
-| T-13 | vitest + jsdom + per-file 100% 覆盖率门槛 | 待办 | - | - | - |
-| T-14 | 装载三件套 `cordis.patch.yml` / `agent.cordis.yml` / `preset.yml` | 待办 | - | - | - |
-| T-15 | README（对齐主仓双语与结构） | 待办 | - | - | - |
-| T-16 | 骨架可挂载：空插件过真 Loader 的 REAL-composition 测试 | 待办 | - | - | - |
+| T-10 | **P1-A 工程基础**：`package.json` / tsconfig 四面 / `.oxlintrc.json` / `vitest.config.ts` / `tsdown.config.ts` / `.gitignore` / `LICENSE` + 最小 host、client 入口桩 | 待办 | - | 四门禁可跑通 + 产物头部契约自检 | - |
+| T-11 | **P1-B 装载与挂载**：`cordis.patch.yml` / `agent.cordis.yml` / `preset.yml` + 占位槽（id `fs`，order 12）与占位路由 + REAL-composition 测试 | 待办 | - | 过真 Loader 挂载，断言外部可观测状态 | - |
+| T-12 | README（对齐主仓结构） | 待办 | - | - | - |
 
 ### P2 host 纯逻辑迁移
 
@@ -105,6 +103,8 @@
 | D-3 | 迁移源冻结为 `3a3f89e`，全程只读 | 防止迁移期间源被改动导致基线漂移 | 2026-09-11 |
 | D-4 | 工程栈：TypeScript(strict) + vitest + jsdom + tsdown + 多 tsconfig 面分离 | 对齐主仓实测栈（参照 `apps/desktop`、`dsh-market`） | 2026-09-11 |
 | D-5 | 主智能体不写实现代码，只做拆解/分配/验收/提交 | 用户明确要求 | 2026-09-11 |
+| D-6 | tsconfig 采用 **三 leaf + solution-only root**（`tsc -b` 驱动）；**待实测** host/client 是否触发 cordis `Context` 声明合并冲突——若无冲突，按 `packages/AGENTS.md:23`「ordinary two-entry Client plugins do not split」退回两文件结构 | `<checkout>/docs/development.zh.md:68,74`、`<checkout>/packages/AGENTS.md:23` | 2026-09-11 |
+| D-7 | 构建产物**不入库**（`.gitignore` 含 `lib/`、`client/`） | 主仓「源平面 vs 产物平面不混」`AGENTS.md:120`。与参照实现 `dsh-market`（提交 `client.js`）相反，需在交付摘要中说明差异 | 2026-09-11 |
 
 ---
 
@@ -133,3 +133,4 @@
 | 日期 | 事件 |
 |---|---|
 | 2026-09-11 | 台账建立；目标确立；P0 三个功能清点子任务开工 |
+| 2026-09-11 | 取得主仓 tsconfig 面结构的官方依据（`docs/development.zh.md:58-74`）；写入 **P1 骨架执行规格** `docs/spec-p1-skeleton.md`；P1 细化为 P1-A / P1-B 两个派发单元；新增决策 D-6、D-7 |
