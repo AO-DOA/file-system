@@ -5,8 +5,8 @@ DSH 打包插件（bundle）：为 DSH web 装载「文件」页签（插件名 
 全部文档集中存放于 `$DSH_HOME/books/`，跨工作区共享。
 
 本仓是 `dsh-plugin-file-system` 的主仓模式重写版：行为契约保持一致，工程栈改为
-TypeScript（strict）+ vitest/jsdom + tsdown，覆盖率按 per-file 100% 要求。重写尚未完成，
-当前只落地了骨架与装载，真实路由、四层能力与页签界面在后续阶段交付（见「实现进度」）。
+TypeScript（strict）+ vitest/jsdom + tsdown，覆盖率按 per-file 100% 要求。重写已完成并上线运行，
+真实路由、四层能力与页签界面均已交付（见「实现进度」）。
 
 **安全加固（相对上一版唯一的有意差异）**：`POST /api/fs/delete` 两条通往「递归删除整个工作区根」的路径均已封死，详见「安全提示」。
 
@@ -39,7 +39,7 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 | 能力 | 说明 |
 |---|---|
 | 文件树浏览 | 左侧树浏览当前工作区，目录展开/折叠（懒加载，目录优先 + 中文排序） |
-| 文档角标 | 命中书库文档的树节点带**蓝色圆点**，悬停可直接打开对应文档 |
+| 文档角标 | 命中书库文档的树节点带**蓝色圆点**，点击可直接打开对应文档 |
 | 文件查看 | 右侧查看文件：Markdown 走 DSH 原生 MarkdownText（附 frontmatter 字段卡），主流代码语言走 CodeBlock（shiki 高亮），其余等宽兜底 |
 | 编辑保存 | 「源码」页签可编辑（textarea）并保存到宿主磁盘；有未保存修改时显示「● 未保存」 |
 | 工作区切换 | 左上角「选择工作区」下拉列出 DSH 工作区并切换读写根（`POST /api/fs/set-root`）；根/树宽/展开/打开项经 localStorage 跨刷新恢复 |
@@ -91,7 +91,7 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 ## 已知行为
 
 以下条目同样从上一版逐字保留，属行为等价的组成部分，按迁移决策本轮不修；逐条出处见
-[`docs/feature-baseline.md`](docs/feature-baseline.md) §4「已知行为与缺陷登记」（编号 G-1~G-11，G-1 见上节）。
+[`docs/feature-baseline.md`](docs/feature-baseline.md) §4「已知行为与缺陷登记」（编号 G-1~G-12，G-1 见上节）。
 
 - **`gen-doc` 的 kind 白名单过宽**（G-2）：`{kind:'translate', path:'<非 md>'}` 会被接受。
 - **目录重复请求**（G-3）：打开目录节点时对同一 `/read` URL 重复发请求，产生冗余请求。
@@ -102,34 +102,34 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 - **sweep 无定时器**（G-8）：孤立的 `running` 任务兜底可能永不触发，收尾依赖任务超时与前端 5 分钟上限。
 - **任务表是进程内 Map**（G-9）：宿主重启即丢，前端随后收到 `task not found`。
 - **未消费 View 焦点协议**（G-10）：`conversation.view` 的 owner props（`viewRequest`/`openView`/`completeViewRequest`）未被使用。
+- **「悬停可打开」无对应实现**（G-11）：源仓 `AGENTS.md` §6 冒烟第 2 条的这一表述与代码不符——蓝点与树节点实为**点击**打开（`onOpen` 挂在节点行与蓝点的 `onClick` 上）；按迁移决策更新文档表述，而非为它造一个实现（本文件「功能」表原写的「悬停可直接打开」已据此订正为「点击」）。
+- **`CodeBlock` 的 `copyLabel`/`copiedLabel` 未传**（G-12）：这两字段自上游 primitives 0.1.5 起为必填，而源插件只传 `{code, lang}`（纯 JS 无类型检查，故从未暴露）；按 D-8/D-9 逐字保留——**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到源真正传递的两个字段，运行时调用与源一致。
 
-其中 G-6、G-7 属资源泄漏，按迁移决策的例外**允许**在 jsdom 测试暴露时修正，但必须单独记账并在交付摘要中列明行为差异；其余条目保持原样。
+其中 G-6、G-7 属资源泄漏：按迁移决策（D-8 例外 b）它们是「可经例外修正、但**本次迁移决定不修**」的泄漏，与源逐字保留——`pollTask` 无 `clearTimeout`、拖拽 `document` 监听无 cleanup，仅靠 `aliveRef` 短路达到可观察等价（`src/client/index.tsx:538-539` 注释明写「不新增清理」；该口径登记于 `docs/feature-baseline.md` §4 与交付摘要）。其余条目保持原样。
 
 ## 模型可见面
 
 - **随包技能**：五个技能经 `agent.cordis.yml` 的 `customSkillDirs` 注册进该预设层的技能表，
   在启用本预设的会话中对模型可见（`skills/` 已随仓分发，`package.json` 的 `files` 含 `skills`）。
 - **生成/翻译子会话**：宿主把 `src/host/abilities/<能力>/prompt.md` 的文本逐字注入子 agent 的
-  user message，并按层限定模型可用工具。这部分来自上一版，在本仓随 P2/P3 落地，当前尚未生效。
+  user message，并按层限定模型可用工具。
 
 ## 实现进度
 
-本仓按阶段推进，逐阶段以四门禁（typecheck / lint / test / coverage / build）验收。当前状态：
+本仓按阶段推进，逐阶段以五项门禁（typecheck / lint / test / coverage / build）验收。当前状态：
 
 | 阶段 | 状态 |
 |---|---|
 | P0 功能基线清点与汇总 | 完成 |
 | P1 骨架与装载（工程基础、三件套与占位挂载、`skills/` 迁移） | 完成 |
-| P1 陈旧引用修正 | 进行中 |
-| P2 host 纯逻辑（`fs-utils` / `locale` / 书库层 / 任务与提示词 / 能力目录） | 进行中 |
-| P3 host 路由与状态机（11 条 `/api/fs/*`、任务状态机、执行器） | 待办 |
-| P4 client（`.tsx` 组件、树与查看器、生成与翻译、持久化） | 待办 |
-| P5 测试迁移（vitest，per-file 100%） | 待办 |
-| P6 切换上线（profile 切换、人工冒烟） | 待办 |
+| P1 陈旧引用修正 | 完成 |
+| P2 host 纯逻辑（`fs-utils` / `locale` / 书库层 / 任务与提示词 / 能力目录） | 完成 |
+| P3 host 路由与状态机（11 条 `/api/fs/*`、任务状态机、执行器） | 完成 |
+| P4 client（`.tsx` 组件、树与查看器、生成与翻译、持久化） | 完成 |
+| P5 测试迁移（vitest，per-file 100%） | 完成 |
+| P6 切换上线（profile 切换、人工冒烟） | 完成 |
 
-**因此以下能力在当前代码中尚不可用**：`/api/fs` 只有占位路由（`/api/fs/__ping` 应答 200，
-其余路径返回 404）；页签渲染的是占位视图。上表「功能」「快速使用」两节描述的是迁移完成后的目标形态，
-不是当前可用的行为。进度权威是 [`PROGRESS.md`](PROGRESS.md)。
+当前代码已交付上述全部能力：`/api/fs` 的 11 条路由与页签界面均为实装，P1 阶段的 `__ping` 占位路由与占位视图已不在代码中。进度权威是 [`PROGRESS.md`](PROGRESS.md)。
 
 ## 开发
 
@@ -137,11 +137,11 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 npm run typecheck      # tsc -b tsconfig.json（strict）
 npm run lint           # oxlint . --config .oxlintrc.json
 npm test               # vitest run（jsdom 环境）
-npm run test:coverage  # vitest run --coverage（per-file 语句/分支/函数/行 100%）
+npm run test:coverage  # vitest run --coverage（per-file 语句/分支/函数/行 100%；两个入口文件 src/host/index.ts、src/client/index.tsx 按决策 D-13 列入 coverage.exclude，不在门槛内）+ 覆盖率分母守卫
 npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归一化与校验
 ```
 
-- 手写源码一律在 `src/`：host 入口 `src/host/index.ts`、client `src/client/index.ts`、
+- 手写源码一律在 `src/`：host 入口 `src/host/index.ts`、client `src/client/index.tsx`、
   共享文案字典 `src/shared/locale.ts`。
 - 构建产物为 `lib/host/index.js`（host）与 `client/client.js`（client），两者都在 `.gitignore` 中，
   不手写、不提交；**改 host 或 client 后需重跑 `npm run build` 并重启 dsh web 才生效**。
@@ -149,7 +149,7 @@ npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归
 ## 相关文档
 
 - [`PROGRESS.md`](PROGRESS.md)：迁移进度与决策记录的唯一权威。
-- [`docs/feature-baseline.md`](docs/feature-baseline.md)：功能基线、逐字保留清单、已知行为登记（G-1~G-11）。
+- [`docs/feature-baseline.md`](docs/feature-baseline.md)：功能基线、逐字保留清单、已知行为登记（G-1~G-12）。
 - [`docs/baseline/host.md`](docs/baseline/host.md)、[`docs/baseline/client.md`](docs/baseline/client.md)、
   [`docs/baseline/contracts.md`](docs/baseline/contracts.md)：host 路由与状态机、client 功能点与 i18n、契约与构建基线。
 - [`docs/spec-p1-skeleton.md`](docs/spec-p1-skeleton.md) 等 `docs/spec-*.md`：各阶段执行规格与验收标准。
