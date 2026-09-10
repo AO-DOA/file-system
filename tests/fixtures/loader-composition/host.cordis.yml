@@ -1,0 +1,22 @@
+# Test-only composition for tests/real-composition.spec.ts (host half).
+#
+# It is NOT a shipped composition: it exists so the spec can boot the real
+# `@deepseek-ai/cordis-plugin-loader` + include plugin against a real
+# `cordis.yml`, and let the Loader resolve every row by itself. The four
+# `@dsh-test/*` rows stand in for the host services `fs` injects
+# (`webServer` / `sandboxPolicy` / `sessions` / `agentLoop`); the last row is
+# the plugin under test, named exactly as `cordis.patch.yml` names it.
+- id: test-web-server
+  name: '@dsh-test/fs-web-server'
+
+- id: test-sandbox-policy
+  name: '@dsh-test/fs-sandbox-policy'
+
+- id: test-sessions
+  name: '@dsh-test/fs-sessions'
+
+- id: test-agent-loop
+  name: '@dsh-test/fs-agent-loop'
+
+- id: fs
+  name: dsh-plugin-file-system-zc

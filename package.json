@@ -15,6 +15,7 @@
     "lib",
     "client",
     "src",
+    "skills",
     "cordis.patch.yml",
     "agent.cordis.yml",
     "preset.yml",

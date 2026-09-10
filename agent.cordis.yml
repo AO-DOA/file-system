@@ -1,0 +1,26 @@
+# dsh-plugin-file-system-zc — 文件系统插件（packaged plugin + agent preset 双身份）
+#
+# 本文件把该插件目录同时当作一个 AGENT PRESET（agent 预设组合），使它能随包
+# 携带的文件系统三个生成技能（folder-doc / file-doc / source-doc）被 DSH 复用。
+#
+# ── 为什么如此桥接 ────────────────────────────────────────────────────────
+# DSH 里「插件包」（cordis bundle）与「技能发现」（skill-filesystem）是两套
+# 独立机制：插件不会自动扫描包内的 skills/。官方 cordis 预设的做法就是把技能
+# 放进预设目录的 skills/，再用 skill-filesystem 的 `customSkillDirs` 显式挂载。
+# 参考：packages/preset/agent-presets/presets/cordis/agent.cordis.yml:261-265
+#
+# `baseUrl` 指向本预设自身目录，`new URL('skills/', baseUrl)` 相对解析，因此
+# 技能根随插件安装位置一起迁移，不会写死绝对路径。
+#
+# ── 与 bundle 身份的关系 ──────────────────────────────────────────────────
+# `cordis.patch.yml`（dsh.bundle.patch，供 profile 引用为打包插件）与本
+# `agent.cordis.yml`（agent 预设组合）互不冲突，同一目录可同时承载两种身份。
+# 技能经下面两行注册进【本预设层】的 host skill registry，无需 realm。
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'

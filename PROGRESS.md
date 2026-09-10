@@ -34,11 +34,11 @@
 | 阶段 | 状态 |
 |---|---|
 | P0 功能基线（T-01~T-04） | **完成**，四份文档已提交 |
-| P1 骨架（T-10 P1-A / T-11 P1-B / T-12 README） | P1-A 进行中，其余待办 |
-| P2 host 纯逻辑 | 规格已就绪（`spec-p2-pure-logic.md`），待 P1-A 完成后派发 |
+| P1 骨架（T-10 P1-A / T-11 P1-B / T-12 README / T-13 skills） | **P1-A 已销账**（`1c418aa`）、**P1-B 已销账**（五门禁全绿，见 §5）；**T-13 skills 迁移进行中**（缺口见 §5）；T-12 README 待办 |
+| P2 host 纯逻辑 | **T-20（P2-A）进行中**（含 D-6 核验）；T-21/T-22/T-23/T-24 待办 |
 | P3 host 路由与状态机 / P4 client / P5 测试迁移 / P6 切换上线 | 待办 |
 
-**下一步动作**：验收 T-10（P1-A 骨架，四条命令 + 产物头部契约）→ 销账并提交 → 派发 T-11（P1-B 装载与挂载）→ 派发 P2-A。
+**下一步动作**：收 T-13（`skills/` 迁移）→ 与 T-11 一并销账并 commit → 收 P2-A（五门禁 + 导出面 diff + D-6 结论）→ 派 P2-B/C/D。
 
 **三条最易丢的约束**：① 迁移源 `../dsh-plugin-file-system` **只读**，冻结于 `3a3f89e`；② 主智能体**不写实现代码**，只做拆解/分配/验收/提交；③ 每步必须**记账（更新本文件）+ commit**。
 
@@ -99,8 +99,9 @@
 | # | 任务 | 状态 | 负责 | 验收证据 | commit |
 |---|---|---|---|---|---|
 | T-10 | **P1-A 工程基础**：`package.json` / tsconfig 四面 / `.oxlintrc.json` / `vitest.config.ts` / `tsdown.config.ts` / `.gitignore` / `LICENSE` + 最小 host、client 入口桩 | **已销账** | 子P1A（主智能体代验收） | 四条命令 exit=0：typecheck / lint（0 warn 0 err）/ test（passWithNoTests）/ build（banner 自检通过）；产物头部契约为 `window.__ModuleLoader__.load({ id: "dsh-plugin-file-system-zc", ...`；覆盖率门槛 `perFile: true` + 四项 100% | `1c418aa` |
-| T-11 | **P1-B 装载与挂载**：`cordis.patch.yml` / `agent.cordis.yml` / `preset.yml`（内容照 `docs/baseline/contracts.md` §B 搬）+ 占位槽（id `fs`，order 12）与占位路由 + REAL-composition 测试；**并须**① 把 host/client 的 `name` 与 `inject` 对齐 `feature-baseline.md` §2.1；② 补做 T-10 未交付的 **D-6 专项**（host/client 同 program 是否触发 `Context` 声明合并冲突） | 进行中 | 子P1B | 过真 Loader 挂载，断言外部可观测状态 | - |
+| T-11 | **P1-B 装载与挂载**：`cordis.patch.yml` / `agent.cordis.yml` / `preset.yml`（内容照 `docs/baseline/contracts.md` §B 搬）+ 占位槽（id `fs`，order 12）与占位路由 + REAL-composition 测试；**并须**① 把 host/client 的 `name` 与 `inject` 对齐 `feature-baseline.md` §2.1；② 补做 T-10 未交付的 **D-6 专项**（host/client 同 program 是否触发 `Context` 声明合并冲突） | **已销账** | 子P1B（**中止后由主智能体代验收**，守 §0.2：只跑门禁读产物，未亲自实现） | **五门禁全绿**（主智能体实测）：`typecheck` exit 0；`lint` 0 错 0 警告（4 files / 80 rules）；`test` 3 passed；`test:coverage` exit 0；`build` 成功（`client/client.js` 1.36 kB + banner 校验通过）。`tests/real-composition.spec.ts`（**178 行**）确为**真过 Loader**：`new Context()` + `ctx.plugin(Loader)` + `builtins.include` + `loader.create()/await()`，**只替换模块解析一道缝**（4 宿主服务用桩，真插件仍从 `../src/host/index.ts` 加载），断言全为外部可观测状态：Loader entry tree（row id 以 `:fs` 结尾、name 为包名）、**真 HTTP loopback**（`/api/fs/__ping` 200 + 未知路由 404，JSON 逐字比对）、槽表（`conversation.view` / `id fs` / `order 12` / label `文件系统`）、`cordis.patch.yml` 与 `package.json` 的 `dsh.bundle.patch` 一致性。**这正是源插件待办 #19 所要求的做法**（真过 Loader 而非自造 ctx 桩）——迁移版正面解决。三件套与入口契约已另行预检通过 | 见 §5 |
 | T-12 | README（对齐主仓结构） | 待办 | - | - | - |
+| T-13 | **`skills/` 目录迁移**（P1-B 遗留缺口）：源 5 技能 13 文件**逐字复制**到本仓 `skills/` + `package.json` 的 `files` 补 `"skills"` | 进行中 | 子P1C | `diff -r` 空输出 + sha256 对照表 + 可执行位一致 + 引用扫描结论，落盘 `docs/p1c-skills-migration.md` | - |
 
 ### P2 host 纯逻辑迁移
 
@@ -110,7 +111,7 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-20 | **P2-A 基础层**：`fs-utils`（238 行/25 导出）+ `locale`（100 行/3 导出，72 键） | 待办 |
+| T-20 | **P2-A 基础层**：`fs-utils`（238 行/25 导出）+ `locale`（100 行/3 导出，72 键）+ D-6 核验 | **进行中**（子P2A，已授权二级委派） |
 | T-21 | **P2-B 书库层**：`book-store` + `book-index` + `issues` | 待办 |
 | T-22 | **P2-C 任务与提示词**：`task-utils` + `prompt-loader` | 待办 |
 | T-23 | **P2-D 能力目录**：`abilities/` 四能力（描述符 + skeleton + doc-render）+ `registry`；`prompt.md` 原样保留 | 待办 |
@@ -230,3 +231,7 @@
 | 2026-09-11 | **新增 §0.3 多级委派规范**（用户指正 P1-B 派发包过大）：① 单包 ≤3 项可独立验收交付物；② prompt 必须显式授权二级委派并给拆分建议；③ 验收与记账仍只在主智能体；④ 使用者须回报「派了哪些子任务、各自结论」。**已即时应用**：向 P1-B（`d5afe9fe`）补发授权，建议其把 D-6 与「REAL-composition 装配方法调研」派给自己的子智能体，自己只负责占位挂载收尾与汇总 |
 | 2026-09-11 | **P1-B REAL-composition 测试验收预检通过**（读 `tests/real-composition.spec.ts`，157 行）：确为**真过 Loader** —— `new Context()` + `ctx.plugin(Loader)` + `loader.builtins.include` + `loader.create()`/`loader.await()`，且**只替换模块解析这一道缝**（4 个宿主服务用桩，真实插件仍从 `../src/host/index.ts` 加载，注释明载"the Loader still parses the composition, builds the entry tree and runs every lifecycle"）；断言均为**外部可观测状态**：Loader 自身 entry tree、**真 HTTP loopback 请求**（`/api/fs/__ping` 200 + 未知路由 404 + JSON 逐字比对）、槽表（`conversation.view` / `id: fs` / `order: 12` / label）。**这正是源插件待办 #19 所要求的做法**（真过 Loader，而非自造 ctx 桩），迁移版正面解决。待绿色输出后销账 |
 | 2026-09-11 | **压缩能力打通并已触发**：调用 `compact_context` 返回 `status:"scheduled"`（"Compaction is queued … as soon as the current turn finishes"）——同时证明 ① 工具对主智能体**可用**；② `cmpct-2/pkg-7` 的 `agentPresets.serviceFor` 通道修复**生效**（若通道未通，返回应为 `unavailable - no compaction instance for this agent`）。压缩将在本轮结束时由 `agent/status` 处理器执行。**压缩后请按 §0.1 恢复上下文**：读本台账 → `docs/feature-baseline.md` → `docs/baseline/*.md` → `docs/spec-*.md`。当前进度快照：P0 完成、P1-A 已销账（`1c418aa`）、**P1-B 待收口**（三件套 ✓ / 契约对齐 ✓ / REAL-composition 测试 ✓ 待绿色输出 / D-6 已授权外派）、P2–P6 待办；累计 26 次提交 |
+| 2026-09-11 | **会话压缩已执行**（`scheduled` 生效）。恢复后主智能体按 §0.1 读回台账，未凭记忆接续 |
+| 2026-09-11 | **T-11（P1-B）收口**：子智能体 `d5afe9fe` running 多轮、产物齐备却始终不交报告（与 T-10 同款停滞模式），按已记录的中止阈值执行 `interrupt_agent`。**主智能体亲自跑五门禁验收**（属验收职责，非实现，符合 §0.2）：**全绿**。`tests/real-composition.spec.ts` 已被 P1-B 扩到 178 行（新增第 3 例：`cordis.patch.yml` 与 `package.json` 的 `dsh.bundle.patch` 一致性），真过 Loader 的断言面完整。**唯一未交付项 = D-6** → 转 P2-A 交付物 3（同一位子智能体顺手核验，避免为一次 tsc 实验单开一轮） |
+| 2026-09-11 | **发现 P1-B 遗留缺口 → 新开 T-13**：`agent.cordis.yml:23` 引用 `new URL('skills/', baseUrl)`，但本仓**无 `skills/` 目录**，且 `package.json` 的 `files` 也**不含 `skills`**（源插件两者都有）。源 `skills/` 为 **5 技能 / 13 文件**（`file-doc`、`folder-doc`、`session-review`、`source-doc`、`translate-doc`）。若不管，技能会挂到空目录 = **功能遗失**（触红线 2）。派子智能体 `5917319f`（子P1C）执行逐字复制 + `files` 补齐 + 引用扫描；**明令其不得跑 npm 门禁命令**（主智能体正在并行跑，避免 tsbuildinfo/产物争用） |
+| 2026-09-11 | **派发 T-20（P2-A 基础层）**：子智能体 `79438ecb`，交付物 3 项 = `locale.ts`（72 键）+ `fs-utils.ts`（25 导出，**分支覆盖须从源实测 88.75% 补到 100%，严禁 `v8 ignore` 或删逻辑回避**）+ D-6 核验。**按 §0.3 显式授权二级委派**（建议：locale / fs-utils 各派一个子任务，自己留 D-6 与收尾门禁），并要求回报二级委派清单

@@ -1,0 +1,10 @@
+# Test-only composition for tests/real-composition.spec.ts (client half).
+#
+# Same real Loader as host.cordis.yml, one row standing in for the client
+# `slots` service, and the client half of the plugin named as the web shell
+# resolves it (`exports["./client"]`).
+- id: test-slots
+  name: '@dsh-test/fs-slots'
+
+- id: fs
+  name: dsh-plugin-file-system-zc/client
