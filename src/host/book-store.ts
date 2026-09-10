@@ -68,7 +68,7 @@ export interface BookStore {
   ensureBookDirAt: (entry: EnsureBookDirEntry) => Promise<void>
   ensureBookDir: () => Promise<void>
   knownBookRoots: () => Promise<BookRootEntry[]>
-  bestRootFor: (abs: string, roots: readonly BookRootEntry[]) => BookRootEntry | null
+  bestRootFor: <T extends { projectRoot: string }>(abs: string, roots: readonly T[]) => T | null
   bookTargetFor: (rel: string) => Promise<BookTarget>
   layerStemSetIn: (bases: readonly string[], sub: string) => Promise<Set<string>>
   docStemSetsIn: (bases: readonly string[]) => Promise<DocStemSets>
@@ -174,9 +174,11 @@ export function createBookStore({ getRoot }: { getRoot: () => string }): BookSto
     return out
   }
   // 包含 abs 的已知项目根中取路径最长（最深、离目标最近）者；无命中返回 null（调用方兜底当前根）。
-  function bestRootFor(abs: string, roots: readonly BookRootEntry[]): BookRootEntry | null {
+  // 只读元素的 projectRoot 并把元素本身原样返回：两个调用点的入参形状不同（knownBookRoots 的
+  // {projectRoot,bucket,dir} 与 cachedBookView 的 {projectRoot,bucket,sets}），故按元素类型泛型化。
+  function bestRootFor<T extends { projectRoot: string }>(abs: string, roots: readonly T[]): T | null {
     const sep = process.platform === 'win32' ? '\\' : '/'
-    let best: BookRootEntry | null = null
+    let best: T | null = null
     for (const r of roots) {
       const p = r.projectRoot
       if (abs === p || abs.startsWith(p + sep)) {
