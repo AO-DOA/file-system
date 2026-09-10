@@ -226,7 +226,7 @@ export function apply(ctx: FsHostContext): void {
         size += buf.length
         if (size > BODY_LIMIT) {
           settled = true
-          rejectBody(Object.assign(new Error('body too large'), { statusCode: 413 }))
+          rejectBody(Object.assign(new Error(ZH.errBodyTooLarge), { statusCode: 413 }))
           if (typeof req.destroy === 'function') req.destroy()
           return
         }
@@ -363,7 +363,7 @@ export function apply(ctx: FsHostContext): void {
           try {
             payload = JSON.parse(body) as FsPayload
           } catch {
-            json(res, 400, { ok: false, error: 'invalid json body' })
+            json(res, 400, { ok: false, error: ZH.errInvalidJsonBody })
             return
           }
         }
@@ -372,7 +372,7 @@ export function apply(ctx: FsHostContext): void {
           if (payload.path) {
             const st = await fsp.stat(payload.path).catch(() => null)
             if (!st || !st.isDirectory()) {
-              json(res, 400, { ok: false, error: 'not a directory: ' + payload.path })
+              json(res, 400, { ok: false, error: ZH.errNotADirectoryWith + payload.path })
               return
             }
             root = payload.path
@@ -387,7 +387,7 @@ export function apply(ctx: FsHostContext): void {
           // 而越权检查写作 `abs !== root && !abs.startsWith(root + sep)`，root 自身会被放行。
           const rel = payload.path
           if (typeof rel !== 'string' || rel === '') {
-            json(res, 400, { ok: false, error: 'path required' })
+            json(res, 400, { ok: false, error: ZH.errPathRequired })
             return
           }
           const abs = resolveIn(root, rel)
@@ -400,7 +400,7 @@ export function apply(ctx: FsHostContext): void {
           // 同 /write：path 必填（G-1）；缺失时 mkdir -p 的目标会退化成 root 本身。
           const rel = payload.path
           if (typeof rel !== 'string' || rel === '') {
-            json(res, 400, { ok: false, error: 'path required' })
+            json(res, 400, { ok: false, error: ZH.errPathRequired })
             return
           }
           const abs = resolveIn(root, rel)
@@ -413,7 +413,7 @@ export function apply(ctx: FsHostContext): void {
           // 紧接着的 rm(recursive, force) 参数就是整个工作区根（实测已复现整根被删）。
           const rel = payload.path
           if (typeof rel !== 'string' || rel === '') {
-            json(res, 400, { ok: false, error: 'path required' })
+            json(res, 400, { ok: false, error: ZH.errPathRequired })
             return
           }
           const abs = resolveIn(root, rel)
@@ -422,7 +422,7 @@ export function apply(ctx: FsHostContext): void {
           // 自身，管不到这一层——而删除根本身在任何写法下都是全损操作，与「path 是否合法」
           // 是两个层次的问题。
           if (abs === root) {
-            json(res, 400, { ok: false, error: 'refusing to delete the workspace root' })
+            json(res, 400, { ok: false, error: ZH.errRefuseDeleteRoot })
             return
           }
           await fsp.rm(abs, { recursive: true, force: true })
@@ -433,7 +433,7 @@ export function apply(ctx: FsHostContext): void {
           // 后台触发单篇 folder/file/source 文档生成；立即返回，前端用 taskId 轮询 gen-status 看结果。
           const kind = payload.kind as string
           if (!abilityOf(kind)) {
-            json(res, 400, { ok: false, error: 'unknown gen kind: ' + kind })
+            json(res, 400, { ok: false, error: ZH.errUnknownGenKindWith + kind })
             return
           }
           const rel = payload.path || '.'
@@ -493,7 +493,7 @@ export function apply(ctx: FsHostContext): void {
           // 后台触发项目内一篇 md 文档的中文翻译；立即返回，前端用 taskId 轮询 gen-status。
           const rel = payload.path
           if (!rel) {
-            json(res, 400, { ok: false, error: 'path required' })
+            json(res, 400, { ok: false, error: ZH.errPathRequired })
             return
           }
           if (!isMdPath(rel)) {
@@ -541,7 +541,7 @@ export function apply(ctx: FsHostContext): void {
           json(res, 200, { ok: true, started: true, taskId, docRel })
           return
         }
-        json(res, 404, { ok: false, error: 'unknown route: ' + seg })
+        json(res, 404, { ok: false, error: ZH.errUnknownRouteWith + seg })
         return
       }
 
@@ -631,7 +631,7 @@ export function apply(ctx: FsHostContext): void {
       if (seg === 'read') {
         const rel = query.get('path')
         if (!rel) {
-          json(res, 400, { ok: false, error: 'path required' })
+          json(res, 400, { ok: false, error: ZH.errPathRequired })
           return
         }
         // 书库逻辑文档：白名单解析。无桶形状（<层名>/<stem>.md）→ 当前工作区根双位置
@@ -642,7 +642,7 @@ export function apply(ctx: FsHostContext): void {
         if (isBookDocRel(rel)) {
           const parsed = parseBookDocRel(rel)
           if (!parsed) {
-            json(res, 400, { ok: false, error: 'invalid book doc rel: ' + rel })
+            json(res, 400, { ok: false, error: ZH.errInvalidBookDocRelWith + rel })
             return
           }
           let candidates: string[]
@@ -682,7 +682,7 @@ export function apply(ctx: FsHostContext): void {
         json(res, 200, { content, ext, size: stat.size })
         return
       }
-      json(res, 404, { ok: false, error: 'unknown route: ' + seg })
+      json(res, 404, { ok: false, error: ZH.errUnknownRouteWith + seg })
       return
     } catch (err) {
       // 业务错误可带 statusCode（如 readBody 的 413）；默认 500。

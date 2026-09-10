@@ -1,12 +1,14 @@
 // dsh-plugin-fs — 产品文案字典（src/shared/locale.ts）单元测试。
 // 只断言外部行为：字典内容（键与文案逐字）、LANG 注册表、t() 的取值/回退/缺键语义。
 // 迁移自迁移源 tests/client-md-utils.test.js 的「locale 字典契约」段，并把 72 键扩为全量对照；
-// 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键）同步登记在此表，键序与 ZH 逐位一致。
+// 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键、第 2 批 B 类 10 键）同步登记在此表，
+// 键序与 ZH 逐位一致。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { LANG, ZH, t } from '../src/shared/locale'
 
-// 迁移源 src/shared/locale.js:5-90 的全量键值对照表（迁移源 72 键逐字抄录 + 第 1 批 A 类 12 键）。
+// 迁移源 src/shared/locale.js:5-90 的全量键值对照表（迁移源 72 键逐字抄录 + 第 1 批 A 类 12 键
+// + 第 2 批 B 类 10 键）。
 // 任何键名/文案漂移都会让 toEqual 失败——这是「文案字典不可擅改」的机器护栏。
 const EXPECTED_ZH: Record<string, string> = {
   // 槽位/页签
@@ -103,6 +105,17 @@ const EXPECTED_ZH: Record<string, string> = {
   errSrcAlreadyZh: '源文档已是简体中文，无需翻译: ',
   errUnreadableFile: '目标不是可读文件: ',
   errUnreadableDir: '目标不是可读文件夹: ',
+  // host 错误串 · 第 2 批 B 类（协议/安全/防御；文案逐字沿用原字面量）
+  errBodyTooLarge: 'body too large',
+  errInvalidJsonBody: 'invalid json body',
+  errNotADirectoryWith: 'not a directory: ',
+  errPathRequired: 'path required',
+  errRefuseDeleteRoot: 'refusing to delete the workspace root',
+  errUnknownGenKindWith: 'unknown gen kind: ',
+  errUnknownRouteWith: 'unknown route: ',
+  errInvalidBookDocRelWith: 'invalid book doc rel: ',
+  errEmptyProjectPath: 'cannot encode an empty project path',
+  errPathEscape: 'path escapes workspace root',
   // client api() 错误兜底（宿主未给 d.error 时上状态栏）
   errHttpPrefix: 'HTTP ',
   errRequestFailed: 'request failed',
@@ -113,9 +126,9 @@ afterEach(() => {
 })
 
 describe('ZH 字典', () => {
-  it('全量 84 键与文案逐字一致（键名、顺序、值均不可漂移）', () => {
+  it('全量 94 键与文案逐字一致（键名、顺序、值均不可漂移）', () => {
     expect(Object.keys(ZH)).toEqual(Object.keys(EXPECTED_ZH))
-    expect(Object.keys(ZH)).toHaveLength(84)
+    expect(Object.keys(ZH)).toHaveLength(94)
     expect(ZH).toEqual(EXPECTED_ZH)
   })
 
@@ -188,12 +201,22 @@ const MOVED_STRINGS: Array<[string, string]> = [
   ['errUnreadableDir', '目标不是可读文件夹: '],
 ]
 
-/** 搬走后源码里不得再出现的原文（按文件分组；含引号的按原样带引号匹配）。 */
+/** 搬走后源码里不得再出现的原文（按文件分组；含引号的按原样带引号匹配）。
+ *  第 1 批 A 类 + 第 2 批 B 类共用本表：A 类的四处由第 1 批登记，index.ts 项与 fs-utils /
+ *  gen-executor 两项由第 2 批扩入。`path required` 带单引号匹配，以免命中 index.ts:385
+ *  注释里反引号包裹的文档性提及（那不是字面量）。 */
 const NO_LITERAL: Array<[string, string[]]> = [
-  ['src/host/index.ts', ["'not a file'", "'not a file: '", 'file too large:', "'task not found'"]],
+  ['src/host/index.ts', [
+    "'not a file'", "'not a file: '", 'file too large:', "'task not found'",
+    "'body too large'", "'invalid json body'", "'not a directory: '", "'path required'",
+    "'refusing to delete the workspace root'", "'unknown gen kind: '", "'unknown route: '",
+    "'invalid book doc rel: '",
+  ]],
   ['src/host/abilities/translate-doc/index.ts', ['源文档不存在: ', '源文档过大（> ', '源文档已是简体中文，无需翻译: ']],
   ['src/host/abilities/source-doc/skeleton.ts', ['目标不是可读文件: ']],
   ['src/host/abilities/folder-doc/skeleton.ts', ['目标不是可读文件夹: ']],
+  ['src/host/fs-utils.ts', ["'cannot encode an empty project path'", "'path escapes workspace root'"]],
+  ['src/host/gen-executor.ts', ["'unknown gen kind: '"]],
 ]
 
 describe('A 类文案字典化（第 1 批）', () => {
@@ -218,5 +241,44 @@ describe('A 类文案字典化（第 1 批）', () => {
         expect(text.includes(literal), file + ' 残留裸串: ' + literal).toBe(false)
       }
     }
+  })
+})
+
+// ---- B 类文案字典化：搬迁对照（第 2 批，2026-09-11）----
+// 协议/安全/防御类串（400/404/413 的 error 文案与越权抛错）。与 A 类同一套判据，值同样取自
+// 搬迁前的源码原文（HEAD 版）；回潮拦截复用上面扩展后的 NO_LITERAL 表，故此处不再重复扫描。
+const MOVED_STRINGS_B: Array<[string, string]> = [
+  ['errBodyTooLarge', 'body too large'],
+  ['errInvalidJsonBody', 'invalid json body'],
+  ['errNotADirectoryWith', 'not a directory: '],
+  ['errPathRequired', 'path required'],
+  ['errRefuseDeleteRoot', 'refusing to delete the workspace root'],
+  ['errUnknownGenKindWith', 'unknown gen kind: '],
+  ['errUnknownRouteWith', 'unknown route: '],
+  ['errInvalidBookDocRelWith', 'invalid book doc rel: '],
+  ['errEmptyProjectPath', 'cannot encode an empty project path'],
+  ['errPathEscape', 'path escapes workspace root'],
+]
+
+describe('B 类文案字典化（第 2 批）', () => {
+  it('10 个新键的字典值逐字等于搬迁前的原字面量', () => {
+    for (const [key, original] of MOVED_STRINGS_B) {
+      expect((ZH as Record<string, string>)[key], key).toBe(original)
+    }
+  })
+
+  it('含变量的四个前缀串按原拼接顺序复现后，与原串逐字相同', () => {
+    expect(ZH.errNotADirectoryWith + '/nope').toBe('not a directory: /nope')
+    expect(ZH.errUnknownGenKindWith + 'nope').toBe('unknown gen kind: nope')
+    expect(ZH.errUnknownRouteWith + 'nope').toBe('unknown route: nope')
+    expect(ZH.errInvalidBookDocRelWith + '../a.md').toBe('invalid book doc rel: ../a.md')
+  })
+
+  it('多处共用的文案只登记一个键（path required ×5、unknown route ×2、unknown gen kind ×2）', () => {
+    const keys = Object.keys(ZH)
+    const z = ZH as Record<string, string>
+    expect(keys.filter(k => z[k] === 'path required')).toEqual(['errPathRequired'])
+    expect(keys.filter(k => z[k] === 'unknown route: ')).toEqual(['errUnknownRouteWith'])
+    expect(keys.filter(k => z[k] === 'unknown gen kind: ')).toEqual(['errUnknownGenKindWith'])
   })
 })

@@ -313,10 +313,12 @@ function parseJson(body: string): unknown {
 }
 
 /**
- * A 类文案字典化守卫（第 1 批 A 类，2026-09-11）：把「上屏错误确实取自 locale 字典」变成机械断言。
- * 判据：取值等于某个字典值，或以某个字典值开头——含变量的串由调用方在代码里拼接，故只命中前缀。
- * 只挂在 A 类已字典化的用例上：B/C 类串（`path required` / `path escapes workspace root` …）
- * 尚未字典化，挂上去是假红。「有人改回裸串」这条回潮由 tests/locale.spec.ts 的源码扫描守卫拦。
+ * 文案字典化守卫（第 1 批 A 类 + 第 2 批 B 类，2026-09-11）：把「上屏错误确实取自 locale 字典」
+ * 变成机械断言。判据：取值等于某个字典值，或以某个字典值开头——含变量的串由调用方在代码里
+ * 拼接，故只命中前缀。
+ * 只挂在已字典化的用例上：C 类诊断串（`子 agent 已结束…` / `agentLoop 服务不可用` 等，
+ * 含绝对路径的开发者诊断语）尚未字典化，挂上去是假红。「有人改回裸串」这条回潮由
+ * tests/locale.spec.ts 的源码扫描守卫拦（运行时取值守卫对同值裸串不敏感）。
  * @param error - 响应体里的 error 字段。
  */
 function expectDictError(error: unknown): void {
@@ -587,11 +589,13 @@ describe('apply 装配与 __fsTest 句柄', () => {
     const emptyOut = await dispatch(route, createReq('GET', '/api/fs/'))
     expect(emptyOut.status).toBe(404)
     expect(emptyOut.json).toEqual({ ok: false, error: 'unknown route: ' })
+    expectDictError((emptyOut.json as ErrorBody).error)
 
     // POST 兜底 404（同样先读 body）
     const postOut = await dispatch(route, createReq('POST', '/api/fs/nope', {}))
     expect(postOut.status).toBe(404)
     expect(postOut.json).toEqual({ ok: false, error: 'unknown route: nope' })
+    expectDictError((postOut.json as ErrorBody).error)
   })
 
   it('apply 无 sandboxPolicy 时 root 回退 process.cwd()（源 index.ts:145 的兜底支）', () => {
@@ -969,6 +973,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/set-root', { path: missing }), 'set-root')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('not a directory: ' + missing)
+    expectDictError((out.json as ErrorBody).error)
     expect(fsTest.getRoot()).toBe(root)
   })
 
@@ -982,6 +987,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/set-root', { path: file }), 'set-root')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('not a directory: ' + file)
+    expectDictError((out.json as ErrorBody).error)
     expect(fsTest.getRoot()).toBe(root)
   })
 
@@ -1026,6 +1032,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTestOf(ctx), createReq('POST', '/api/fs/write', { path: '../outside.txt', content: 'evil' }), 'write')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('path escapes workspace root')
+    expectDictError((out.json as ErrorBody).error)
     await expect(stat(join(root, '..', 'outside.txt'))).rejects.toThrow()
   })
 
@@ -1038,6 +1045,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     // 修复后：校验卡在 resolveIn 之前 → 400，且根目录不被触碰。
     expect(out.status).toBe(400)
     expect(out.json).toEqual({ ok: false, error: 'path required' })
+    expectDictError((out.json as ErrorBody).error)
     expect((await stat(root)).isDirectory()).toBe(true)
   })
 
@@ -1055,6 +1063,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const escaped = await call(fsTest, createReq('POST', '/api/fs/mkdir', { path: '../evil' }), 'mkdir')
     expect(escaped.status).toBe(400)
     expect((escaped.json as ErrorBody).error).toBe('path escapes workspace root')
+    expectDictError((escaped.json as ErrorBody).error)
   })
 
   it('mkdir 无 path → 400 path required，不再对工作区根 mkdir -p（G-1 修复，源 D-10 锁定已解除）', async () => {
@@ -1065,6 +1074,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     // 修复前：abs === root，mkdir -p 幂等 → 200（把「缺参数」静默当成功）。
     expect(out.status).toBe(400)
     expect(out.json).toEqual({ ok: false, error: 'path required' })
+    expectDictError((out.json as ErrorBody).error)
     expect((await stat(root)).isDirectory()).toBe(true)
   })
 
@@ -1089,6 +1099,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const escaped = await call(fsTest, createReq('POST', '/api/fs/delete', { path: '../evil' }), 'delete')
     expect(escaped.status).toBe(400)
     expect((escaped.json as ErrorBody).error).toBe('path escapes workspace root')
+    expectDictError((escaped.json as ErrorBody).error)
 
     // force:true：目标不存在也 200（幂等删除）
     const again = await call(fsTest, createReq('POST', '/api/fs/delete', { path: 'dir' }), 'delete')
@@ -1106,6 +1117,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/delete', {}), 'delete')
     expect(out.status).toBe(400)
     expect(out.json).toEqual({ ok: false, error: 'path required' })
+    expectDictError((out.json as ErrorBody).error)
     // 修复前：abs === root 从越权检查 `abs !== root && ...` 里通过 → rm(root, {recursive, force})
     // 删掉整个工作区根（实测 stat(root) 由 true 变 false）。
     // 修复后：校验先于 resolveIn，根目录与其内容原样保留（root 变量本就一直不变）。
@@ -1207,6 +1219,7 @@ describe('G-1/G-1b：写路由 path 必填，且 /delete 拒绝工作区根自�
       const out = await call(fsTest, createReq('POST', '/api/fs/delete', { path: rel }), 'delete')
       const err = out.json as ErrorBody
       seen.push(rel + ' → ' + String(out.status) + ' ' + String(err.ok) + ' ' + String(err.error))
+      expectDictError(err.error)
       expect((await stat(join(root, 'keep.txt'))).isFile()).toBe(true)
       expect((await stat(join(root, 'sub'))).isDirectory()).toBe(true)
     }
@@ -1235,6 +1248,7 @@ describe('POST body 读取与上限', () => {
     const out = await call(fsTestOf(ctx), createReq('POST', '/api/fs/write', '{bad json'), 'write')
     expect(out.status).toBe(400)
     expect(out.json).toEqual({ ok: false, error: 'invalid json body' })
+    expectDictError((out.json as ErrorBody).error)
   })
 
   it('POST body 超过 10MB → 413 body too large，并 destroy 未读完的请求（源 §A 的 413 分支）', async () => {
@@ -1255,6 +1269,7 @@ describe('POST body 读取与上限', () => {
     const out = await call(fsTest, req, 'write')
     expect(out.status).toBe(413)
     expect(out.json).toEqual({ ok: false, error: 'body too large' })
+    expectDictError((out.json as ErrorBody).error)
     expect(destroyed).toBe(true)
   })
 
@@ -1273,6 +1288,7 @@ describe('POST body 读取与上限', () => {
     const out = await call(fsTestOf(ctx), req, 'mkdir')
     expect(out.status).toBe(413)
     expect(out.json).toEqual({ ok: false, error: 'body too large' })
+    expectDictError((out.json as ErrorBody).error)
   })
 
   it('end 之后的迟到 data 分片被丢弃，不改写已解析的 body（源 index.ts:224 的 settled 守卫）', async () => {
@@ -1443,10 +1459,12 @@ describe('POST /gen-doc', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/gen-doc', { kind: 'nope', path: 'src' }), 'gen-doc')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('unknown gen kind: nope')
+    expectDictError((out.json as ErrorBody).error)
 
     const empty = await call(fsTest, createReq('POST', '/api/fs/gen-doc'), 'gen-doc')
     expect(empty.status).toBe(400)
     expect((empty.json as ErrorBody).error).toBe('unknown gen kind: undefined')
+    expectDictError((empty.json as ErrorBody).error)
   })
 
   it('gen-doc 对 markdown 文件拒绝生成 L2/L3，folder 目标不受限（源 :290）', async () => {
@@ -1542,6 +1560,7 @@ describe('POST /gen-doc', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/gen-doc', { kind: 'folder', path: '../outside' }), 'gen-doc')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('path escapes workspace root')
+    expectDictError((out.json as ErrorBody).error)
     expect(fsTest.genTasks.size).toBe(0)
   })
 
@@ -1627,6 +1646,7 @@ describe('POST /translate', () => {
     const noPath = await call(fsTest, createReq('POST', '/api/fs/translate', {}), 'translate')
     expect(noPath.status).toBe(400)
     expect((noPath.json as ErrorBody).error).toBe('path required')
+    expectDictError((noPath.json as ErrorBody).error)
   })
 
   it('translate 重复请求复用进行中的 taskId（源 :436）', async () => {
@@ -1685,6 +1705,7 @@ describe('POST /translate', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/translate', { path: '../outside.md' }), 'translate')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('path escapes workspace root')
+    expectDictError((out.json as ErrorBody).error)
     expect(fsTest.genTasks.size).toBe(0)
   })
 })
@@ -1749,6 +1770,7 @@ describe('GET /read', () => {
     const noPath = await call(fsTest, createReq('GET', '/api/fs/read'), 'read')
     expect(noPath.status).toBe(400)
     expect((noPath.json as ErrorBody).error).toBe('path required')
+    expectDictError((noPath.json as ErrorBody).error)
   })
 
   it('read 书库白名单：../../ 穿越、四层外、非法结构 rel 与带反斜杠的叶子均被拒绝（源 :468）', async () => {
@@ -1761,6 +1783,7 @@ describe('GET /read', () => {
     const escape = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('../../etc/passwd')), 'read')
     expect(escape.status).toBe(400)
     expect((escape.json as ErrorBody).error).toBe('path escapes workspace root')
+    expectDictError((escape.json as ErrorBody).error)
 
     // 命中「层名开头」形状但层名在白名单四层外 → 不是书库 rel，按普通项目文件解析 → 不存在
     const offLayer = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('其他层/a.md')), 'read')
@@ -1775,6 +1798,7 @@ describe('GET /read', () => {
     )
     expect(traversal.status).toBe(400)
     expect((traversal.json as ErrorBody).error).toMatch(/invalid book doc rel/)
+    expectDictError((traversal.json as ErrorBody).error)
 
     // 层段数与首段不符（3 段但首段不是 '@桶名'）→ 不是书库 rel，按普通项目文件解析 → 不存在
     const deep = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/a/b.md')), 'read')
@@ -1786,6 +1810,7 @@ describe('GET /read', () => {
     const backslash = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/a\\b.md')), 'read')
     expect(backslash.status).toBe(400)
     expect((backslash.json as ErrorBody).error).toMatch(/invalid book doc rel/)
+    expectDictError((backslash.json as ErrorBody).error)
 
     // 白名单层内但文件不存在 → 404
     const notFound = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/no-such.md')), 'read')

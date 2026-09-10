@@ -13,6 +13,7 @@ import { abilityOf } from './abilities/registry.ts'
 import { upsertBookIndex } from './book-index.ts'
 import type { BookStore } from './book-store.ts'
 import { TASK_TIMEOUT_MS, genAgentPreset, onDisposeFailure, withTimeout } from './task-utils.ts'
+import { ZH } from '../shared/locale.ts'
 
 // ---- 注入面（类型层，运行时无对应物）----
 // 与 src/host/index.ts 同一策略：只声明真正触达的成员，不 import 具体服务包，
@@ -225,7 +226,7 @@ export function createGenExecutor(deps: GenExecutorDeps): RunGenDoc {
 
   return async function runGenDoc(rel: string, kind: string, taskId: string): Promise<void> {
     const ability: GenAbility | undefined = abilityOf(kind)
-    if (!ability) throw new Error('unknown gen kind: ' + kind)
+    if (!ability) throw new Error(ZH.errUnknownGenKindWith + kind)
     const agentLoop = ctx.get('agentLoop') as AgentLoopSurface | undefined
     if (!agentLoop) throw new Error('agentLoop 服务不可用')
     // 写定向：目标归属「包含它的最深已知项目根」的桶（跨工作区共享，单一事实源）；

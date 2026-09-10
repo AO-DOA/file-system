@@ -103,6 +103,20 @@ export const ZH = {
   errSrcAlreadyZh: '源文档已是简体中文，无需翻译: ',
   errUnreadableFile: '目标不是可读文件: ',
   errUnreadableDir: '目标不是可读文件夹: ',
+  // host 协议/安全/防御类错误串 · 第 2 批 B 类（同上：只搬家不改写，值与原字面量逐字相同）。
+  // 「固定前缀 + 变量」式串沿用 …With 后缀（先例 errNotAFileWith）；无变量的直取。
+  // errPathRequired 由 index.ts 的 5 处共用（/write、/mkdir、/delete、/translate、/read）；
+  // errUnknownGenKindWith 由 index.ts 的路由预检与 gen-executor.ts 的执行器兜底共用。
+  errBodyTooLarge: 'body too large',
+  errInvalidJsonBody: 'invalid json body',
+  errNotADirectoryWith: 'not a directory: ',
+  errPathRequired: 'path required',
+  errRefuseDeleteRoot: 'refusing to delete the workspace root',
+  errUnknownGenKindWith: 'unknown gen kind: ',
+  errUnknownRouteWith: 'unknown route: ',
+  errInvalidBookDocRelWith: 'invalid book doc rel: ',
+  errEmptyProjectPath: 'cannot encode an empty project path',
+  errPathEscape: 'path escapes workspace root',
   // client api() 错误兜底（宿主未给 d.error 时上状态栏）
   errHttpPrefix: 'HTTP ',
   errRequestFailed: 'request failed',

@@ -2,6 +2,7 @@
 // 这些函数不依赖 DSH ctx，便于单元测试；宿主入口 lib/host/index.js 直接 import 使用。
 import { resolve, basename, extname, join } from 'node:path'
 import { homedir } from 'node:os'
+import { ZH } from '../shared/locale.ts'
 
 // 书库根：$DSH_HOME/books（process.env.DSH_HOME 优先；缺省 join(os.homedir(), '.dsh', 'books')）。
 export function booksRoot(): string {
@@ -15,7 +16,7 @@ export function booksRoot(): string {
 // 4 位补零；'~' 自身亦转义），首尾包 '--'，slug 段截断 251 字符；空串抛错。
 export function projectKey(p: string | null | undefined): string {
   const cwd = String(p == null ? '' : p)
-  if (cwd.length === 0) throw new Error('cannot encode an empty project path')
+  if (cwd.length === 0) throw new Error(ZH.errEmptyProjectPath)
   let readable = ''
   let separatorRun = false
   for (let i = 0; i < cwd.length; i++) {
@@ -155,7 +156,7 @@ export function resolveIn(root: string, pathArg?: string | null): string {
   const sep = process.platform === 'win32' ? '\\' : '/'
   const abs = resolve(root, pathArg == null ? '.' : String(pathArg))
   if (abs !== root && !abs.startsWith(root + sep)) {
-    const err = new Error('path escapes workspace root') as PathEscapeError
+    const err = new Error(ZH.errPathEscape) as PathEscapeError
     err.statusCode = 400
     throw err
   }
