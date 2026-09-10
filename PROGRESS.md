@@ -93,50 +93,62 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-20 | `fs-utils`（路径解析等） | 待办 |
-| T-21 | `book-store`（书库定位） | 待办 |
-| T-22 | `book-index`（`index.json` upsert） | 待办 |
-| T-23 | `issues`（问题台账） | 待办 |
-| T-24 | `task-utils`（超时与预设） | 待办 |
-| T-25 | `prompt-loader`（提示词按能力定位） | 待办 |
-| T-26 | `abilities/`（四能力描述符 + skeleton + doc-render） | 待办 |
-| T-27 | P2 阶段验收（四门禁 + 纯逻辑 per-file 100%） | 待办 |
+> 规格：`docs/spec-p2-pure-logic.md`。派发单元 A→B/C/D（A 为前置，其余可并行）。
+
+| # | 任务 | 状态 |
+|---|---|---|
+| T-20 | **P2-A 基础层**：`fs-utils`（238 行/25 导出）+ `locale`（100 行/3 导出，72 键） | 待办 |
+| T-21 | **P2-B 书库层**：`book-store` + `book-index` + `issues` | 待办 |
+| T-22 | **P2-C 任务与提示词**：`task-utils` + `prompt-loader` | 待办 |
+| T-23 | **P2-D 能力目录**：`abilities/` 四能力（描述符 + skeleton + doc-render）+ `registry`；`prompt.md` 原样保留 | 待办 |
+| T-24 | P2 阶段验收（四门禁 + 本阶段新增文件 file 级 行/函数/分支 100%） | 待办 |
 
 ### P3 host 路由与状态机
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-30 | `/api/fs/*` 路由全量迁移（形状逐条比对） | 待办 |
-| T-31 | 任务状态机（生成/翻译任务生命周期） | 待办 |
-| T-32 | `gen-executor` / `translate-executor` | 待办 |
-| T-33 | 子 agent 编排（预设、超时、工具面白名单） | 待办 |
-| T-34 | host 错误通道字典化（现插件待办 #20 一并解决） | 待办 |
-| T-35 | P3 阶段验收 | 待办 |
+> 规格：`docs/spec-p3-host-routes.md`。**本阶段风险最高**（承载 `/api/fs/*` 对外契约）。
+
+| # | 任务 | 状态 |
+|---|---|---|
+| T-30 | **P3-A 路由层**：11 条 `/api/fs/*`（入参/出参/错误码逐条对照 `baseline/host.md` §A） | 待办 |
+| T-31 | **P3-B 任务状态机**：4 态 / 11 迁移点 / 去重键 / sweep 兜底 | 待办 |
+| T-32 | **P3-C 执行器**：`gen-executor` + `translate-executor`（子 agent 编排、动态 import、不打 `origin:subagent`） | 待办 |
+| T-33 | P3 阶段验收；**并将 `src/host/index.ts` 移出 `vitest.config.ts` 覆盖率排除项**（它此时已是真实路由文件） | 待办 |
 
 ### P4 client
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-40 | `md-utils`（frontmatter / 文件名，无 DOM 纯逻辑） | 待办 |
-| T-41 | conversation.view 槽注册（id `fs`，order 12） | 待办 |
-| T-42 | 树 / 查看 / 编辑组件迁移 | 待办 |
-| T-43 | 工作区切换与 localStorage 恢复 | 待办 |
-| T-44 | P4 阶段验收（jsdom 下的组件测试） | 待办 |
+> 规格：`docs/spec-p4-client.md`。决策 **D-11：`.tsx` + JSX**。逐段对照 `baseline/client.md` 的 171 功能点。
+
+| # | 任务 | 状态 |
+|---|---|---|
+| T-40 | **P4-A** `md-utils`（纯逻辑，无 DOM；file 级三 100%） | 待办 |
+| T-41 | **P4-B** 槽位注册（`conversation.view` / id `fs` / order 12）+ 样式 effect + UI 骨架 | 待办 |
+| T-42 | **P4-C** 树与查看器（懒加载、蓝点两种行为、12 条渲染分支） | 待办 |
+| T-43 | **P4-D** 打开状态与生成/翻译（`useOpenedViewer`、读取扇出、轮询） | 待办 |
+| T-44 | **P4-E** 持久化与工作区（`fs.ui.v1`、启动恢复、拖宽、工作区切换） | 待办 |
+| T-45 | P4 阶段验收（jsdom 组件测试 + 171 功能点对照表） | 待办 |
 
 ### P5 测试迁移
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-50 | 135 例 node:test → vitest（含并发/时序类用例） | 待办 |
-| T-51 | 覆盖率补齐至 per-file 100%（含分支） | 待办 |
+> 规格：`docs/spec-p5-p6-tests-and-cutover.md`。
+
+| # | 任务 | 状态 |
+|---|---|---|
+| T-50 | 135 例 node:test → vitest（**时序辅助函数语义必须保留**：`waitSettled`/`waitTaskRegistered`/`waitTaskSettled`） | 待办 |
+| T-51 | 覆盖率补齐至 file 级 行/函数/**分支** 100%（含 Win32 分支等已知缺口） | 待办 |
 
 ### P6 切换上线
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-60 | profile 链接切换（`~/.dsh/profiles/web`） | 待办 |
-| T-61 | 重启 dsh web + 人工冒烟 4 项 | 待办 |
-| T-62 | 收口：台账同步 + 交付摘要归档 | 待办 |
+| T-60 | profile 链接切换（`~/.dsh/profiles/web`，先备份 + `--dump-config` 验层） | 待办 |
+| T-61 | 重启 dsh web + 人工冒烟 4 项（**需用户在座**：重启会中断当前会话） | 待办 |
+| T-62 | 收口：交付摘要（**必须显著标注 G-1 高危**、G-1~G-11 已知行为、与主仓风格的有意差异） | 待办 |
 
 ---
 
