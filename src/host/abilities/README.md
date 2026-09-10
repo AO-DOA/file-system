@@ -49,9 +49,9 @@
 | `${docPath}` | 产物文档绝对路径 | `/…/目录概览/scripts.md` |
 | `${docStem}` | 产物文档名（不含 `.md`；L2 由宿主 `computeDocStem()` 命名、L3 即技能脚本 `--name` 的值，L1 由宿主直接命名） | `scripts` |
 | `${skeleton}` | 宿主渲染好的骨架全文（**仅 L1/L2 注入**）：L1 目录骨架（frontmatter「源码路径 / 层级: 目录 / 生成时间」+ 标题 + 路径 + 三处语义占位 + `## 目录树` 围栏，**每个节点后带 `# <作用>` 占位**，模型逐项替换为「是做什么的」一句话）；L2 文件骨架（frontmatter「源码路径 / 层级: 文件 / 生成时间」+ 标题 + 路径 + 四个章节标题 + 导出表头）。**L3 该变量为空**——骨架体量大，改为落盘（见下两行） | （整篇骨架文本） |
-| `${skeletonPath}` | **L3 专用**：骨架落盘后的绝对路径（`${cwd}/skeleton-<目标文件名>.txt`），模型 `read` / `edit` 的对象 | `/…/books/session/skeleton-index.js.txt` |
+| `${skeletonPath}` | **L3 专用**：骨架落盘后的绝对路径（`${cwd}/skeleton-<taskId>.txt`，**按任务 ID 唯一，不按目标文件名**——`cwd` 是进程级共享目录，`basename` 不足以区分并发任务：`src/a.js` 与 `lib/a.js` 的 basename 同为 `a.js`，共用骨架会让先完成者的 `finalize` 删掉对方仍在用的骨架，后完成者 `verify` 报「骨架文件不存在」），模型 `read` / `edit` 的对象 | `/…/books/session/skeleton-fsgen-1a2b3c4d-….txt` |
 | `${skeletonLines}` | **L3 专用**：骨架行数（提示词据此要求模型分段读；= `String(skeleton).split('\n').length`） | `312` |
-| `${srcName}` | 目标文件名（`basename`，翻译层标题与临时骨架命名用） | `index.js` |
+| `${srcName}` | 目标文件名（`basename`，仅翻译层标题与验收用；L3 骨架已不按文件名命名） | `index.js` |
 | `${cwd}` | 子 agent 统一工作目录（临时骨架落这里，不落书库/源码内） | `/…/books/session` |
 | `${generatedAt}` | 生成时间戳 `YYYY-MM-DD HH:mm`（翻译层 frontmatter 用，模型照抄） | `2026-09-08 23:41` |
 | `${layer}` | frontmatter 层级值 | `目录` / `文件` / `源码` / `文章翻译` |
@@ -93,7 +93,7 @@
 
 | 字段 | 语义 | 谁消费 |
 |---|---|---|
-| `skeletonFile: true` | 骨架**不注入提示词**，由执行器写到 `join(cwd, 'skeleton-' + basename(abs) + '.txt')`；提示词只给 `${skeletonPath}` / `${skeletonLines}` | `gen-executor.ts` 派发前 |
+| `skeletonFile: true` | 骨架**不注入提示词**，由执行器写到 `join(cwd, 'skeleton-' + taskId + '.txt')`（按 taskId 唯一，见 `${skeletonPath}` 行）；提示词只给 `${skeletonPath}` / `${skeletonLines}` | `gen-executor.ts` 派发前 |
 | `hostBuild: true` | 产物**由宿主写盘**（`finalize`）：跳过「产物 mtime/size 未变化」空转校验，改由能力 `verify` 看注解填充率 | `gen-executor.ts` 收尾 |
 
 收尾顺序固定：`verify`（骨架存在 + 至少填了 1 条注解）→ `finalize`（解析 → 排版 → `checkHealth` 四项自检 → 写 DOC → 删骨架）→ `upsertBookIndex`。自检不通过时**不写 DOC、不删骨架**，半成品不落书库、现场留证据。
