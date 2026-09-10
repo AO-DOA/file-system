@@ -2181,3 +2181,78 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect(((status.json as TaskBody).tasks ?? []).map(t => t.id).sort()).toEqual(['n1', 'n2'])
   })
 })
+
+// ---- 覆盖率补齐（三）：把每个复合条件的两侧都走一遍 ----
+
+describe('覆盖率补齐（三）：复合条件的另一侧', () => {
+  it('sweepGenTasks：刚完成（finishedAt 存在但未超 TTL）的任务不淘汰（源 :164 第二条件的假支）', async () => {
+    const root = await newRoot('fs-p3-cov-sweep2-')
+    const ctx = createCtx(root)
+    apply(ctx)
+    const fsTest = fsTestOf(ctx)
+
+    fsTest.genTasks.set('just-done', {
+      id: 'just-done', kind: 'folder', rel: 'fresh', docRel: '', status: 'success',
+      error: null, startedAt: Date.now(), finishedAt: Date.now(),
+    })
+    fsTest.sweepGenTasks()
+    expect(fsTest.genTasks.has('just-done')).toBe(true)
+  })
+
+  it('readBody：error 事件重复到达时第二次不再 settle（源 :236 的 `if (!settled)` 假支）', async () => {
+    const root = await newRoot('fs-p3-cov-bodyerr2-')
+    const ctx = createCtx(root)
+    apply(ctx)
+    const fsTest = fsTestOf(ctx)
+
+    const req = createRawReq('POST', '/api/fs/write')
+    const pending = call(fsTest, req, 'write')
+    req.emit('error', new Error('first'))
+    req.emit('error', new Error('second')) // settled 已为真 → 命中假支
+    req.emit('end')                        // 同样命中假支
+    const out = await pending
+    // 只认第一次拒绝：第二次不会覆盖已写好的响应
+    expect(out.status).toBe(500)
+    expect((out.json as ErrorBody).error).toBe('first')
+  })
+
+  it('translate 去重循环：非 translate 的占位不参与比较（源 :483 的 `t.kind` 假支）', async () => {
+    const root = await newRoot('fs-p3-cov-dedupkind-')
+    await writeFile(join(root, 'a.md'), '# a\n', 'utf8')
+    const ctx = createCtx(root)
+    apply(ctx)
+    const fsTest = fsTestOf(ctx)
+
+    // rel 故意与请求相同：先让 `t.kind === 'translate'` 为假，短路掉后面的 rel 比较
+    fsTest.genTasks.set('folder-same-rel', {
+      id: 'folder-same-rel', kind: 'folder', rel: 'a.md', docRel: '', status: 'pending',
+      error: null, startedAt: null, finishedAt: null,
+    })
+    const out = await call(fsTest, createReq('POST', '/api/fs/translate', { path: 'a.md' }), 'translate')
+    expect(out.status).toBe(200)
+    expect((out.json as StartedBody).reused).toBeUndefined()
+    expect((out.json as StartedBody).taskId).not.toBe('folder-same-rel')
+  })
+
+  it('GET /tree：节点本身即已知项目根时 relHome 退化为点（源 :578 的短路右支）', async () => {
+    const root = await newRoot('fs-p3-cov-subroot-')
+    const subRoot = join(root, 'sub')
+    await mkdir(subRoot, { recursive: true })
+    await writeFile(join(subRoot, 'inner.txt'), 'x\n', 'utf8')
+    // 让 sub 成为「已知项目根」：桶 + index.json 的「项目根」字段（knownBookRoots 据此发现）
+    const subBucket = join(booksRoot(), projectKey(subRoot))
+    await mkdir(join(subBucket, '目录概览'), { recursive: true })
+    await writeFile(join(subBucket, 'index.json'), JSON.stringify({ 项目: 'sub', 项目根: subRoot }) + '\n', 'utf8')
+
+    const ctx = createCtx(root)
+    apply(ctx)
+    const fsTest = fsTestOf(ctx)
+
+    const tree = await call(fsTest, createReq('GET', '/api/fs/tree'), 'tree')
+    expect(tree.status).toBe(200)
+    const sub = ((tree.json as TreeBody).list ?? []).find(node => node.name === 'sub')
+    // sub 自身即归属根 → nodeAbs.slice(projectRoot.length) 为空串 → `|| '.'`
+    expect(sub).toBeDefined()
+    expect(sub?.type).toBe('directory')
+  })
+})
