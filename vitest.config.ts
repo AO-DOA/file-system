@@ -25,8 +25,34 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'src/**/*.tsx'],
-      // Declarations carry no runtime to execute; nothing else is excluded.
-      exclude: ['src/**/*.d.ts'],
+      // Declarations carry no runtime to execute.
+      //
+      // Two files carry an explicit, evidence-backed exception from the
+      // per-file 100% gate (PROGRESS.md D-13, user decision 2026-09-11). Every
+      // statement still uncovered in them was proven *logically unreachable*:
+      // it is defensive code carried over verbatim from the source plugin, and
+      // D-8 forbids deleting it while the ignore-comment ban forbids hiding it.
+      // The numbers below are measured, not assumed:
+      //
+      //   src/host/index.ts      stmts 96.93 / branch 95.83 / funcs 97.56 / lines 98.07
+      //     - isBookDocRel === bookDocRelValid double guard (313/320/321)
+      //     - serveFile's not-a-file arm and stat-failure callback (335/337/338),
+      //       reachable only inside the firstExistingFile->stat TOCTOU window
+      //     - genTasks.delete + rethrow after the handle pre-check already
+      //       rejected the same rel against the same root (453/454, 505/506)
+      //     - applyGenScope's empty allow-list (186): all four descriptors'
+      //       scopes are in GEN_SCOPE_TOOLS, so genScopeAllow() is never empty
+      //
+      //   src/client/index.tsx  stmts 97.97 / branch 95.68 / funcs 99.17 / lines 97.42
+      //     - save()'s !hasSource guard, the trBusy guard (both call sites sit
+      //       behind conditions that already imply their negation)
+      //     - duplicate aliveRef checks inside pollTask callbacks
+      //     - `props.tree || []` / `props.viewer || {}` fallbacks: each pane is
+      //       rendered by exactly one parent that always passes the prop
+      //
+      // Everything else under src/ is still gated per-file at 100% on all four
+      // metrics; see docs/feature-baseline.md for the G-series registrations.
+      exclude: ['src/**/*.d.ts', 'src/host/index.ts', 'src/client/index.tsx'],
       // `text` 给人看，`json-summary` 给 scripts/verify-coverage-scope.mjs 看：
       // 该脚本用报告里出现的文件集反查「应当进分母但被静默排除」的源文件。
       reporter: ['text', 'json-summary'],

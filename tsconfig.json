@@ -1,11 +1,21 @@
 {
   // Solution-only root: it owns no program of its own. `tsc -b tsconfig.json`
-  // builds the three leaf projects below in their dependency order; each leaf
-  // is a real program with its own compiler face (see PROGRESS.md D-6).
+  // builds the leaf projects below in their dependency order; each leaf is a
+  // real program with its own compiler face (see PROGRESS.md D-6).
+  //
+  // The single `tsconfig.tests.json` was split into three test leaves (T-46,
+  // decision D-12 R1) because one program cannot hold both faces: the harness
+  // root forbids flattening the solution into a single Program, and
+  // `apps/web/tsconfig.json` spells out why ("one program cannot see both sides
+  // of the cordis Context merges"). Each test leaf now extends the product face
+  // it belongs to, so the host plane still sees no DOM and the client plane
+  // still sees no node globals.
   "files": [],
   "references": [
     { "path": "./tsconfig.host.json" },
     { "path": "./tsconfig.client.json" },
-    { "path": "./tsconfig.tests.json" }
+    { "path": "./tsconfig.tests.host.json" },
+    { "path": "./tsconfig.tests.client.json" },
+    { "path": "./tsconfig.tests.composition.json" }
   ]
 }

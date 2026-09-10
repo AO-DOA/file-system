@@ -37,8 +37,11 @@ const repoReadmeMtimeBefore = statSync(REPO_README).mtimeMs
 
 /** 让包根 issues 目录「不存在」，返回恢复函数。 */
 function hideRepoIssuesDir(): () => void {
-  const orig: (p: unknown) => boolean = nodeFs.existsSync
-  nodeFs.existsSync = (p: unknown): boolean => resolve(String(p)) !== REPO_ISSUES_DIR && orig(p)
+  // 形参沿用 existsSync 自身的参数类型：写 unknown 会因参数逆变不兼容而无法赋回
+  // nodeFs.existsSync（TS2322）；本函数只做 String(p) 的比较与转交，无需放宽类型。
+  const orig: typeof nodeFs.existsSync = nodeFs.existsSync
+  nodeFs.existsSync = (p: Parameters<typeof nodeFs.existsSync>[0]): boolean =>
+    resolve(String(p)) !== REPO_ISSUES_DIR && orig(p)
   return (): void => { nodeFs.existsSync = orig }
 }
 

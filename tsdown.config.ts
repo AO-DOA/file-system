@@ -32,7 +32,7 @@ const CLIENT_EXTERNALS = [
 ]
 
 export default defineConfig({
-  entry: { client: 'src/client/index.ts' },
+  entry: { client: 'src/client/index.tsx' },
   // package.json exports["./client"] points at client/client.js, so the
   // bundle lands there directly.
   outDir: 'client',

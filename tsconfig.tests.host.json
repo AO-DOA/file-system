@@ -1,0 +1,35 @@
+{
+  // Host-plane tests leaf (T-46).
+  //
+  // `tsconfig.tests.json` used to be a single program holding `tests`, `src/host`
+  // AND `src/client` at once. That is exactly the shape the harness rejects:
+  //   * the root solution forbids flattening into one Program
+  //     (`deepseekHARNESS/tsconfig.json`: "NEVER flatten this solution into a
+  //     single ts.Program"), and
+  //   * `apps/web/tsconfig.json` states the reason outright — "one program
+  //     cannot see both sides of the cordis Context merges" — so it `exclude`s
+  //     every host-plane spec from its client-registered project, letting them
+  //     be checked by `tsconfig.host.json` instead.
+  //
+  // This repo now mirrors that split. This leaf extends the *host* face, so it
+  // inherits the host compiler face verbatim (`lib: ["ES2024"]`, `types:
+  // ["node"]`) and therefore still sees NO DOM — the host sources cannot start
+  // depending on `document`/`window` unnoticed. Only rootDir/include are widened
+  // to cover `tests/`.
+  "extends": "./tsconfig.host.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "tsBuildInfoFile": "lib/tsconfig.tests.host.tsbuildinfo"
+  },
+  "include": ["tests", "src/host", "src/shared"],
+  // Client-plane specs are checked by tsconfig.tests.client.json; the
+  // cross-plane composition spec has its own leaf (see below). The primitives
+  // stand-in is React code, so it belongs to the client face too.
+  "exclude": [
+    "tests/md-utils.spec.ts",
+    "tests/client-*.spec.ts",
+    "tests/real-composition.spec.ts",
+    "tests/fixtures/primitives-stub.ts"
+  ]
+}

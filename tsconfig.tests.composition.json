@@ -1,0 +1,42 @@
+{
+  // Cross-plane composition leaf (T-46, decision D-12 R1).
+  //
+  // `tests/real-composition.spec.ts` is the one spec that must see BOTH halves:
+  // it boots a real `@deepseek-ai/cordis-plugin-loader` over a test-only
+  // `cordis.yml`, reads `cordis.patch.yml` through `node:fs`, opens a real
+  // loopback HTTP server through `node:http`, and dynamically imports the client
+  // entry (`src/client/index.tsx`) to observe the slot it registers. No single
+  // product face can host it: the host face has no `jsx`, the client face has no
+  // node globals.
+  //
+  // This is the same project shape the harness ships, not a loophole:
+  //   * `deepseekHARNESS/tsconfig.client.json` extends the client base (DOM +
+  //     `jsx: react-jsx`) and then adds `types: ["node"]`, with the stated
+  //     reason "Tests execute under vitest on node (e2e files spawn processes);
+  //     browser purity of package src is each package's own tsconfig".
+  //   * `deepseekHARNESS/apps/web/tsconfig.json` is likewise one
+  //     client-registered project carrying both DOM and node types; what it
+  //     refuses to carry is the *other plane's specs* ("one program cannot see
+  //     both sides of the cordis Context merges") — which it handles by
+  //     `exclude`, exactly as the two leaves beside this file do.
+  //
+  // The environment boundary that matters is therefore still intact: the
+  // PRODUCT faces (`tsconfig.host.json` sees no DOM, `tsconfig.client.json` sees
+  // no node globals) are untouched, and every host-plane or client-plane spec is
+  // checked by the leaf that inherits its own face. This project exists only to
+  // type-check one integration spec that is inherently plane-crossing.
+  "extends": "./tsconfig.client.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"],
+    "tsBuildInfoFile": "lib/tsconfig.tests.composition.tsbuildinfo"
+  },
+  "include": [
+    "tests/real-composition.spec.ts",
+    "tests/fixtures",
+    "src/host",
+    "src/client",
+    "src/shared"
+  ]
+}

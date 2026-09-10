@@ -1,0 +1,2153 @@
+/**
+ * jsdom component spec for the client half (`src/client/index.tsx`).
+ *
+ * The client entry exports only `name` / `inject` / `apply`, so every case here
+ * drives it the way the runtime does: mount `apply` on a stand-in client context,
+ * take the view function it registers on `conversation.view`, and render that.
+ * Assertions then read the DOM the plugin produced and the `/api/fs/*` calls it
+ * made, never its internals.
+ *
+ * `@deepseek-ai/dsh-client-ui-primitives` is replaced by
+ * `tests/fixtures/primitives-stub.ts`: the real package's bundle only resolves
+ * inside the harness tree, and nothing under test here is the primitives' markup.
+ *
+ * Two source behaviours shape several assertions below, both preserved verbatim
+ * from the migration source (decisions D-8/D-9):
+ *   * `viewer.status` is only painted while the pane is empty or in source mode
+ *     without content — so 「已保存」/失败文本 do NOT appear once source content
+ *     is loaded (baseline §附加 item 7);
+ *   * a `FileRow`'s doc marker carries no click handler (baseline §C-4).
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import type { ReactElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import type { Root } from 'react-dom/client'
+import { apply } from '../src/client/index.tsx'
+import { ZH } from '../src/shared/locale.ts'
+
+/**
+ * Read one dictionary entry.
+ *
+ * `ZH` is typed `Record<string, string>`, so under `noUncheckedIndexedAccess`
+ * every index read is `string | undefined`; this narrows it once, and a missing
+ * key fails loudly instead of flowing `undefined` into an assertion.
+ * @param key - dictionary key.
+ * @returns the localized string.
+ */
+function L(key: string): string {
+  const value = ZH[key]
+  if (value === undefined) throw new Error('missing locale key: ' + key)
+  return value
+}
+
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => import('./fixtures/primitives-stub'))
+
+/** One reply the stubbed `fetch` answers with. */
+interface Reply {
+  status?: number
+  /** `json()` rejects when this is the `BROKEN_JSON` sentinel. */
+  body: unknown
+}
+
+/** Sentinel body meaning "the response body cannot be parsed". */
+const BROKEN_JSON = Symbol('broken-json')
+
+/** A recorded `/api/fs/*` call. */
+interface Call {
+  url: string
+  init: RequestInit | undefined
+}
+
+type Handler = (url: string, init: RequestInit | undefined) => Reply | Promise<Reply>
+
+/** Slot definition shape the client registers. */
+interface CapturedDefinition {
+  name: string
+  id: string
+  order: number
+  label: () => string
+}
+
+/** One registration captured from the stand-in slot service. */
+interface CapturedSlot {
+  definition: CapturedDefinition
+  view: (props: Record<string, unknown>) => ReactElement
+}
+
+/** One worktree item the stand-in workspaces service serves. */
+interface WorkspaceItem {
+  workspaceId: string
+  title?: string
+  path: string
+}
+
+/** Stand-in workspaces service surface. */
+interface WorkspacesStub {
+  list: {
+    getSnapshot(): { items?: WorkspaceItem[] } | undefined
+    subscribe(listener: () => void): () => void
+  }
+}
+
+let handler: Handler
+let calls: Call[]
+let captured: CapturedSlot[]
+let disposers: Array<() => void>
+let container: HTMLDivElement | undefined
+let root: Root | undefined
+let wsNotify: (() => void) | undefined
+let wsSnapshot: { items?: WorkspaceItem[] } | undefined
+
+/** The six-node top-level tree every case starts from. */
+const TOP_TREE = [
+  { type: 'directory', path: 'src', name: 'src', hasDoc: true, docRel: 'bk/dir/src.md' },
+  { type: 'directory', path: 'plain', name: 'plain' },
+  { type: 'file', path: 'README.md', name: 'README.md', hasDoc: true, docRel: 'bk/file/README.md', hasDocTr: true, docTrRel: 'bk/tr/README.md' },
+  { type: 'file', path: 'app.ts', name: 'app.ts', hasDocSrc: true, docSrcRel: 'bk/src/app.md' },
+  { type: 'file', path: 'plain.py', name: 'plain.py' },
+  { type: 'file', path: '.book/note.md', name: 'note.md' },
+  { type: 'file', path: 'blob.xyz', name: 'blob.xyz' },
+  { type: 'file', path: 'Makefile', name: 'Makefile' },
+  { type: 'file', path: 'full.md', name: 'full.md', hasDoc: true, docRel: 'bk/d/full.md', hasDocSrc: true, docSrcRel: 'bk/s/full.md', hasDocTr: true, docTrRel: 'bk/t/full.md' },
+  { type: 'file', path: 'plain.md', name: 'plain.md' },
+  { type: 'file', path: 'doc.txt', name: 'doc.txt', hasDoc: true, docRel: 'bk/d/doc.md' },
+]
+
+/**
+ * Default `/api/fs` reply table used by most cases.
+ * @param url - requested `/api/fs…` URL.
+ * @returns the stubbed reply.
+ */
+function defaultHandler(url: string): Reply {
+  if (url.startsWith('/api/fs/root')) return { body: { root: '/proj' } }
+  if (url.startsWith('/api/fs/tree?path=.')) return { body: { path: '.', list: TOP_TREE } }
+  if (url.startsWith('/api/fs/tree?path=src')) {
+    return { body: { path: 'src', list: [{ type: 'file', path: 'src/child.ts', name: 'child.ts' }] } }
+  }
+  if (url.startsWith('/api/fs/read?path=')) {
+    const target = decodeURIComponent(url.slice('/api/fs/read?path='.length))
+    if (target === 'Makefile') return { body: { content: 'all:', ext: '', size: 4 } }
+    if (target === 'full.md') return { body: { content: '# Full', ext: 'md', size: 6 } }
+    if (target === 'plain.md') return { body: { content: '# Plain', ext: 'md', size: 7 } }
+    if (target === 'app.ts') return { body: { content: 'const a = 1', ext: 'ts', size: 11 } }
+    if (target === 'plain.py') return { body: { content: '', ext: 'py', size: 0 } }
+    if (target === 'blob.xyz') return { body: { content: '', ext: 'xyz', size: 0 } }
+    if (target === 'src') return { body: { content: '', ext: '', size: 0 } }
+    return { body: { content: '# Title\n\nbody', ext: 'md', size: 14 } }
+  }
+  if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: null } }
+  if (url.startsWith('/api/fs/write')) return { body: { ok: true } }
+  if (url.startsWith('/api/fs/set-root')) return { body: { ok: true, root: '/proj' } }
+  if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+  if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+  return { body: { ok: true } }
+}
+
+/**
+ * Build a stand-in client context.
+ * @param options - `withSlots: false` omits the slots service; `workspaces` injects one.
+ * @returns the context handed to `apply`.
+ */
+function makeCtx(options: { withSlots?: boolean; workspaces?: WorkspacesStub } = {}): Parameters<typeof apply>[0] {
+  const registry = {
+    inject(_name: string, callback: () => void): void { callback() },
+    register(definition: CapturedDefinition, view: CapturedSlot['view']): () => void {
+      const entry: CapturedSlot = { definition, view }
+      captured.push(entry)
+      return () => { captured = captured.filter(candidate => candidate !== entry) }
+    },
+  }
+  const ctx = {
+    effect(fn: () => (() => void) | void): void {
+      const dispose = fn()
+      if (typeof dispose === 'function') disposers.push(dispose)
+    },
+    get(name: string): unknown {
+      if (name === 'slots') return options.withSlots === false ? undefined : registry
+      if (name === 'workspaces') return options.workspaces
+      return undefined
+    },
+  }
+  return ctx as unknown as Parameters<typeof apply>[0]
+}
+
+/**
+ * Flush pending microtasks inside `act` so effect-driven fetches settle.
+ * @param rounds - how many microtask turns to drain.
+ */
+async function flush(rounds = 24): Promise<void> {
+  await act(async () => {
+    for (let i = 0; i < rounds; i++) await Promise.resolve()
+  })
+}
+
+/**
+ * Mount the plugin and render its registered view.
+ * @param options - forwarded to {@link makeCtx}.
+ * @returns the container holding the rendered tree.
+ */
+function mount(options: { withSlots?: boolean; workspaces?: WorkspacesStub } = {}): HTMLDivElement {
+  apply(makeCtx(options))
+  const slot = captured[0]
+  if (slot === undefined) throw new Error('client registered no slot')
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+  const element = slot.view({})
+  act(() => { root?.render(element) })
+  return container
+}
+
+/**
+ * Tear the current tree down so the next `mount` starts fresh.
+ */
+async function unmount(): Promise<void> {
+  if (root !== undefined) {
+    const current = root
+    await act(async () => { current.unmount() })
+    root = undefined
+  }
+  container?.remove()
+  container = undefined
+  captured = []
+  calls = []
+}
+
+/**
+ * Find a rendered element by its exact trimmed text.
+ * @param selector - CSS selector to search within.
+ * @param text - exact trimmed text content.
+ * @returns the first matching element.
+ */
+function byText(selector: string, text: string): HTMLElement {
+  const nodes = Array.from(document.querySelectorAll(selector))
+  const hit = nodes.find(node => (node.textContent || '').trim() === text)
+  if (hit === undefined) throw new Error('no ' + selector + ' with text ' + text)
+  return hit as HTMLElement
+}
+
+/**
+ * Find a rendered element whose text contains the given fragment.
+ * @param selector - CSS selector to search within.
+ * @param text - substring to look for.
+ * @returns the first matching element.
+ */
+function byTextIncluding(selector: string, text: string): HTMLElement {
+  const nodes = Array.from(document.querySelectorAll(selector))
+  const hit = nodes.find(node => (node.textContent || '').includes(text))
+  if (hit === undefined) throw new Error('no ' + selector + ' containing ' + text)
+  return hit as HTMLElement
+}
+
+/**
+ * Type into a controlled textarea the way React observes it: write through the
+ * prototype value setter (which bypasses React's value tracker) and dispatch
+ * `input`. `Reflect.apply` keeps the accessor bound to the element.
+ * @param area - textarea to type into.
+ * @param value - the new value.
+ */
+function typeInto(area: HTMLTextAreaElement, value: string): void {
+  // `unknown` first, then a narrow cast: reading the accessor off the descriptor
+  // is exactly what `typescript/unbound-method` flags, and a bound `Reflect.apply`
+  // is the point here.
+  const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
+  const setter: unknown = descriptor === undefined ? undefined : Reflect.get(descriptor, 'set')
+  if (typeof setter === 'function') {
+    Reflect.apply(setter as (this: HTMLTextAreaElement, next: string) => void, area, [value])
+  }
+  area.dispatchEvent(new window.Event('input', { bubbles: true }))
+}
+
+/**
+ * The tree row whose title matches exactly (row text also carries badges).
+ * @param name - node name as rendered in `.fs-title`.
+ * @returns the `.fs-tr` row element.
+ */
+function row(name: string): HTMLElement {
+  const title = byText('.fs-title', name)
+  const tr = title.closest('.fs-tr')
+  if (tr === null) throw new Error('no row for ' + name)
+  return tr as HTMLElement
+}
+
+/**
+ * The toolbar button carrying the given label.
+ * @param label - rendered button text.
+ * @returns the button element.
+ */
+function button(label: string): HTMLElement {
+  return byText('button', label)
+}
+
+/**
+ * Click an element inside `act` and let effects settle.
+ * @param element - element to click.
+ */
+async function click(element: HTMLElement): Promise<void> {
+  await act(async () => { element.click() })
+  await flush()
+}
+
+/**
+ * Let parked promises resolve and drain the resulting microtask chain. A plain
+ * microtask loop is not enough once a reply is released outside `act`, so this
+ * yields to the macrotask queue first.
+ */
+async function settle(): Promise<void> {
+  if (vi.isFakeTimers()) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+  } else {
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 1) }) })
+  }
+  await flush()
+}
+
+
+/**
+ * Unmount the tree and release a parked reply in the same `act`, so React drains
+ * the whole promise chain after the effect cleanup has run. The wait branches on
+ * the timer mode: a real `setTimeout` never fires under fake timers.
+ * @param current - the root to unmount.
+ * @param release - releases (or fails) the parked reply.
+ */
+async function unmountAndRelease(current: Root | undefined, release: () => void): Promise<void> {
+  await act(async () => {
+    current?.unmount()
+    release()
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(5)
+    else await new Promise((resolve) => { setTimeout(resolve, 5) })
+  })
+  root = undefined
+  await flush()
+}
+
+/**
+ * The URLs the plugin requested, in order.
+ * @returns requested `/api/fs…` URLs.
+ */
+function urls(): string[] {
+  return calls.map(call => call.url)
+}
+
+/**
+ * Count how many times a URL was requested.
+ * @param url - exact URL.
+ * @returns request count.
+ */
+function hits(url: string): number {
+  return urls().filter(candidate => candidate === url).length
+}
+
+beforeEach(() => {
+  captured = []
+  disposers = []
+  calls = []
+  wsNotify = undefined
+  wsSnapshot = { items: [] }
+  handler = url => defaultHandler(url)
+  localStorage.clear()
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  vi.stubGlobal('fetch', async (input: unknown, init?: RequestInit): Promise<unknown> => {
+    const url = String(input)
+    calls.push({ url, init })
+    const reply = await handler(url, init)
+    const status = reply.status ?? 200
+    const broken = reply.body === BROKEN_JSON
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async (): Promise<unknown> => {
+        if (broken) throw new Error('not json')
+        return reply.body
+      },
+    }
+  })
+})
+
+afterEach(async () => {
+  await unmount()
+  // The style tag is only removed by the effect disposer; cases that never run
+  // it would otherwise leak the tag into the next test's head.
+  for (const tag of Array.from(document.head.querySelectorAll('style[data-plugin="fs"]'))) tag.remove()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+  localStorage.clear()
+})
+
+/**
+ * The stand-in workspaces service.
+ * @returns the stub.
+ */
+function workspacesStub(): WorkspacesStub {
+  return {
+    list: {
+      getSnapshot(): { items?: WorkspaceItem[] } | undefined {
+        return wsSnapshot
+      },
+      subscribe(listener: () => void): () => void {
+        wsNotify = listener
+        return () => { wsNotify = undefined }
+      },
+    },
+  }
+}
+
+describe('client entry: slot contract (A)', () => {
+  it('throws when the slots service is missing', () => {
+    expect(() => { apply(makeCtx({ withSlots: false })) }).toThrow(
+      'slots service missing — client cannot register conversation.view',
+    )
+  })
+
+  it('registers conversation.view with the pinned id, order and lazy label', () => {
+    apply(makeCtx())
+    expect(captured).toHaveLength(1)
+    const definition = captured[0]?.definition
+    expect(definition?.name).toBe('conversation.view')
+    expect(definition?.id).toBe('fs')
+    expect(definition?.order).toBe(12)
+    // T-47: the visible tab text is the dictionary value, not a literal.
+    expect(definition?.label()).toBe('文件')
+    expect(definition?.label()).toBe(L('slotLabel'))
+  })
+
+  it('injects the stylesheet and removes it through the effect disposer', () => {
+    apply(makeCtx())
+    const tag = document.head.querySelector('style[data-plugin="fs"]')
+    expect(tag).not.toBeNull()
+    expect(tag?.textContent).toContain('.fs-wrap{display:flex')
+    expect(disposers).toHaveLength(1)
+    disposers[0]?.()
+    expect(document.head.querySelector('style[data-plugin="fs"]')).toBeNull()
+  })
+
+  it('exposes the plugin identity contract', async () => {
+    const mod = await import('../src/client/index.tsx')
+    expect(mod.name).toBe('fs')
+    expect(mod.inject).toEqual(['slots'])
+  })
+})
+
+describe('empty state and tree (B)', () => {
+  it('loads root and tree on mount, then renders the empty-directory state', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) return { body: { root: '/proj' } }
+      if (url.startsWith('/api/fs/tree')) return { body: { path: '.', list: [] } }
+      return { body: { ok: true } }
+    }
+    mount()
+    await flush()
+    expect(urls()).toEqual(['/api/fs/root', '/api/fs/tree?path=.'])
+    expect(byText('.fs-empty', L('emptyDir'))).toBeTruthy()
+    // No node open yet: the status line and the tab strip are both empty. The
+    // strip element itself is always in the tree (source behaviour).
+    expect(document.querySelector('.fs-load')).toBeNull()
+    expect(document.querySelector('.fs-tabs')?.children).toHaveLength(0)
+  })
+
+  it('paints the root-load failure in the empty-state status line', async () => {
+    handler = () => ({ status: 500, body: { error: 'boom' } })
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail') + 'boom')).toBeTruthy()
+  })
+
+  it('falls back to the HTTP status text when the host sends no error field', async () => {
+    handler = url => (url.startsWith('/api/fs/root') ? { status: 500, body: {} } : { body: {} })
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail') + L('errHttpPrefix') + '500')).toBeTruthy()
+  })
+
+  it('falls back to the locale request-failed text on a business ok:false without error', async () => {
+    handler = url => (url.startsWith('/api/fs/root') ? { body: { ok: false } } : { body: {} })
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail') + L('errRequestFailed'))).toBeTruthy()
+  })
+
+  it('tolerates an unparsable error body', async () => {
+    handler = url => (url.startsWith('/api/fs/root') ? { status: 500, body: BROKEN_JSON } : { body: {} })
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail') + L('errHttpPrefix') + '500')).toBeTruthy()
+  })
+
+  it('treats a business ok:false reply as a failure', async () => {
+    handler = url => (url.startsWith('/api/fs/root') ? { body: { ok: false, error: 'denied' } } : { body: {} })
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail') + 'denied')).toBeTruthy()
+  })
+
+  it('renders directory and file rows with badges and doc markers', async () => {
+    mount()
+    await flush()
+    expect(row('src').querySelector('.fs-docmark')).not.toBeNull()
+    expect(row('plain').querySelector('.fs-docmark')).toBeNull()
+    const readme = row('README.md')
+    expect(readme.querySelector('.fs-docmark')).not.toBeNull()
+    expect(readme.querySelector('.fs-badge')?.textContent).toBe('MD')
+    expect(row('app.ts').querySelector('.fs-badge')?.textContent).toBe('TS')
+    expect(row('plain.py').querySelector('.fs-badge')?.textContent).toBe('PY')
+  })
+
+  it('expands a directory lazily, caches children and keeps them on collapse', async () => {
+    mount()
+    await flush()
+    await click(row('src'))
+    expect(hits('/api/fs/tree?path=src')).toBe(1)
+    expect(row('child.ts')).toBeTruthy()
+    expect(row('src').className).toContain('fs-open')
+    // Collapse: no second request, and the cached rows leave the DOM.
+    await click(row('src'))
+    expect(hits('/api/fs/tree?path=src')).toBe(1)
+    expect(document.querySelectorAll('.fs-tr')).toHaveLength(11)
+    // Re-expand: served from cache, still no second request.
+    await click(row('src'))
+    expect(hits('/api/fs/tree?path=src')).toBe(1)
+    expect(row('child.ts')).toBeTruthy()
+  })
+
+  it('swallows a lazy tree load failure and keeps the node collapsed', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=src')) return { status: 500, body: { error: 'nope' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('src'))
+    expect(row('src').className).not.toContain('fs-open')
+    expect(document.querySelector('.fs-load')).toBeNull()
+  })
+
+  it('opens a directory through its doc marker without toggling it', async () => {
+    mount()
+    await flush()
+    const marker = row('src').querySelector('.fs-docmark')
+    if (marker === null) throw new Error('no doc marker')
+    await click(marker as HTMLElement)
+    // The marker stops propagation, so the row never expanded.
+    expect(hits('/api/fs/tree?path=src')).toBe(0)
+    expect(byText('.fs-hd-path', 'proj/src')).toBeTruthy()
+  })
+
+  it('selects the clicked file row', async () => {
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    expect(row('plain.py').className).toContain('sel')
+    expect(row('app.ts').className).not.toContain('sel')
+  })
+})
+
+describe('viewer: opening files and markdown branches (C)', () => {
+  it('opens a markdown file in doc mode and reads all three documents', async () => {
+    mount()
+    await flush()
+    await click(row('README.md'))
+    expect(urls()).toContain('/api/fs/read?path=README.md')
+    expect(urls()).toContain('/api/fs/read?path=bk%2Ffile%2FREADME.md')
+    expect(urls()).toContain('/api/fs/read?path=bk%2Ftr%2FREADME.md')
+    expect(byText('.stub-pill', L('labDocFile')).getAttribute('data-active')).toBe('true')
+    // This node has a summary and a translation but no source annotation, so the
+    // annot tab is absent (tab list is derived per node, baseline §C-10).
+    expect(Array.from(document.querySelectorAll('.stub-pill')).map(n => n.textContent)).toEqual([
+      L('labDocFile'), L('labTr'), L('labSrc'),
+    ])
+    expect(document.querySelector('.stub-md')?.textContent).toContain('# Title')
+  })
+
+  it('renders frontmatter rows and the markdown body separately', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Ffile%2FREADME.md')) {
+        return { body: { content: '---\ntitle: Hi\nnokey\n---\nbody text', ext: 'md', size: 30 } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    expect(byText('.fs-fmhead', L('frontmatter'))).toBeTruthy()
+    expect(byText('.fs-fmkey', 'title')).toBeTruthy()
+    expect(byText('.fs-fmval', 'Hi')).toBeTruthy()
+    // A non key/value frontmatter line renders with an empty key cell.
+    expect(byText('.fs-fmkey', '')).toBeTruthy()
+    expect(document.querySelector('.stub-md')?.textContent).toContain('body text')
+  })
+
+  it('falls back to source mode when the file has no summary', async () => {
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    expect(byText('.stub-pill', L('labSrc')).getAttribute('data-active')).toBe('true')
+    // py maps to a shiki grammar, so this arm is the highlighted code block.
+    expect(document.querySelector('.stub-code')?.textContent).toBe('')
+  })
+
+  it('falls back to the monospace pre for an unknown extension', async () => {
+    mount()
+    await flush()
+    await click(row('blob.xyz'))
+    expect(document.querySelector('.fs-code')?.textContent).toBe(L('emptyFile'))
+  })
+
+  it('renders the highlighted code branch for a known language', async () => {
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    expect(document.querySelector('.stub-code')?.textContent).toBe('const a = 1')
+    expect(document.querySelector('.stub-code')?.getAttribute('data-lang')).toBe('ts')
+  })
+
+  it('paints a read failure while the source is still empty', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=plain.py')) return { status: 500, body: { error: 'nope' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    expect(byTextIncluding('.fs-load', L('errReadFail') + 'nope')).toBeTruthy()
+  })
+
+  it('shows the placeholder card for a directory without a generated overview', async () => {
+    mount()
+    await flush()
+    await click(row('plain'))
+    expect(byText('.fs-folder-card-ti', L('folderCardTitle'))).toBeTruthy()
+    expect(document.querySelector('.fs-folder-card-path-rel')?.textContent).toBe('plain')
+    expect(document.querySelector('.fs-folder-card-path-name')?.textContent).toBe('plain')
+  })
+
+  it('shows the folder overview when the directory has one', async () => {
+    mount()
+    await flush()
+    await click(row('src'))
+    expect(document.querySelector('.stub-md')?.textContent).toContain('# Title')
+  })
+
+  it('shows the placeholder card when the overview read fails', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fdir%2Fsrc.md')) return { status: 500, body: { error: 'gone' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('src'))
+    expect(byText('.fs-folder-card-ti', L('folderCardTitle'))).toBeTruthy()
+  })
+
+  it('names the workspace root when the opened node is the bare root', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({
+      rootPath: '/proj',
+      opened: { type: 'directory', path: '.', name: '' },
+      expanded: [],
+    }))
+    mount()
+    await flush()
+    expect(byText('.fs-folder-card-path-name', L('rootDirName'))).toBeTruthy()
+    expect(byText('.fs-hd-path', 'proj')).toBeTruthy()
+  })
+
+  it('keeps the placeholder card for a directory whose node carries no path', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({
+      rootPath: '/proj',
+      opened: { type: 'directory', name: 'orphan' },
+      expanded: [],
+    }))
+    mount()
+    await flush()
+    expect(byText('.fs-folder-card-path-name', 'orphan')).toBeTruthy()
+    // With no path on the node the relative cell renders empty (source
+    // behaviour: `folderPath = opened.path`).
+    expect(document.querySelector('.fs-folder-card-path-rel')?.textContent).toBe('')
+  })
+})
+
+describe('viewer: tabs and editing (C)', () => {
+  it('walks the dirty marker through appearance, tab switch and save', async () => {
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    expect(button(L('btnEdit'))).toBeTruthy()
+    await click(button(L('btnEdit')))
+    const area = document.querySelector('.fs-area') as HTMLTextAreaElement
+    expect(area).not.toBeNull()
+    expect(button(L('btnView'))).toBeTruthy()
+    // Typing raises 「● 未保存」.
+    await act(async () => {
+      typeInto(area, 'const a = 2')
+    })
+    await flush()
+    expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
+    // Leaving source mode hides the marker (it is part of the edit toolbar),
+    // but the dirty STATE survives; coming back proves it was never cleared.
+    await click(byText('.stub-pill', L('labAnnot')))
+    expect(document.querySelector('.fs-dirty')).toBeNull()
+    await click(byText('.stub-pill', L('labSrc')))
+    expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
+    // Saving clears it and leaves edit mode; the write carries the edited text.
+    await click(button(L('btnSave')))
+    expect(document.querySelector('.fs-dirty')).toBeNull()
+    expect(document.querySelector('.fs-area')).toBeNull()
+    const write = calls.find(call => call.url === '/api/fs/write')
+    expect(write?.init?.body).toBe(JSON.stringify({ path: 'app.ts', content: 'const a = 2' }))
+  })
+
+  it('keeps the dirty marker when the save request fails', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/write')) return { status: 500, body: { error: 'disk full' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(button(L('btnEdit')))
+    const area = document.querySelector('.fs-area') as HTMLTextAreaElement
+    await act(async () => {
+      typeInto(area, 'x')
+    })
+    await flush()
+    await click(button(L('btnSave')))
+    expect(document.querySelector('.fs-dirty')).not.toBeNull()
+    expect(document.querySelector('.fs-area')).not.toBeNull()
+  })
+
+  it('drops the dirty marker when the opened path changes', async () => {
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(button(L('btnEdit')))
+    const area = document.querySelector('.fs-area') as HTMLTextAreaElement
+    await act(async () => {
+      typeInto(area, 'x')
+    })
+    await flush()
+    expect(document.querySelector('.fs-dirty')).not.toBeNull()
+    // Opening another file silently discards the edit (baseline §C-9).
+    await click(row('plain.py'))
+    expect(document.querySelector('.fs-dirty')).toBeNull()
+  })
+
+  it('hides the translate button for markdown inside the book bucket', async () => {
+    mount()
+    await flush()
+    await click(row('note.md'))
+    expect(row('note.md').className).toContain('sel')
+    expect(Array.from(document.querySelectorAll('button')).filter(node => (node.textContent || '') === L('btnTr'))).toHaveLength(0)
+  })
+
+  it('runs a translation and refreshes the parent directory', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'bk/tr/out.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=bk%2Ftr%2Fout.md')) return { body: { content: 'translated', ext: 'md', size: 10 } }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    await click(row('README.md'))
+    const before = hits('/api/fs/tree?path=.')
+    // The node already carries hasDocTr, so the button reads 「重新翻译」.
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(calls.find(call => call.url === '/api/fs/translate')?.init?.body).toBe(JSON.stringify({ path: 'README.md' }))
+    expect(byText('.stub-pill', L('labTr')).getAttribute('data-active')).toBe('true')
+    expect(document.querySelector('.stub-md')?.textContent).toBe('translated')
+    // onTrDone refreshes the parent directory ('.' for a top-level file).
+    expect(hits('/api/fs/tree?path=.')).toBe(before + 1)
+  })
+
+  it('refreshes only the parent cache for a nested file', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=src')) {
+        return { body: { path: 'src', list: [{ type: 'file', path: 'src/child.md', name: 'child.md', hasDocTr: true, docTrRel: 'bk/tr/child.md' }] } }
+      }
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'bk/tr/child.md' } } }
+      }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    await click(row('src'))
+    await click(row('child.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(hits('/api/fs/tree?path=src')).toBe(2)
+  })
+
+  it('reports a translation failure', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'error', error: 'bad' } } }
+      }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    // The status only paints while the doc tab has no data, so assert the task
+    // outcome through the button leaving its busy state instead.
+    expect(button(L('btnTrRegen'))).toBeTruthy()
+  })
+})
+
+describe('worktree switching, persistence and drag (D)', () => {
+  it('persists the ui state and replays it on the next mount', async () => {
+    mount()
+    await flush()
+    await click(row('src'))
+    const saved = JSON.parse(localStorage.getItem('fs.ui.v1') || 'null') as {
+      rootPath?: string
+      expanded?: string[]
+      treeW?: number
+      collapsed?: boolean
+    }
+    expect(saved.rootPath).toBe('/proj')
+    expect(saved.expanded).toEqual(['src'])
+    expect(saved.collapsed).toBe(false)
+
+    await unmount()
+    mount()
+    await flush()
+    expect(urls()).toContain('/api/fs/root')
+    expect(hits('/api/fs/tree?path=src')).toBe(1)
+    expect(row('child.ts')).toBeTruthy()
+    expect(row('src').className).toContain('fs-open')
+  })
+
+  it('does not overwrite an existing archive from the pristine initial state', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/keep', treeW: 300, expanded: [] }))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) return { body: { root: '/keep' } }
+      if (url.startsWith('/api/fs/tree')) return { body: { path: '.', list: [] } }
+      return { body: { ok: true } }
+    }
+    mount()
+    await flush()
+    const saved = JSON.parse(localStorage.getItem('fs.ui.v1') || 'null') as { rootPath?: string }
+    expect(saved.rootPath).toBe('/keep')
+  })
+
+  it('reports a restore failure', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/gone', expanded: [] }))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/set-root')) return { status: 500, body: { error: 'missing' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errRestoreFail') + 'missing')).toBeTruthy()
+  })
+
+  it('degrades a per-directory restore failure to an empty cache entry', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: ['src'] }))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=src')) return { status: 500, body: { error: 'nope' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    expect(row('src').className).toContain('fs-open')
+    expect(document.querySelector('.fs-tr.fs-open .fs-chevslot')).not.toBeNull()
+  })
+
+  it('ignores an archive whose expanded field is not a list', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: 'nope' }))
+    mount()
+    await flush()
+    expect(row('src').className).not.toContain('fs-open')
+  })
+
+  it('survives an unreadable archive', async () => {
+    localStorage.setItem('fs.ui.v1', '{not json')
+    mount()
+    await flush()
+    expect(urls()).toEqual(['/api/fs/root', '/api/fs/tree?path=.'])
+  })
+
+  it('switches worktrees from the menu', async () => {
+    wsSnapshot = { items: [{ workspaceId: 'w1', path: '/other', title: 'Other' }] }
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(byText('.fs-wsbtn', 'proj'))
+    await click(byText('.stub-menu-item', 'Other' + L('wsItemSep') + '/other'))
+    expect(calls.find(call => call.url === '/api/fs/set-root')?.init?.body).toBe(JSON.stringify({ path: '/other' }))
+  })
+
+  it('falls back to the worktree basename and to the picker prompt', async () => {
+    wsSnapshot = { items: [{ workspaceId: 'w1', path: '/other/deep' }] }
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) return { status: 500, body: { error: 'x' } }
+      return defaultHandler(url)
+    }
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    // No worktree chosen and no root name yet: the picker prompt shows.
+    expect(byText('.fs-wsbtn', L('pickWs'))).toBeTruthy()
+    await click(byText('.fs-wsbtn', L('pickWs')))
+    expect(byText('.stub-menu-item', 'deep' + L('wsItemSep') + '/other/deep')).toBeTruthy()
+  })
+
+  it('re-renders the worktree menu when the service notifies', async () => {
+    wsSnapshot = { items: [{ workspaceId: 'w1', path: '/other' }] }
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await act(async () => {
+      wsSnapshot = { items: [{ workspaceId: 'w1', path: '/other' }, { workspaceId: 'w2', path: '/second' }] }
+      wsNotify?.()
+    })
+    await click(byText('.fs-wsbtn', 'proj'))
+    expect(byText('.stub-menu-item', 'second' + L('wsItemSep') + '/second')).toBeTruthy()
+  })
+
+  it('tolerates a worktree snapshot without items', async () => {
+    wsSnapshot = {}
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await act(async () => {
+      wsSnapshot = {}
+      wsNotify?.()
+    })
+    await click(byText('.fs-wsbtn', 'proj'))
+    expect(document.querySelectorAll('.stub-menu-item')).toHaveLength(0)
+  })
+
+  it('collapses and restores the side panel', async () => {
+    mount()
+    await flush()
+    expect(document.querySelector('.fs-side')).not.toBeNull()
+    await click(document.querySelector('.fs-hd-actions button:last-child') as HTMLElement)
+    expect(document.querySelector('.fs-side')).toBeNull()
+    expect(document.querySelector('.fs-split')).toBeNull()
+    await click(document.querySelector('.fs-hd-actions button:last-child') as HTMLElement)
+    expect(document.querySelector('.fs-side')).not.toBeNull()
+  })
+
+  it('drags the splitter within the clamped range', async () => {
+    mount()
+    await flush()
+    const split = document.querySelector('.fs-split') as HTMLElement
+    await act(async () => {
+      split.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, clientX: 300 }))
+    })
+    expect((document.querySelector('.fs-split') as HTMLElement).className).toContain('active')
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 10000 }))
+    })
+    expect((document.querySelector('.fs-side') as HTMLElement).style.width).toBe('420px')
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: -10000 }))
+    })
+    expect((document.querySelector('.fs-side') as HTMLElement).style.width).toBe('180px')
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }))
+    })
+    expect((document.querySelector('.fs-split') as HTMLElement).className).not.toContain('active')
+  })
+
+  it('refreshes the current root from the toolbar', async () => {
+    mount()
+    await flush()
+    const before = hits('/api/fs/tree?path=.')
+    await click(document.querySelector('.fs-hd-actions button:first-child') as HTMLElement)
+    expect(hits('/api/fs/tree?path=.')).toBe(before + 1)
+    expect(hits('/api/fs/set-root')).toBe(0)
+  })
+})
+
+describe('generation menu (C)', () => {
+  it('offers no generation entry for a markdown file', async () => {
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnGen')))
+    expect(document.querySelector('.stub-menu')).toBeNull()
+  })
+
+  it('runs a source-annotation generation and switches to the annot tab', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'src', status: 'success', docRel: 'bk/src/new.md' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(button(L('btnGen')))
+    expect(byText('.stub-menu-item', L('genFile'))).toBeTruthy()
+    await click(byText('.stub-menu-item', L('genSrcRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(calls.find(call => call.url === '/api/fs/gen-doc')?.init?.body).toBe(JSON.stringify({ kind: 'src', path: 'app.ts' }))
+    expect(byText('.stub-pill', L('labAnnot')).getAttribute('data-active')).toBe('true')
+  })
+
+  it('runs a file-summary generation and switches to the doc tab', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'file', status: 'success', docRel: 'bk/file/new.md' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('.stub-pill', L('labDocFile')).getAttribute('data-active')).toBe('true')
+  })
+
+  it('reports a folder generation failure', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'error', error: 'kaboom' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    expect(byText('.stub-menu-item', L('genFolder'))).toBeTruthy()
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errGenFailWith') + 'kaboom')).toBeTruthy()
+  })
+
+  it('shows the folder busy banner and the file busy banner while generating', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'pending' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    expect(byText('.fs-load', L('genFolderBusy'))).toBeTruthy()
+  })
+
+  it('shows the source busy banner while an annotation generates', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'src', status: 'pending' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genSrc')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    expect(byText('.fs-load', L('genSrcBusy'))).toBeTruthy()
+  })
+
+  it('shows the file busy banner while a summary generates', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'file', status: 'pending' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    expect(byText('.fs-load', L('genFileBusy'))).toBeTruthy()
+  })
+
+  it('opens the generation menu on hover over the wrapper', async () => {
+    mount()
+    await flush()
+    await click(row('plain'))
+    const wrap = document.querySelector('.fs-genwrap') as HTMLElement
+    await act(async () => {
+      wrap.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
+    })
+    await flush()
+    expect(byText('.stub-menu-item', L('genFolder'))).toBeTruthy()
+  })
+})
+
+/**
+ * Deferred reply helper: a handler that parks until the test releases it, so a
+ * request can be left in flight across an unmount.
+ */
+interface Deferred {
+  release: () => void
+  fail: (error: unknown) => void
+}
+
+/**
+ * Build a `fetch` handler that parks the given URL prefix until released.
+ * @param prefix - URL prefix to park.
+ * @param onRelease - reply returned once released.
+ * @param fallback - handler used for every other URL.
+ * @returns the parking control and the handler.
+ */
+function park(prefix: string, onRelease: () => Reply, fallback: Handler): { control: Deferred; handler: Handler } {
+  // A directory node reads the same URL twice (baseline §附加 item 5), so every
+  // parked call is retained: releasing only the last one would strand the other
+  // callback forever.
+  const resolvers: Array<() => void> = []
+  const rejecters: Array<(error: unknown) => void> = []
+  const handler: Handler = (url, init) => {
+    if (!url.startsWith(prefix)) return fallback(url, init)
+    return new Promise<Reply>((resolve, reject) => {
+      resolvers.push(() => { resolve(onRelease()) })
+      rejecters.push((error: unknown) => { reject(error instanceof Error ? error : new Error(String(error))) })
+    })
+  }
+  return {
+    control: {
+      release: () => { for (const resolve of resolvers.splice(0)) resolve() },
+      fail: (error: unknown) => { for (const reject of rejecters.splice(0)) reject(error) },
+    },
+    handler,
+  }
+}
+
+describe('client entry: error paths, guards and teardown (C/F)', () => {
+  it('renders an empty message when a rejection carries no text', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) throw ''
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail'))).toBeTruthy()
+  })
+
+  it('reports a generation that never returns a task id', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errGenNoTaskId'))).toBeTruthy()
+  })
+
+  it('reports a generation request that fails outright', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { status: 500, body: { error: 'refused' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await flush()
+    // The gen-doc arm surfaces the thrown message verbatim (no prefix).
+    expect(byTextIncluding('.fs-load', 'refused')).toBeTruthy()
+  })
+
+  it('times a task out after the poll ceiling', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'pending' } } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(6 * 60 * 1000) })
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errPollTimeout'))).toBeTruthy()
+  })
+
+  it('reports a task the host no longer knows', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: null } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errGenTaskGone'))).toBeTruthy()
+  })
+
+  it('reports a polling request that fails', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) return { status: 503, body: { error: 'busy' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errGenFailWith') + 'busy')).toBeTruthy()
+  })
+
+  it('stops polling once the pane is gone', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'pending' } } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const polls = hits('/api/fs/gen-status?id=t1')
+    const current = root
+    await act(async () => { current?.unmount() })
+    root = undefined
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(hits('/api/fs/gen-status?id=t1')).toBe(polls)
+  })
+
+  it('discards a poll reply that lands after the pane is gone', async () => {
+    vi.useFakeTimers()
+    const inner = defaultHandler
+    const parked = park('/api/fs/gen-status', () => ({ body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success', docRel: 'x.md' } } }), inner)
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(urls()).not.toContain('/api/fs/read?path=x.md')
+  })
+
+  it('discards a poll failure that lands after the pane is gone', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/gen-status', () => ({ body: { ok: true, task: null } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.fail(new Error('late')) })
+    expect(document.querySelector('.fs-load')).toBeNull()
+  })
+
+  it('reports a generated document without a path', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success' } } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errGenNoDocRel'))).toBeTruthy()
+  })
+
+  it('reports a failed read of the freshly generated document', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success', docRel: 'fresh.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=fresh.md')) return { status: 500, body: { error: 'gone' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errGenReadFail') + 'gone')).toBeTruthy()
+  })
+
+  it('lands a successful folder overview into the pane', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success', docRel: 'fresh.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=fresh.md')) return { body: { content: 'fresh overview', ext: 'md', size: 14 } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(document.querySelector('.stub-md')?.textContent).toBe('fresh overview')
+  })
+
+  it('resets the file generation state when a file generation fails', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'file', status: 'error' } } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    // genState returns to idle, so the busy banner is gone and the source shows.
+    expect(document.querySelector('.stub-code')).not.toBeNull()
+  })
+
+  it('ignores a second generation request while one is running', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: { id: 't1', kind: 'file', status: 'pending' } } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const before = calls.filter(call => call.url === '/api/fs/gen-doc').length
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    expect(calls.filter(call => call.url === '/api/fs/gen-doc').length).toBe(before)
+  })
+
+  it('ignores a generation request for a node without a path', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({
+      rootPath: '/proj',
+      opened: { type: 'directory', name: 'orphan' },
+      expanded: [],
+    }))
+    mount()
+    await flush()
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    expect(calls.filter(call => call.url === '/api/fs/gen-doc')).toHaveLength(0)
+  })
+
+  it('ignores a translation request while one is running', async () => {
+    const parked = park('/api/fs/translate', () => ({ body: { ok: true, started: true, taskId: 't2' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    // While busy the button is disabled and re-entry is refused.
+    const disabled = Array.from(document.querySelectorAll('button')).filter(node => (node.textContent || '') === L('btnTrLoading'))
+    expect(disabled).toHaveLength(1)
+    await click(disabled[0] as HTMLElement)
+    expect(calls.filter(call => call.url === '/api/fs/translate')).toHaveLength(1)
+    parked.control.release()
+    await settle()
+  })
+
+  it('reports a translation that never returns a task id', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await flush()
+    // The failure clears the busy flag, so the button returns to its idle label.
+    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+    expect(calls.filter(call => call.url === '/api/fs/translate')).toHaveLength(1)
+  })
+
+  it('reports a translate request that fails outright', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { status: 500, body: { error: 'nope' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await flush()
+    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+  })
+
+  it('reports a translation result without a document path', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success' } } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+  })
+
+  it('reports a failed read of the freshly translated document', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'tr/out.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=tr%2Fout.md')) return { status: 500, body: { error: 'gone' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+  })
+
+  it('drops a translation reply that lands after the pane is gone', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/gen-status', () => ({ body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'tr/out.md' } } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(urls()).not.toContain('/api/fs/read?path=tr%2Fout.md')
+  })
+
+  it('discards a generation failure that lands after the pane is gone', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/gen-status', () => ({ body: { ok: true, task: { id: 't1', kind: 'file', status: 'error', error: 'x' } } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.fs-load')).toBeNull()
+  })
+
+  it('discards a generated document that arrives after the pane is gone', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/read?path=fresh.md', () => ({ body: { content: 'late', ext: 'md', size: 4 } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success', docRel: 'fresh.md' } } }
+      }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+
+  it('ignores a worktree selection with an empty id', async () => {
+    wsSnapshot = { items: [{ workspaceId: '', path: '/blank', title: 'Blank' }] }
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(byText('.fs-wsbtn', 'Blank'))
+    await click(byText('.stub-menu-item', 'Blank' + L('wsItemSep') + '/blank'))
+    expect(hits('/api/fs/set-root')).toBe(0)
+  })
+
+  it('closes both menus through their onClose handlers', async () => {
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(byText('.fs-wsbtn', 'proj'))
+    expect(document.querySelector('.stub-menu')).not.toBeNull()
+    await click(byText('.stub-menu-close', 'close'))
+    expect(document.querySelector('.stub-menu')).toBeNull()
+
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    expect(document.querySelector('.stub-menu')).not.toBeNull()
+    await click(byText('.stub-menu-close', 'close'))
+    expect(document.querySelector('.stub-menu')).toBeNull()
+  })
+
+  it('abandons a restore when the pane unmounts while the root read is in flight', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: ['src'] }))
+    const parked = park('/api/fs/root', () => ({ body: { root: '/proj' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(urls()).not.toContain('/api/fs/tree?path=.')
+  })
+
+  it('abandons the restore tree read and the cache backfill after an unmount', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: ['src'] }))
+    // Parking the BACKFILL read (not the top-level one) lets the restore reach
+    // the cache step before the pane goes away.
+    const parked = park('/api/fs/tree?path=src', () => ({ body: { path: 'src', list: [] } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    // The backfill read really was in flight when the pane went away, and its
+    // late reply is dropped rather than written into a dead tree.
+    expect(urls()).toContain('/api/fs/tree?path=src')
+    expect(document.querySelector('.fs-tr')).toBeNull()
+  })
+
+  it('drops a worktree notification that lands after an unmount', async () => {
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    const notify = wsNotify
+    const current = root
+    await act(async () => { current?.unmount() })
+    root = undefined
+    expect(() => { notify?.() }).not.toThrow()
+  })
+
+  it('discards a translated document that arrives after an unmount', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/read?path=tr%2Fout.md', () => ({ body: { content: 'late', ext: 'md', size: 4 } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'tr/out.md' } } }
+      }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(urls()).toContain('/api/fs/read?path=tr%2Fout.md')
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+
+  it('discards a failed translation read after an unmount', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/read?path=tr%2Fout.md', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'tr/out.md' } } }
+      }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+
+  it('discards a failed translate request after an unmount', async () => {
+    const parked = park('/api/fs/translate', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    await click(row('README.md'))
+    await click(button(L('btnTrRegen')))
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+
+  it('discards a failed generation read after an unmount', async () => {
+    vi.useFakeTimers()
+    const parked = park('/api/fs/read?path=fresh.md', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success', docRel: 'fresh.md' } } }
+      }
+      return parked.handler(url, undefined)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+})
+
+describe('client entry: ternary and fallback arms (B/C)', () => {
+  it('treats a null rejection as an empty message', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) throw null
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    expect(byTextIncluding('.fs-load', L('errLoadFail'))).toBeTruthy()
+  })
+
+  it('renders an empty markdown document without a body', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fd%2Ffull.md')) {
+        return { body: { content: '', ext: 'md', size: 0 } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('renders a frontmatter-only document with an empty body', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fd%2Ffull.md')) {
+        return { body: { content: '---\ntitle: T\n---', ext: 'md', size: 18 } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    expect(byText('.fs-fmval', 'T')).toBeTruthy()
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('omits the badge for a file without an extension', async () => {
+    mount()
+    await flush()
+    expect(row('Makefile').querySelector('.fs-badge')).toBeNull()
+    await click(row('Makefile'))
+    expect(urls()).toContain('/api/fs/read?path=Makefile')
+    expect(document.querySelector('.fs-code')?.textContent).toBe('all:')
+  })
+
+  it('falls back to the annot tab when a directory carries a source annotation', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=.')) {
+        return {
+          body: {
+            path: '.',
+            list: [{ type: 'directory', path: 'anno', name: 'anno', hasDocSrc: true, docSrcRel: 'bk/s/anno.md' }],
+          },
+        }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('anno'))
+    // Without source content the only tab is the annotation one.
+    expect(Array.from(document.querySelectorAll('.stub-pill')).map(n => n.textContent)).toEqual([L('labAnnot')])
+    expect(byText('.stub-pill', L('labAnnot')).getAttribute('data-active')).toBe('true')
+  })
+
+  it('keeps the translation tab once translation data has landed', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'tr/full.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=tr%2Ffull.md')) return { body: { content: 'translated', ext: 'md', size: 10 } }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    // full.md has no translation yet, so the button reads 「翻译」.
+    await click(row('full.md'))
+    // full.md already has a translation, so the label is 「重新翻译」.
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('.stub-pill', L('labTr')).getAttribute('data-active')).toBe('true')
+    // Switching away and back keeps the tab: modes now includes tr via trData.
+    await click(byText('.stub-pill', L('labSrc')))
+    expect(byText('.stub-pill', L('labTr'))).toBeTruthy()
+  })
+
+  it('shows the loading line for an annot tab with no data yet', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fs%2Ffull.md')) return { status: 500, body: {} }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(byText('.stub-pill', L('labAnnot')))
+    expect(byText('.fs-load', L('loading'))).toBeTruthy()
+  })
+
+  it('shows the loading line for a tr tab with no data yet', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Ft%2Ffull.md')) return { status: 500, body: {} }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(byText('.stub-pill', L('labTr')))
+    expect(byText('.fs-load', L('loading'))).toBeTruthy()
+  })
+
+  it('shows the loading line for a doc tab with no data yet', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fd%2Ffull.md')) return { status: 500, body: {} }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(byText('.stub-pill', L('labDocFile')))
+    expect(byText('.fs-load', L('loading'))).toBeTruthy()
+  })
+
+  it('tolerates a tree reply without a list', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) return { body: { root: '/proj' } }
+      if (url.startsWith('/api/fs/tree')) return { body: { path: '.' } }
+      return { body: { ok: true } }
+    }
+    mount()
+    await flush()
+    expect(byText('.fs-empty', L('emptyDir'))).toBeTruthy()
+  })
+
+  it('restores from an archive without a root path', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ treeW: 300, expanded: [] }))
+    mount()
+    await flush()
+    // No set-root call, but the root is still read.
+    expect(hits('/api/fs/set-root')).toBe(0)
+    expect(urls()).toContain('/api/fs/root')
+    expect((document.querySelector('.fs-side') as HTMLElement).style.width).toBe('300px')
+  })
+
+  it('degrades a restore whose directory reply has no list', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: ['src'] }))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=src')) return { body: { path: 'src' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    expect(row('src').className).toContain('fs-open')
+    expect(document.querySelector('.fs-tr.fs-open .fs-chevslot')).not.toBeNull()
+  })
+
+  it('refreshes the parent cache for a nested translation with an empty reply list', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=src')) {
+        return { body: { path: 'src', list: [{ type: 'file', path: 'src/child.md', name: 'child.md', hasDocTr: true, docTrRel: 'bk/tr/child.md' }] } }
+      }
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'bk/tr/child.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=bk%2Ftr%2Fchild.md')) return { body: { content: '', ext: 'md', size: 0 } }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    await click(row('src'))
+    await click(row('child.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    // The empty translation still switches the pane to the tr tab.
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('labels a folder card whose node has a path but no name', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({
+      rootPath: '/proj',
+      opened: { type: 'directory', path: 'nameless' },
+      expanded: [],
+    }))
+    mount()
+    await flush()
+    expect(byText('.fs-folder-card-path-name', 'nameless')).toBeTruthy()
+  })
+
+  it('offers the plain generate label for a source file without a summary', async () => {
+    mount()
+    await flush()
+    await click(row('Makefile'))
+    await click(button(L('btnGen')))
+    expect(byText('.stub-menu-item', L('genFile'))).toBeTruthy()
+    expect(byText('.stub-menu-item', L('genSrc'))).toBeTruthy()
+  })
+
+  it('does not open the generation menu on hover when nothing can be generated', async () => {
+    mount()
+    await flush()
+    await click(row('README.md'))
+    const wrap = document.querySelector('.fs-genwrap') as HTMLElement
+    await act(async () => {
+      wrap.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
+    })
+    await flush()
+    expect(document.querySelector('.stub-menu')).toBeNull()
+  })
+
+  it('shows the bare relative path when the root name is unknown', async () => {
+    // An empty root path leaves rootName blank while the tree still loads.
+    handler = (url) => {
+      if (url.startsWith('/api/fs/root')) return { body: { root: '' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    expect(byText('.fs-hd-path', 'plain')).toBeTruthy()
+  })
+
+  it('reads the extensions of a node without a path', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({
+      rootPath: '/proj',
+      opened: { type: 'file' },
+      expanded: [],
+    }))
+    mount()
+    await flush()
+    // hasSource is true, so the pane waits on a read that never starts.
+    expect(document.querySelector('.fs-load')).not.toBeNull()
+  })
+})
+
+describe('client entry: unmount during a document read (C)', () => {
+  it('abandons every document read when the pane unmounts', async () => {
+    const targets = ['full.md', 'bk%2Fd%2Ffull.md', 'bk%2Fs%2Ffull.md', 'bk%2Ft%2Ffull.md']
+    const parks = targets.map(target => ({
+      target,
+      parked: park('/api/fs/read?path=' + target, () => ({ body: { content: 'late', ext: 'md', size: 4 } }), (url: string) => defaultHandler(url)),
+    }))
+    handler = (url) => {
+      const hit = parks.find(entry => url.startsWith('/api/fs/read?path=' + entry.target))
+      if (hit !== undefined) return hit.parked.handler(url, undefined)
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await flush()
+    for (const target of targets) expect(urls()).toContain('/api/fs/read?path=' + target)
+    const current = root
+    await act(async () => { current?.unmount() })
+    root = undefined
+    for (const entry of parks) entry.parked.control.release()
+    await settle()
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+
+  it('abandons a folder overview read when the pane unmounts', async () => {
+    const parked = park('/api/fs/read?path=bk%2Fdir%2Fsrc.md', () => ({ body: { content: 'late', ext: 'md', size: 4 } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    await click(row('src'))
+    await flush()
+    expect(urls()).toContain('/api/fs/read?path=bk%2Fdir%2Fsrc.md')
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.stub-md')).toBeNull()
+  })
+
+  it('abandons a failing folder overview read when the pane unmounts', async () => {
+    const parked = park('/api/fs/read?path=bk%2Fdir%2Fsrc.md', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    await click(row('src'))
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.fs-folder-card')).toBeNull()
+  })
+
+  it('abandons a failing source read when the pane unmounts', async () => {
+    const parked = park('/api/fs/read?path=plain.py', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.fs-load')).toBeNull()
+  })
+
+  it('abandons a restore failure that lands after an unmount', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: [] }))
+    const parked = park('/api/fs/root', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.fs-load')).toBeNull()
+  })
+})
+
+describe('client entry: optional-prop and empty-payload arms (C)', () => {
+  it('offers the fresh translation label for a markdown file with no translation', async () => {
+    mount()
+    await flush()
+    await click(row('plain.md'))
+    const label = byText('button', L('btnTr'))
+    expect(label.getAttribute('title')).toBe(L('a11yTrNew'))
+  })
+
+  it('renders a folder overview whose content is empty', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fdir%2Fsrc.md')) return { body: { content: '', ext: 'md', size: 0 } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('src'))
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+    expect(document.querySelector('.fs-folder-card')).toBeNull()
+  })
+
+  it('renders an annotation whose content is empty', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=bk%2Fs%2Ffull.md')) return { body: { content: '', ext: 'md', size: 0 } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(byText('.stub-pill', L('labAnnot')))
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('accepts an empty generated folder overview', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'folder', status: 'success', docRel: 'fresh.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=fresh.md')) return { body: { content: '', ext: 'md', size: 0 } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(document.querySelector('.fs-folder-card')).toBeNull()
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('accepts an empty generated file summary', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'file', status: 'success', docRel: 'fresh.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=fresh.md')) return { body: { content: '', ext: 'md', size: 0 } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFile')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('.stub-pill', L('labDocFile')).getAttribute('data-active')).toBe('true')
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('accepts an empty generated source annotation', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'src', status: 'success', docRel: 'fresh.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=fresh.md')) return { body: { content: '', ext: 'md', size: 0 } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('plain.py'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genSrc')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('.stub-pill', L('labAnnot')).getAttribute('data-active')).toBe('true')
+    expect(document.querySelector('.stub-md')?.textContent).toBe('')
+  })
+
+  it('tolerates a restore reply without a list on the top-level tree', async () => {
+    localStorage.setItem('fs.ui.v1', JSON.stringify({ rootPath: '/proj', expanded: [] }))
+    handler = (url) => {
+      if (url.startsWith('/api/fs/tree?path=.')) return { body: { path: '.' } }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    expect(urls()).toContain('/api/fs/root')
+    expect(byText('.fs-empty', L('emptyDir'))).toBeTruthy()
+  })
+
+  it('tolerates a parent refresh reply without a list after a translation', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't2', kind: 'translate', status: 'success', docRel: 'tr/full.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=tr%2Ffull.md')) return { body: { content: 'x', ext: 'md', size: 1 } }
+      if (url.startsWith('/api/fs/tree?path=.')) {
+        return calls.filter(call => call.url === '/api/fs/tree?path=.').length > 1
+          ? { body: { path: '.' } }
+          : { body: { path: '.', list: TOP_TREE } }
+      }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(button(L('btnTrRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(byText('.stub-pill', L('labTr')).getAttribute('data-active')).toBe('true')
+  })
+})
+
+
+describe('client entry: regeneration labels and late gen-doc failures (C)', () => {
+  it('offers the regenerate label for a summarised source file', async () => {
+    mount()
+    await flush()
+    await click(row('doc.txt'))
+    await click(button(L('btnGen')))
+    expect(byText('.stub-menu-item', L('genFileRegen'))).toBeTruthy()
+    expect(byText('.stub-menu-item', L('genSrc'))).toBeTruthy()
+  })
+
+  it('discards a failed generation request after an unmount', async () => {
+    const parked = park('/api/fs/gen-doc', () => ({ status: 500, body: { error: 'late' } }), url => defaultHandler(url))
+    handler = url => parked.handler(url, undefined)
+    mount()
+    await flush()
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFolder')))
+    const current = root
+    await unmountAndRelease(current, () => { parked.control.release() })
+    expect(document.querySelector('.fs-load')).toBeNull()
+  })
+})

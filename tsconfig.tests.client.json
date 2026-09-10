@@ -1,0 +1,23 @@
+{
+  // Client-plane tests leaf (T-46).
+  //
+  // Extends the *client* face, so it inherits `jsx: "react-jsx"`, the DOM libs
+  // and `types: []` verbatim: the client sources and their component specs still
+  // see NO node globals (`process`, `Buffer`, `require`) — exactly the posture
+  // `deepseekHARNESS/tsconfig.base.client.json:5` demands ("no ambient node
+  // types"). Only rootDir/include are widened; the inherited lib/types are
+  // untouched.
+  "extends": "./tsconfig.client.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "tsBuildInfoFile": "lib/tsconfig.tests.client.tsbuildinfo"
+  },
+  "include": [
+    "tests/md-utils.spec.ts",
+    "tests/client-*.spec.ts",
+    "tests/fixtures/primitives-stub.ts",
+    "src/client",
+    "src/shared"
+  ]
+}
