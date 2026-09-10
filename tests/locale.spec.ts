@@ -1,10 +1,12 @@
 // dsh-plugin-fs — 产品文案字典（src/shared/locale.ts）单元测试。
 // 只断言外部行为：字典内容（键与文案逐字）、LANG 注册表、t() 的取值/回退/缺键语义。
-// 迁移自迁移源 tests/client-md-utils.test.js 的「locale 字典契约」段，并把 72 键扩为全量对照。
+// 迁移自迁移源 tests/client-md-utils.test.js 的「locale 字典契约」段，并把 72 键扩为全量对照；
+// 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键）同步登记在此表，键序与 ZH 逐位一致。
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { LANG, ZH, t } from '../src/shared/locale'
 
-// 迁移源 src/shared/locale.js:5-90 的全量键值对照表（72 键，逐字抄录）。
+// 迁移源 src/shared/locale.js:5-90 的全量键值对照表（迁移源 72 键逐字抄录 + 第 1 批 A 类 12 键）。
 // 任何键名/文案漂移都会让 toEqual 失败——这是「文案字典不可擅改」的机器护栏。
 const EXPECTED_ZH: Record<string, string> = {
   // 槽位/页签
@@ -88,6 +90,19 @@ const EXPECTED_ZH: Record<string, string> = {
   errTargetNotDir: '目录概览只能对文件夹生成（当前目标是文件）',
   errTargetNotFile: '文件摘要/源码注解只能对文件生成（当前目标是文件夹）',
   errTaskTimeout: '生成/翻译任务超时未完成，请重试',
+  // host 错误串 · 第 1 批 A 类（文案逐字沿用原字面量；含变量的串按前缀/续段分键）
+  errNotAFile: 'not a file',
+  errNotAFileWith: 'not a file: ',
+  errFileTooLarge: 'file too large: ',
+  errFileTooLargeMid: ' bytes (limit ',
+  errFileTooLargeClose: ')',
+  errTaskNotFound: 'task not found',
+  errSrcMissing: '源文档不存在: ',
+  errSrcTooLarge: '源文档过大（> ',
+  errSrcTooLargeEnd: ' 字节）',
+  errSrcAlreadyZh: '源文档已是简体中文，无需翻译: ',
+  errUnreadableFile: '目标不是可读文件: ',
+  errUnreadableDir: '目标不是可读文件夹: ',
   // client api() 错误兜底（宿主未给 d.error 时上状态栏）
   errHttpPrefix: 'HTTP ',
   errRequestFailed: 'request failed',
@@ -98,9 +113,9 @@ afterEach(() => {
 })
 
 describe('ZH 字典', () => {
-  it('全量 72 键与文案逐字一致（键名、顺序、值均不可漂移）', () => {
+  it('全量 84 键与文案逐字一致（键名、顺序、值均不可漂移）', () => {
     expect(Object.keys(ZH)).toEqual(Object.keys(EXPECTED_ZH))
-    expect(Object.keys(ZH)).toHaveLength(72)
+    expect(Object.keys(ZH)).toHaveLength(84)
     expect(ZH).toEqual(EXPECTED_ZH)
   })
 
@@ -150,5 +165,58 @@ describe('t()', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     expect(t('toString')).toBe('toString')
     expect(warn).toHaveBeenCalledWith('[locale] missing key: toString')
+  })
+})
+
+// ---- A 类文案字典化：搬迁对照 + 回潮守卫（第 1 批，2026-09-11）----
+// 两条断言各把一件事：① 新键的字典值逐字等于搬迁前的原字面量；② 已字典化的源码文件里
+// 不再出现那些原字面量——「有人把某处改回裸串」时 ② 立刻变红（运行时取值守卫做不到这一点：
+// 裸串与字典值同值，取值层面无法区分来源）。
+// 每项的值取自搬迁前的源码原文与 git diff 的改前行；配合 ZH 全量对照表互为双保险。
+const MOVED_STRINGS: Array<[string, string]> = [
+  ['errNotAFile', 'not a file'],
+  ['errNotAFileWith', 'not a file: '],
+  ['errFileTooLarge', 'file too large: '],
+  ['errFileTooLargeMid', ' bytes (limit '],
+  ['errFileTooLargeClose', ')'],
+  ['errTaskNotFound', 'task not found'],
+  ['errSrcMissing', '源文档不存在: '],
+  ['errSrcTooLarge', '源文档过大（> '],
+  ['errSrcTooLargeEnd', ' 字节）'],
+  ['errSrcAlreadyZh', '源文档已是简体中文，无需翻译: '],
+  ['errUnreadableFile', '目标不是可读文件: '],
+  ['errUnreadableDir', '目标不是可读文件夹: '],
+]
+
+/** 搬走后源码里不得再出现的原文（按文件分组；含引号的按原样带引号匹配）。 */
+const NO_LITERAL: Array<[string, string[]]> = [
+  ['src/host/index.ts', ["'not a file'", "'not a file: '", 'file too large:', "'task not found'"]],
+  ['src/host/abilities/translate-doc/index.ts', ['源文档不存在: ', '源文档过大（> ', '源文档已是简体中文，无需翻译: ']],
+  ['src/host/abilities/source-doc/skeleton.ts', ['目标不是可读文件: ']],
+  ['src/host/abilities/folder-doc/skeleton.ts', ['目标不是可读文件夹: ']],
+]
+
+describe('A 类文案字典化（第 1 批）', () => {
+  it('12 个新键的字典值逐字等于搬迁前的原字面量', () => {
+    for (const [key, original] of MOVED_STRINGS) {
+      expect((ZH as Record<string, string>)[key], key).toBe(original)
+    }
+  })
+
+  it('含变量的两串按原拼接顺序复现后，与原模板串逐字相同', () => {
+    expect(ZH.errFileTooLarge + String(1234) + ZH.errFileTooLargeMid + String(2048) + ZH.errFileTooLargeClose)
+      .toBe('file too large: ' + String(1234) + ' bytes (limit ' + String(2048) + ')')
+    expect(ZH.errSrcTooLarge + String(2048) + ZH.errSrcTooLargeEnd)
+      .toBe('源文档过大（> ' + String(2048) + ' 字节）')
+    expect(ZH.errNotAFileWith + '目录概览/a.md').toBe('not a file: 目录概览/a.md')
+  })
+
+  it('已字典化的源码文件不再残留原字面量（改回裸串即变红）', () => {
+    for (const [file, literals] of NO_LITERAL) {
+      const text = readFileSync(new URL('../' + file, import.meta.url), 'utf8')
+      for (const literal of literals) {
+        expect(text.includes(literal), file + ' 残留裸串: ' + literal).toBe(false)
+      }
+    }
   })
 })

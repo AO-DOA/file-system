@@ -313,6 +313,19 @@ function parseJson(body: string): unknown {
 }
 
 /**
+ * A 类文案字典化守卫（第 1 批 A 类，2026-09-11）：把「上屏错误确实取自 locale 字典」变成机械断言。
+ * 判据：取值等于某个字典值，或以某个字典值开头——含变量的串由调用方在代码里拼接，故只命中前缀。
+ * 只挂在 A 类已字典化的用例上：B/C 类串（`path required` / `path escapes workspace root` …）
+ * 尚未字典化，挂上去是假红。「有人改回裸串」这条回潮由 tests/locale.spec.ts 的源码扫描守卫拦。
+ * @param error - 响应体里的 error 字段。
+ */
+function expectDictError(error: unknown): void {
+  const text = String(error)
+  const hit = Object.values(ZH).some(v => v.length >= 2 && (text === v || text.startsWith(v)))
+  expect(hit, '上屏文案必须取自 ZH 字典，实际为: ' + JSON.stringify(text)).toBe(true)
+}
+
+/**
  * 直接走 ctx.__fsTest.handle 发一次请求（seg 由调用方给，等价于 prefix 路由解析后的值）。
  * @param fsTest - 测试句柄。
  * @param req - 请求桩。
@@ -1110,6 +1123,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTestOf(ctx), createReq('GET', '/api/fs/read?path=' + encodeURIComponent('big.txt')), 'read')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('file too large: ' + String(limit + 1) + ' bytes (limit ' + String(limit) + ')')
+    expectDictError((out.json as ErrorBody).error)
   })
 })
 
@@ -1683,6 +1697,7 @@ describe('GET /gen-status', () => {
     const out = await call(fsTestOf(ctx), createReq('GET', '/api/fs/gen-status?id=fsgen-nope'), 'gen-status')
     expect(out.status).toBe(200)
     expect(out.json).toEqual({ ok: false, error: 'task not found', task: null })
+    expectDictError((out.json as ErrorBody).error)
   })
 
   it('gen-status 无 id：最近任务列表按 startedAt 倒序、上限 20、未启动的排最后（源 index.ts:541）', async () => {
@@ -1724,10 +1739,12 @@ describe('GET /read', () => {
     const dirOut = await call(fsTest, createReq('GET', '/api/fs/read?path=dir'), 'read')
     expect(dirOut.status).toBe(400)
     expect((dirOut.json as ErrorBody).error).toBe('not a file')
+    expectDictError((dirOut.json as ErrorBody).error)
 
     const missing = await call(fsTest, createReq('GET', '/api/fs/read?path=nope.txt'), 'read')
     expect(missing.status).toBe(400)
     expect((missing.json as ErrorBody).error).toBe('not a file')
+    expectDictError((missing.json as ErrorBody).error)
 
     const noPath = await call(fsTest, createReq('GET', '/api/fs/read'), 'read')
     expect(noPath.status).toBe(400)
@@ -1763,6 +1780,7 @@ describe('GET /read', () => {
     const deep = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/a/b.md')), 'read')
     expect(deep.status).toBe(400)
     expect((deep.json as ErrorBody).error).toBe('not a file')
+    expectDictError((deep.json as ErrorBody).error)
 
     // 叶子含反斜杠（POSIX 下是合法文件名字符）→ 严格解析拒绝，防 Windows 路径语义混入
     const backslash = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/a\\b.md')), 'read')
@@ -1773,6 +1791,7 @@ describe('GET /read', () => {
     const notFound = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/no-such.md')), 'read')
     expect(notFound.status).toBe(404)
     expect((notFound.json as ErrorBody).error).toMatch(/not a file/)
+    expectDictError((notFound.json as ErrorBody).error)
   })
 
   it('read 带桶 rel：新桶定位、注册桶的旧库回退、未注册桶只读新桶（源 :553 与 :629 的合成）', async () => {
@@ -2139,6 +2158,7 @@ describe('覆盖率补齐：可达但源用例未触达的分支', () => {
     )
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('file too large: ' + String(big) + ' bytes (limit ' + String(READ_LIMIT) + ')')
+    expectDictError((out.json as ErrorBody).error)
   })
 })
 

@@ -236,10 +236,12 @@ describe('labLabelKey', () => {
   })
 
   it('返回的 key 均能在字典中取到文案（闭环）', () => {
-    expect(ZH[labLabelKey('doc', true)]).toBe('目录概览')
-    expect(ZH[labLabelKey('doc', false)]).toBe('文件摘要')
-    expect(ZH[labLabelKey('annot', false)]).toBe('源码注解')
-    expect(ZH[labLabelKey('tr', false)]).toBe('文章翻译')
-    expect(ZH[labLabelKey('source', false)]).toBe('源码')
+    // ZH 的键集是精确字面量（无索引签名），动态键经 Record 视读取值。
+    const dict = ZH as Record<string, string>
+    expect(dict[labLabelKey('doc', true)]).toBe('目录概览')
+    expect(dict[labLabelKey('doc', false)]).toBe('文件摘要')
+    expect(dict[labLabelKey('annot', false)]).toBe('源码注解')
+    expect(dict[labLabelKey('tr', false)]).toBe('文章翻译')
+    expect(dict[labLabelKey('source', false)]).toBe('源码')
   })
 })

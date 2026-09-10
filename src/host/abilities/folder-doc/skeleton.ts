@@ -2,6 +2,7 @@
 // 等价 skills/folder-doc/scripts/gen-tree.sh 与 skills/folder-doc/templates/folder.md；
 // 该技能保留仅供会话内人工调用，宿主不再依赖它。
 import { readdir } from 'node:fs/promises'
+import { ZH } from '../../../shared/locale.ts'
 
 // 目录树排除名单：与 gen-tree.sh 的 ign 变量逐项一致（只作用于目录，不作用于文件）。
 export const FOLDER_TREE_IGNORE: string[] = [
@@ -119,7 +120,7 @@ export function renderFolderDocSkeleton({ relPath, name, layer, generatedAt, tre
 // 读取目标文件夹第一层并渲染骨架。目标不是可读目录时抛错（路由层已预检，这里是兜底）。
 export async function buildFolderSkeleton({ abs, targetKey, docStem, layer, generatedAt }: FolderSkeletonTarget): Promise<string> {
   const entries = await readdir(abs, { withFileTypes: true }).catch(() => null)
-  if (!entries) throw new Error('目标不是可读文件夹: ' + abs)
+  if (!entries) throw new Error(ZH.errUnreadableDir + abs)
   return renderFolderDocSkeleton({
     relPath: targetKey,
     name: docStem,

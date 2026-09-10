@@ -334,11 +334,14 @@ export function apply(ctx: FsHostContext): void {
   async function serveFile(res: ServerResponse, abs: string): Promise<void> {
     const stat = await fsp.stat(abs).catch(() => null)
     if (!stat || stat.isDirectory()) {
-      json(res, 400, { ok: false, error: 'not a file' })
+      json(res, 400, { ok: false, error: ZH.errNotAFile })
       return
     }
     if (stat.size > READ_LIMIT) {
-      json(res, 400, { ok: false, error: `file too large: ${stat.size} bytes (limit ${READ_LIMIT})` })
+      json(res, 400, {
+        ok: false,
+        error: ZH.errFileTooLarge + String(stat.size) + ZH.errFileTooLargeMid + String(READ_LIMIT) + ZH.errFileTooLargeClose,
+      })
       return
     }
     const content = await fsp.readFile(abs, 'utf8')
@@ -564,7 +567,7 @@ export function apply(ctx: FsHostContext): void {
         if (id) {
           const task = genTasks.get(id)
           if (task) { json(res, 200, { ok: true, task }); return }
-          json(res, 200, { ok: false, error: 'task not found', task: null })
+          json(res, 200, { ok: false, error: ZH.errTaskNotFound, task: null })
           return
         }
         const tasks = [...genTasks.values()].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, 20)
@@ -655,7 +658,7 @@ export function apply(ctx: FsHostContext): void {
           }
           const abs = await firstExistingFile(...candidates)
           if (!abs) {
-            json(res, 404, { ok: false, error: 'not a file: ' + rel })
+            json(res, 404, { ok: false, error: ZH.errNotAFileWith + rel })
             return
           }
           await serveFile(res, abs)
@@ -664,11 +667,14 @@ export function apply(ctx: FsHostContext): void {
         const abs = resolveIn(root, rel)
         const stat = await fsp.stat(abs).catch(() => null)
         if (!stat || stat.isDirectory()) {
-          json(res, 400, { ok: false, error: 'not a file' })
+          json(res, 400, { ok: false, error: ZH.errNotAFile })
           return
         }
         if (stat.size > READ_LIMIT) {
-          json(res, 400, { ok: false, error: `file too large: ${stat.size} bytes (limit ${READ_LIMIT})` })
+          json(res, 400, {
+            ok: false,
+            error: ZH.errFileTooLarge + String(stat.size) + ZH.errFileTooLargeMid + String(READ_LIMIT) + ZH.errFileTooLargeClose,
+          })
           return
         }
         const content = await fsp.readFile(abs, 'utf8')

@@ -3,6 +3,7 @@
 // 照抄，实测一次 41K tokens 零信息增量）。译文由模型分段写入，宿主收尾校验落盘与更新。
 import { readFile, stat } from 'node:fs/promises'
 import { computeDocStem, READ_LIMIT } from '../../fs-utils.ts'
+import { ZH } from '../../../shared/locale.ts'
 
 // 判定文本是否以简体中文为主。判据：CJK 统一表意文字数与拉丁字母数比较——中文占优即视为
 // 中文；中文字符占比达到 20% 也视为中文，防「中文文档里代码块/英文术语极多」被拉丁字母
@@ -34,10 +35,10 @@ export default {
   // 派发前校验：源文存在且为文件、不超读上限、不是简体中文。
   async precheck({ abs, rel }: { abs: string; rel: string }): Promise<void> {
     const st = await stat(abs).catch(() => null)
-    if (!st || st.isDirectory()) throw new Error('源文档不存在: ' + abs)
-    if (st.size > READ_LIMIT) throw new Error('源文档过大（> ' + String(READ_LIMIT) + ' 字节）')
+    if (!st || st.isDirectory()) throw new Error(ZH.errSrcMissing + abs)
+    if (st.size > READ_LIMIT) throw new Error(ZH.errSrcTooLarge + String(READ_LIMIT) + ZH.errSrcTooLargeEnd)
     const head = await readFile(abs, 'utf8').then(t => t.slice(0, 8192)).catch(() => null)
-    if (head && isMostlyChinese(head)) throw new Error('源文档已是简体中文，无需翻译: ' + rel)
+    if (head && isMostlyChinese(head)) throw new Error(ZH.errSrcAlreadyZh + rel)
   },
   // 收尾校验：译文确实落盘；更新模式下还要确认内容真的变了（防空转误报 success）。
   async verify({ docAbs, prevStat }: { docAbs: string; prevStat: { mtimeMs: number; size: number } | null | undefined }): Promise<void> {

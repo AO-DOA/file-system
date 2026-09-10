@@ -2,8 +2,11 @@
 // host 与 client 共用：client 经 t() 取值；host 直取 ZH[key]（U3 引用 errGenMd / errTranslateOnlyMd / errBookNoTranslate）。
 // 多语言扩展点：新增语言在 LANG 注册并补全 ZH 对应键；当前 zh 单语，en 留未来。
 
-/** key → 文案。产品文案唯一真源，字典外不得硬编码。 */
-export const ZH: Record<string, string> = {
+/** key → 文案。产品文案唯一真源，字典外不得硬编码。
+ *  `as const satisfies` 而非 `Record<string, string>` 注解：后者给每个取值带上 `string | undefined`
+ *  （索引签名），host 直取后拼接（`ZH.errXxx + detail`）过不了 lint 的 restrict-plus-operands；
+ *  加上约束后键仍是字面量、取值是 string，同时键集仍受 Record<string, string> 校验。 */
+export const ZH = {
   // 槽位/页签
   slotLabel: '文件',
   // 查看模式页签（labLabelKey 的 key → 文案映射）
@@ -85,10 +88,25 @@ export const ZH: Record<string, string> = {
   errTargetNotDir: '目录概览只能对文件夹生成（当前目标是文件）',
   errTargetNotFile: '文件摘要/源码注解只能对文件生成（当前目标是文件夹）',
   errTaskTimeout: '生成/翻译任务超时未完成，请重试',
+  // host 错误串 · 第 1 批 A 类（正常 UI 操作可达的上屏文案；文案逐字沿用原字面量，只搬家不改写）。
+  // 含变量的串按「前缀 + 续段」分键、调用方拼接（先例 errReadFail）；变量夹在固定文案中间时，
+  // 中间那段另立 Mid/End 键，使整句固定文案零残留。errFileTooLargeClose 是括号闭合段。
+  errNotAFile: 'not a file',
+  errNotAFileWith: 'not a file: ',
+  errFileTooLarge: 'file too large: ',
+  errFileTooLargeMid: ' bytes (limit ',
+  errFileTooLargeClose: ')',
+  errTaskNotFound: 'task not found',
+  errSrcMissing: '源文档不存在: ',
+  errSrcTooLarge: '源文档过大（> ',
+  errSrcTooLargeEnd: ' 字节）',
+  errSrcAlreadyZh: '源文档已是简体中文，无需翻译: ',
+  errUnreadableFile: '目标不是可读文件: ',
+  errUnreadableDir: '目标不是可读文件夹: ',
   // client api() 错误兜底（宿主未给 d.error 时上状态栏）
   errHttpPrefix: 'HTTP ',
   errRequestFailed: 'request failed',
-}
+} as const satisfies Record<string, string>
 
 /** 语言码 → 字典。当前仅 zh；新增语言在此登记并补全 ZH 对应键。 */
 export const LANG: Record<string, Record<string, string>> = { zh: ZH }
@@ -100,7 +118,8 @@ export const LANG: Record<string, Record<string, string>> = { zh: ZH }
  * @returns 对应文案；键未登记时返回 key 本身。
  */
 export function t(key: string, lang?: string): string {
-  const dict = LANG[lang ?? ''] ?? ZH
+  // 显式注解：ZH 现在是无索引签名的字面量对象类型，联合类型下的 `dict[key]` 会失去索引签名。
+  const dict: Record<string, string> = LANG[lang ?? ''] ?? ZH
   if (Object.prototype.hasOwnProperty.call(dict, key)) return dict[key] as string
   console.warn('[locale] missing key: ' + key)
   return key

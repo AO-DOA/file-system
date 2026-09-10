@@ -29,14 +29,15 @@ import { ZH } from '../src/shared/locale.ts'
 /**
  * Read one dictionary entry.
  *
- * `ZH` is typed `Record<string, string>`, so under `noUncheckedIndexedAccess`
+ * `ZH` keeps a literal object type (no index signature) so host-side reads stay
+ * plain `string`; read through the `Record<string, string>` view here, where
  * every index read is `string | undefined`; this narrows it once, and a missing
  * key fails loudly instead of flowing `undefined` into an assertion.
  * @param key - dictionary key.
  * @returns the localized string.
  */
 function L(key: string): string {
-  const value = ZH[key]
+  const value = (ZH as Record<string, string>)[key]
   if (value === undefined) throw new Error('missing locale key: ' + key)
   return value
 }

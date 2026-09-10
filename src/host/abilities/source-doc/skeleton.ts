@@ -5,6 +5,7 @@
 // 与 skeleton 命令入口，逻辑与文案逐字等价，仅把 CLI 形态换成可 import 的纯函数。
 // 该技能与脚本保留，仅供会话内人工调用；宿主不再依赖它。只依赖 Node 内置模块。
 import { readFile } from 'node:fs/promises'
+import { ZH } from '../../../shared/locale.ts'
 
 // 可注解单元（源里以注释给出 `Unit = { type, start, end, code, note }`；TS 下显式声明形状）。
 interface Unit {
@@ -81,7 +82,7 @@ export async function buildSourceSkeleton(
   { abs }: { abs: string },
 ): Promise<{ text: string; unitCount: number; lineCount: number }> {
   const srcText = await readFile(abs, 'utf8').catch(() => null)
-  if (srcText === null) throw new Error('目标不是可读文件: ' + abs)
+  if (srcText === null) throw new Error(ZH.errUnreadableFile + abs)
   const srcLines = srcText.split('\n')
   const units = buildUnits(srcLines)
   return { text: renderSourceSkeleton(units, abs), unitCount: units.length, lineCount: srcLines.length }
