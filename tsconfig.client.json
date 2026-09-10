@@ -18,6 +18,20 @@
     "composite": true,
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
     "allowImportingTsExtensions": true,
+    // `@deepseek-ai/dsh-client-ui-primitives` is a deepseek-harness workspace
+    // package, not a published npm package, and this repo declares it an
+    // optional peer — so `npm install` never provides it and a fresh clone
+    // would fail here with TS2307. `paths` points the specifier at the
+    // vendored minimal contract in `types/`, which makes the client face
+    // reproducible with no hand-made node_modules symlink and no
+    // machine-specific absolute path. It is type-only: at runtime the web
+    // shell's frozen module table resolves this specifier, not node_modules.
+    // Relative (not `${configDir}`) on purpose: paths without baseUrl resolve
+    // against the tsconfig that declares them — this file, at the repo root —
+    // and both test leaves that extend it sit at the repo root too.
+    "paths": {
+      "@deepseek-ai/dsh-client-ui-primitives": ["./types/dsh-client-ui-primitives.d.ts"]
+    },
     "types": [],
     "strict": true,
     "noUncheckedIndexedAccess": true,

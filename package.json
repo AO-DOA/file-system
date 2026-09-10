@@ -26,7 +26,7 @@
     "typecheck": "tsc -b tsconfig.json",
     "lint": "oxlint . --config .oxlintrc.json",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --coverage.reportOnFailure=true; cov=$?; node scripts/verify-coverage-scope.mjs; scope=$?; if [ $cov -ne 0 ] || [ $scope -ne 0 ]; then exit 1; fi",
     "build": "tsc -b tsconfig.host.json && tsdown && node scripts/normalize-client-banner.mjs && node scripts/verify-client-banner.mjs",
     "prepare": "npm run build"
   },
@@ -49,6 +49,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/cordis-plugin-include": "1.0.7",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.5-rc.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^26.2.0",
     "@types/react": "^18.3.31",
