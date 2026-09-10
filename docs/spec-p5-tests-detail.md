@@ -416,13 +416,13 @@ coverage: {
 
 ### 5.3 明令禁止的回避手段
 
-以下手段**一律禁止**，出现即视为 T-51 未完成（依据：`docs/spec-p5-p6-tests-and-cutover.md` §5、`PROGRESS.md` D-2、`docs/testing.zh.md:13`）：
+以下手段**一律禁止**，出现即视为 T-51 未完成（依据：`docs/spec-p5-p6-tests-and-cutover.md` §5、`PROGRESS.md` D-2、`docs/testing.zh.md:10`）：
 
 | 禁止项 | 为什么禁止 |
 |---|---|
 | `/* v8 ignore */` / `/* v8 ignore next */` / `/* c8 ignore */` | 直接抹掉未覆盖标记 —— 掩盖而非补齐 |
 | `/* istanbul ignore */`（任何形态） | 同上 |
-| **删除逻辑**以求覆盖 | `docs/testing.zh.md:13` 原文：「未覆盖的行往往是门禁正确标记出的死代码（**应删除**），而非需要补写的测试」—— 这句只授权删除**真死代码**，即「无任何引用的导出/分支」，**不授权**为了达标而删除可达的防御分支（`D-8` 已把「无任何引用的死代码」限定为 T-02 实测清单：`cardDismissed`/`setCardDismissed`、`genStatus`、未消费的 `isMdFile`/`isBookFile`/`picker`、4 个无 JS 引用的 CSS 类） |
+| **删除逻辑**以求覆盖 | `docs/testing.zh.md:10` 原文：「未覆盖的行往往是门禁正确标记出的死代码（应删除），而非需要补写的测试」—— 这句只授权删除**真死代码**，即「无任何引用的导出/分支」，**不授权**为了达标而删除可达的防御分支（`D-8` 已把「无任何引用的死代码」限定为 T-02 实测清单：`cardDismissed`/`setCardDismissed`、`genStatus`、未消费的 `isMdFile`/`isBookFile`/`picker`、4 个无 JS 引用的 CSS 类） |
 | **往 `coverage.exclude` 加白名单** | 这是「换一个地方的 ignore」。两个入口的排除是 P1-A 已定的特例（`vitest.config.ts` 注释：wiring stub，无自有逻辑），**不得扩大** |
 | **放宽 `thresholds`**（把 100 改成 99，或关掉 `branches`） | 与 D-2 直接冲突 |
 | **放宽 tsconfig 严格度 / 引入 `any`** | 主仓 `AGENTS.md:143` 的纪律；且会掩盖类型层面的真问题 |
@@ -474,8 +474,8 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 | 源用例（`real-composition.test.js`） | zc 现状 | 处置 |
 |---|---|---|
 | `:24` package.json loader 契约（`main` / `exports['.']` / `exports['./client']` / `dsh.bundle.patch`） | zc 版 `:171-176` 只断言了 `name` 与 `dsh.bundle.patch` | **补**：断言 `exports['.'] === './lib/host/index.js'`、`exports['./client'] === './client/client.js'`（值须与 `package.json` 实况一致，**不要照抄源仓的 `./dsh/index.js`**） |
-| `:33` host 模块真实形态：`default === undefined`、`name === 'fs'`、`inject` 数组、`apply` 可执行 | zc 版通过 Loader entry tree 间接覆盖了 `name`/`id` | **补 `default` 与 `inject` 的显式断言**。依据 `docs/testing.zh.md:41`：「需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言」（原文见 §9） |
-| `:43` loader 自引用（`await import('dsh-plugin-file-system')`）+ `t.skip` | **不应迁移** | **删除**。理由有硬依据：① 包名已改为 `dsh-plugin-file-system-zc`；② `docs/testing.zh.md:47` 原文要求「**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例」——zc 的 `exports['.']` 指向 `lib/host/index.js`，正是该条禁止的形态；③ zc 版已用真 Loader 取代 |
+| `:33` host 模块真实形态：`default === undefined`、`name === 'fs'`、`inject` 数组、`apply` 可执行 | zc 版通过 Loader entry tree 间接覆盖了 `name`/`id` | **补 `default` 与 `inject` 的显式断言**。依据 `docs/testing.zh.md:40`：「需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言」（原文见 §9） |
+| `:43` loader 自引用（`await import('dsh-plugin-file-system')`）+ `t.skip` | **不应迁移** | **删除**。理由有硬依据：① 包名已改为 `dsh-plugin-file-system-zc`；② `docs/testing.zh.md:45` 原文要求「**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例」——zc 的 `exports['.']` 指向 `lib/host/index.js`，正是该条禁止的形态；③ zc 版已用真 Loader 取代 |
 | `:93` apply 装配：`webServer.register` 收到 `/api/fs` 前缀 + effect 清理可执行 | zc 版 `:135` 断言 `['prefix /api/fs']`；`afterEach` 的 `fiber.dispose()`（`:46-49`）覆盖可逆性 | **已覆盖，不重写**；若要更贴近源仓，可补一条「dispose 后路由表为空」的显式断言 |
 | `:116` `NODE_ENV !== 'test'` 时不挂 `__fsTest` | **zc 版缺失** | **必须补**。注意 P3 落地后 `__fsTest` 的挂载条件若变化，须以源码为准 |
 | `:133` `cordis.patch.yml` 插件行 `id: fs` + `name: <包名>` | zc 版 `:162-169` 覆盖 | **已覆盖** |
@@ -546,21 +546,21 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 
 **对应**：§5.2（边界/错误路径的补法）、§6.2 W1（把纯逻辑先迁）。
 
-### 9.3 `docs/testing.zh.md:13`（覆盖率门禁的口径）
+### 9.3 `docs/testing.zh.md:10`（覆盖率门禁的口径）
 
 > **覆盖率门禁**（`pnpm run test:coverage`）：门禁级运行，对 `packages/*/*/src` 按文件 100% 覆盖。未覆盖的行往往是门禁正确标记出的死代码（应删除），而非需要补写的测试。行覆盖率是必要条件，但永远不是充分条件：它证明行被执行过，不证明功能按交付预期工作。
 
 **对应**：§5.1（per-file 100%）、§5.3（禁止 ignore，以及「删逻辑」的授权边界）。
 
-### 9.4 `docs/testing.zh.md:39` 与 `:41`（真实入口路径 / 回归守卫）
+### 9.4 `docs/testing.zh.md:39` 与 `:40`（真实入口路径 / 回归守卫）
 
 > `:39` 产品可见的插件必须有一个非单元的真实组合测试。手动构建的 `ctx.plugin(...)` 套件不够：通过 Loader 和 app/process 启动仅用于测试的 `cordis.yml`，只 mock 外部服务或非确定性输入，断言模型可见的请求/日志、持久状态或用户可见输出。不要把 opt-in 选项混入交付默认值。
 
-> `:41` 一个守卫只有在回归能让它失败时才有效。对于没有 `inject` 的插件（bundle/组合插件），Loader 冒烟测试在默认导出替换必需的具名导出时仍然绿着——需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言，并证明它有效：引入回归、观察变红、回退。
+> `:40` 一个守卫只有在回归能让它失败时才有效。对于没有 `inject` 的插件（bundle/组合插件），Loader 冒烟测试在默认导出替换必需的具名导出时仍然绿着——需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言，并证明它有效：引入回归、观察变红、回退。
 
-**对应**：§6.3（zc 版 real-composition 已是真 Loader，正是 `:39` 要求的形态；`:41` 直接给出 `default` 断言的写法）。
+**对应**：§6.3（zc 版 real-composition 已是真 Loader，正是 `:39` 要求的形态；`:40` 直接给出 `default` 断言的写法）。
 
-### 9.5 `docs/testing.zh.md:47`（测试解析：仅限源码）
+### 9.5 `docs/testing.zh.md:45`（测试解析：仅限源码）
 
 > - 每个 vitest 配置都将 vite-tsconfig-paths 指向 `tsconfig.base.json`；工作区包的裸导入解析到 `src`，绝不会经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例。
 

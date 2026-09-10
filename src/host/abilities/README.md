@@ -13,7 +13,7 @@
 
 `registry.ts` 汇总四个能力（`GEN_ABILITIES` / `TRANSLATE_ABILITY` / `ABILITIES` / `abilityOf`），路由与执行器按 `kind` 取描述符，不再散落 kind 分支。
 
-各能力目录下的 `prompt.md` 是**后台生成与翻译任务提示词的唯一真源**。改提示词只改它，不需要改代码、不需要 `npm run build`、不需要重启 dsh web——宿主在**每次派发任务时**读盘并渲染（`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位并读盘，`src/host/fs-utils.ts` 的 `renderPromptTemplate` 替换变量）。
+各能力目录下的 `prompt.md` 是**后台生成与翻译任务提示词的唯一真源**。改提示词只改它，不需要改代码、不需要 `npm run build`、不需要重启 dsh web——宿主在**每次派发任务时**读盘并渲染（`src/host/prompt-loader.ts` 按 `ability.dir` + `ability.promptFile` 定位并读盘，`src/host/fs-utils.ts` 的 `renderPromptTemplate` 替换变量）。
 
 ## 文件与加载规则
 
@@ -31,7 +31,7 @@
 > 模板一律保持工具无关表述。
 > 依据与实测数据见源仓 `docs/ptc-probe-2026-09-09.md`。
 
-模板名 = 各能力目录下的 `prompt.md`（`abilities/folder-doc` / `abilities/file-doc` / `abilities/source-doc` / `abilities/translate-doc`）。**加载规则**：`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位，两个候选路径覆盖两种加载形态——源码直载/测试 `<HERE>/abilities/<dir>`（`<HERE>` = 加载器所在目录，即 `src/host/`）与打包后 `<HERE>/../../src/host/abilities/<dir>`（产物 `lib/host/index.js` 需回退两级再进源码树 `src/host/`）；宿主**每次派发任务时读盘**，故改提示词免 build、免重启。**文件不存在即回退**到代码内联文本（`gen-executor.js` 与 `translate-executor.js` 的内联数组），因此删掉某个 `prompt.md` 不会让任务失败，只会退回旧表述。
+模板名 = 各能力目录下的 `prompt.md`（`abilities/folder-doc` / `abilities/file-doc` / `abilities/source-doc` / `abilities/translate-doc`）。**加载规则**：`src/host/prompt-loader.ts` 按 `ability.dir` + `ability.promptFile` 定位，两个候选路径覆盖两种加载形态——源码直载/测试 `<HERE>/abilities/<dir>`（`<HERE>` = 加载器所在目录，即 `src/host/`）与打包后 `<HERE>/../../src/host/abilities/<dir>`（产物 `lib/host/index.js` 需回退两级再进源码树 `src/host/`）；宿主**每次派发任务时读盘**，故改提示词免 build、免重启。**文件不存在即回退**到代码内联文本（`gen-executor.ts` 与 `translate-executor.ts` 的内联数组），因此删掉某个 `prompt.md` 不会让任务失败，只会退回旧表述。
 
 ## 占位符
 
@@ -112,6 +112,6 @@
 1. 新建 `abilities/<name>/` 目录，写 `index.ts` 能力描述符：`kind` / `dir` / `sub` / `arr` / `layer` / `scope` / `promptFile` / `docStem`，按需加 `skeleton` / `precheck` / `verify` / `finalize`（以及 L3 用的 `skeletonFile` / `hostBuild`）。
 2. 在 `abilities/registry.ts` 注册该能力（生成类进 `GEN_ABILITIES`，翻译类为 `TRANSLATE_ABILITY`；`ABILITIES` 自动汇总）。
 3. 写该目录的 `prompt.md`：固定参数区写死宿主算好的绝对路径与键，步骤给出**可原样复制执行**的命令（L1 已无脚本命令，改为给出骨架原文与三处填充规则），末尾列「已知坑」。
-4. 若该能力需要新变量，在 `prompt-loader.js`（或描述符 `promptVars`）的渲染处补齐，并在本文件变量表登记。
-5. 更新 `tests/gen-scope.test.js` 的装配断言（至少覆盖：模板已加载、关键参数、产物路径、`--key`/`--rel` 差异、system 段不被注入）。
+4. 若该能力需要新变量，在 `prompt-loader.ts`（或描述符 `promptVars`）的渲染处补齐，并在本文件变量表登记。
+5. 更新 `tests/gen-scope.spec.ts` 的装配断言（至少覆盖：模板已加载、关键参数、产物路径、`--key`/`--rel` 差异、system 段不被注入）。
 6. 走完 AGENTS.md §3 的四门禁。
