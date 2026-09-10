@@ -156,6 +156,7 @@
 | D-10 | **高危缺陷的处置**：`POST /delete` 无 `path` 必填校验 → `path` 缺失时 `abs === root` 并 `rm(recursive:true, force:true)`，**可递归删除整个工作区根**（`src/host/index.js:258-262`）；`POST /write`、`POST /mkdir` 同样无必填校验。**决定：按 D-8 逐字保留**——依据是这三条路由**无任何 client 调用**（T-01 已 grep 证实），暴露面仅限直连 API；迁移目标是行为等价，不是修 bug。**但必须**在 `docs/feature-baseline.md` 与最终交付摘要中**显著标注为「已知高危」**，由用户决定是否另开账目修正 | 用户要求「功能不能遗失」；T-01 报告 §A 路由表与 §F-3 迁移风险 | 2026-09-11 |
 | D-11 | client 采用 **`.tsx` + JSX**（`jsx: react-jsx`）替换现有 `React.createElement`；`react/jsx-runtime` 必须进 tsdown externals | 用户要求「严格按主仓规范重构」；主仓 client 与参照实现 `dsh-market` 均为 `.tsx`。风险由「逐段对照 createElement 实参顺序」+「171 功能点对照验收」控制。规格见 `docs/spec-p4-client.md` | 2026-09-11 |
 | R-1 | **流程违规记录**：主智能体在「会话压缩能力」任务中亲自做源码调研（读 `command-compact` 实现、跑 `cordis_inspect_*` 查 `compaction`/`Agent` 契约、读 `ToolDefinition` 定义）并亲自 `cordis_define` 了插件草案 `cmpct-1/pkg-1`，违反用户设定的指挥边界。**改进**：追加 §0.2 硬约束；剩余实现全部移交子智能体接管。**后续纪律**：一切技术调研与实现一律派子智能体，主智能体只做拆解、派发、验收、记账、提交 | 用户直接指正 | 2026-09-11 |
+| R-2 | **委派的边界（实测发现，已修正）**：① **插件生命周期**归定义它的会话（子智能体的 `cmpct-2/pkg-2` 归其会话）；② 但**工具注册是进程级的**——子智能体注册的 `compact_context` 在主智能体会话中同样可见（证据：主智能体尝试 `cordis_run` 自己的同名 Package 时报 `tool "compact_context" is already registered`）。**结论**：凡「给主智能体新增运行时能力」的任务，**纯委派即可闭环**，无需主智能体亲自 define。先前"父会话不可用"的判断**已推翻**。未使用的 `cmpct-1/pkg-3` 保持未激活 | 主智能体 run 冲突报错 + 子智能体 `3eec5d11` 报告 | 2026-09-11 |
 
 ---
 
