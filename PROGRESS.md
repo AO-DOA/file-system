@@ -113,8 +113,8 @@
 | # | 任务 | 状态 |
 |---|---|---|
 | T-20 | **P2-A 基础层**：`fs-utils`（238 行/25 导出）+ `locale`（100 行/3 导出，72 键）+ D-6 核验 | **已销账**（主智能体实测验收；子P2A `79438ecb` 已授权并使用二级委派 `e42b8c7f`） | **五门禁全绿（主智能体亲测）**：`typecheck` exit 0；`lint` 0 错 0 警告（13 files / 80 rules）；`test` **68 passed**（`locale.spec` 9 + `fs-utils.spec` 56 + `real-composition` 3）；**`test:coverage` 四项全 100%（含分支）**——`fs-utils.ts` 100/100/100/100、`locale.ts` 100/100/100/100（**源头实测分支仅 88.75%，迁移后已真补到 100**，无 `v8 ignore`/`istanbul ignore`/`any`——主智能体独立扫描确认为零）；`build` 成功。**3 轮并发 `npm test` 全绿**（68×3，无 flaky）。导出面主智能体独立复核：`fs-utils` 25/25 名集一致、`locale` 3/3、**72 键键名+键序+键值全等**；行数 238→243、100→107（增量全为类型注解）。D-6 结案见 §2 | `2e088a8`(D-6) + 本轮 |
-| T-21 | **P2-B 书库层**：`book-store` + `book-index` + `issues` | **进行中**（与 T-22 同包派给子P2BC `e415e41f`） |
-| T-22 | **P2-C 任务与提示词**：`task-utils` + `prompt-loader` | **进行中**（同上包） |
+| T-21 | **P2-B 书库层**：`book-store` + `book-index` | **进行中**（子P2B `2f0a55b2`）——原合并包 `e415e41f` 跑 3 轮零产出且**未使用二级委派**，已按中止阈值 `interrupt_agent` 并**拆成两个更窄的独立包**重派 |
+| T-22 | **P2-C 任务与提示词**：`issues` + `task-utils` + `prompt-loader` | **进行中**（子P2C `f7d0c73c`）——同上，从原合并包拆出 |
 | T-23 | **P2-D 能力目录**：`abilities/` 四能力（描述符 + skeleton + doc-render）+ `registry`；`prompt.md` 原样保留 | **进行中**（子P2D `4dc04809`） |
 | T-24 | P2 阶段验收（四门禁 + 本阶段新增文件 file 级 行/函数/分支 100%） | 待办 |
 
@@ -250,6 +250,11 @@
 | 2026-09-11 | **`src/host/fs-utils.ts:1` 单点修正**：T-14 全仓扫描出的**唯一** src 侧陈旧引用（文件头注释旧包名，在 T-14 的禁改范围内）→ 已指派 P2-A owner `79438ecb` 单点改掉并复跑其 spec |
 | 2026-09-11 | **fs-utils 注释修正收口**：owner 改了 3 处（`dsh-plugin-file-system` → `-zc`；`dsh/index.js` → `lib/index.js`；`BOOK_LAYERS` 注释改指 `src/host/book-store.ts`）。**主智能体核实了第三处的正确性**：源 `BOOK_LAYERS` 确实在 `src/host/book-store.js:29`，不在 index —— owner 的判断对，注释指向准确。与 P6 手册一并提交 `4a560b9` |
 | 2026-09-11 | **T-59（P6 预研）验收并提交**（`4a560b9`，手册 468 行）。**最重要的产出不是步骤而是三个反直觉事实**：① `--dump-config` **不是只读**（`apps/cli/src/profile-boot.ts:187-192` 会幂等重写 `cordis.yml`，虽内容不变但刷 mtime）；② 新包名**包含**旧包名做前缀 → `grep dsh-plugin-file-system` 会误命中，必须 `grep -wn`；③ 客户端 boot 是**全有全无**（任一 entry 非 active 则 `web boot: N entries did not activate`，整个 GUI 起不来，而非静默降级）。手册 §0 已把「四门禁全绿 + 产物已 build + banner 校验」写成硬门禁并注明**当前不满足**——**这直接挡掉了一个会在错误时机执行的破坏性操作** |
+| 2026-09-11 | **进度风险首次显性化（Round 25）**：已用 25/40 轮。剩余 = P2 的 5 个模块（两个窄包在跑）与能力目录 TS 化（在跑）+ **P3**（源 `index.js` 494 行路由与状态机 + 2 个执行器）+ **P4**（源 771 行 client → `.tsx`）+ **P5**（8 文件 2446 行 135 例测试迁移）+ **P6**（切换，需用户在座）。**结论：15 轮内完成可行但无余量**——应对是**加大并行粒度**：P2 收口后把 P3 拆 3 包（路由 / 状态机 / 执行器）与 P4 拆 3 包**同时铺开**（P3 与 P4 之间只有**运行时**依赖，无编译依赖，可真并行），P5 与它们并行推进 |
+| 2026-09-11 | **二级委派实况核查（凭协作者树，不凭自述）**：`d5afe9fe` 派过 `c60946a0`（D-6 实测）、`79438ecb` 派过 `e42b8c7f`（fs-utils）、`4dc04809` 派了 `ec6ad8c2` 与 `9efbe794`（folder-doc+file-doc / source-doc）——**均真实发生**；而 `e415e41f` **一个都没派**，5 模块全压一条线串行，这正是它 3 轮零产出的主因。⇒ §0.3 的「显式授权」是必要条件但**不充分**：还须**事后核查它是否真的用了**，否则授权形同虚设 |
+| 2026-09-11 | **P2-B/C 中止并拆包重派**：`e415e41f` 跑 3 轮零产出（工作树看不到 5 个模块中任何一个）+ 未用二级委派 → `interrupt_agent`，改派 **`2f0a55b2`**（book-store + book-index，2 模块）与 **`f7d0c73c`**（issues + task-utils + prompt-loader，3 模块）两个更窄的独立包，均在 prompt 中加了「**逐个落盘、不要攒到最后**」的进度要求。这是 T-10/P1-B 之后**第三次**用「中止 + 拆窄」处置停滞 |
+| 2026-09-11 | **P2-D 中途抽检通过**：`src/host/abilities/` 下 4 个 `prompt.md` 与 `README.md` 已落盘，**4 个 prompt.md 与源逐字一致**（`diff` 全过）——资源侧正确；TS 侧（描述符 / skeleton / doc-render / registry）由它的两个二级子智能体在推进 |
+| 2026-09-11 | **P4-A 中途抽检通过**：`src/client/md-utils.ts` 导出名与源**完全一致**、83 → 118 行（增量全为类型与 JSDoc）、**`EXT_BADGES` 逐字保留**（`js:'JS', ts:'TS', md:'MD', json:'{}' …`）——未借迁移之名把它字典化，符合规格 §6 要求 |
 | 2026-09-11 | **续派 P6 手册 owner 收口两项未决点**（同一 owner 维护同一文档）：**Q2** `dsh.client` 字段规范——旧插件声明了 `client.inject: ['@deepseek-ai/dsh-client-runtime','@deepseek-ai/dsh-client-ui-slots']`，而 `-zc` 只有 `platform: 'web'`；要求在主仓查实读取点与规范文本、给出「是否需补 `inject`」的明确结论与依据，**但不得改 `package.json`**（由主智能体决策）。**Q6** agent 预设身份与技能链路——`agent.cordis.yml` 挂载的 5 个技能是**功能红线的一部分**，手册原判「不在 T-60/T-61 范围」合理，但至少要有切换后的验证方法；要求查明该链路与 profile 切换是否独立、给出可执行验证步骤 |
 | 2026-09-11 | **新派 P5 测试迁移细则预研**（只读）：子智能体 `af3c67a1` 产出 `docs/spec-p5-tests-detail.md`——源 8 文件/2446 行/135 例逐文件清单、`node:test`→vitest API 映射表（带源仓用法样例与行号）、**时序辅助函数语义必须保留**（严禁退化成固定 `sleep`）、多 worker 下的隔离与污染源清单、T-51 分支覆盖率补齐策略（明令禁止 `v8 ignore` 之类回避）。目的是让 P5（最后一大块）到时不慌 |
 | 2026-09-11 | **P2-A 完整报告归档（补充证据）**：子智能体 `79438ecb` 交全量报告，**且不采信二级子智能体 `e42b8c7f` 的自证**——它独立重跑了机器比对：导出名集**含顺序**逐字相同、`typeof` 全等、4 个常量值全等、**21 个函数的 arity（`fn.length`）0 差异**（证明未偷偷加可选参数标记）、`ZH` 72 键键序+键名+键值机器全等、**10520 条随机用例 + 7 条 win32 分支用例 mismatch 0**、反作弊扫描干净。目标 25 项导出**全部命中 `contracts.md` §E1 且无多余**。这是「验收不看自证、看独立对拍」的一次正面示范 |
