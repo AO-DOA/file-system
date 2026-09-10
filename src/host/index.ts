@@ -414,6 +414,14 @@ export function apply(ctx: FsHostContext): void {
             return
           }
           const abs = resolveIn(root, rel)
+          // G-1b：即使 path 合法，删除工作区根自身也一律拒绝（'.'、'./'、'sub/..' 都解析回
+          // root）。越权检查写作 `abs !== root && !abs.startsWith(root + sep)`，恰好放行 root
+          // 自身，管不到这一层——而删除根本身在任何写法下都是全损操作，与「path 是否合法」
+          // 是两个层次的问题。
+          if (abs === root) {
+            json(res, 400, { ok: false, error: 'refusing to delete the workspace root' })
+            return
+          }
           await fsp.rm(abs, { recursive: true, force: true })
           json(res, 200, { ok: true })
           return

@@ -10,7 +10,7 @@
  * 被测面是**对外契约**，不是内部实现：断言只读 HTTP 状态码、JSON 出参、任务记录叶子
  * 字段与磁盘上的真实文件；`ctx.__fsTest` 只是观察窗口（NODE_ENV==='test' 才挂载）。
  *
- * 三条纪律（源仓踩过坑，逐条保留其语义）：
+ * 四条纪律（1–2 是源仓踩过的坑，逐条保留其语义；3–4 是 2026-09-11 的 G-1/G-1b 修复新增）：
  *   1. **严禁固定 sleep**：后台任务用 `setImmediate` 起、宿主立即回 200，固定等待在并发
  *      负载下会漏判（源仓缺陷 C：6 并发 6/6 失败）。一律轮询可观测信号——`waitTaskRegistered`
  *      （占位记录）、`waitTaskRunning`、`waitTaskSettled`（直读 genTasks）、`waitSettled`
@@ -21,6 +21,10 @@
  *   3. **写路由 path 必填（G-1，2026-09-11）**：`/write`、`/mkdir`、`/delete` 缺失 `path`
  *      一律 400 `path required`（判据与既有 `/read`、`/translate` 同源）。源插件「锁定无校验」
  *      的 D-10 用例已按本次修复改写：`/delete` 缺 path 曾把 `abs` 解析成工作区根并整根 `rm -rf`。
+ *   4. **`/delete` 拒绝根自身（G-1b，2026-09-11）**：`.`, `./`, `sub/..` 都解析回 root，而越权
+ *      检查 `abs !== root` 恰好放行根自身 → 该路由另设守卫，一律 400
+ *      `refusing to delete the workspace root`。`/mkdir`、`/write` 不加此守卫：它们对根操作
+ *      不毁数据（`mkdir root` 幂等 / `write root` 报 EISDIR 500），加了反而改变既有语义。
  */
 process.env.NODE_ENV ??= 'test'
 
@@ -1111,7 +1115,8 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
 
 // G-1（2026-09-11）：三条写路由的 path 必填校验，覆盖全部「缺失」形态。
 // 判定 = `typeof path !== 'string' || path === ''`：前者拦 undefined / null / 数字 / 对象 /
-// 布尔，后者拦空串；`'.'`、`'sub/dir'` 等合法非空串不受影响（见本块后一用例）。
+// 布尔，后者拦空串；`'.'`、`'sub/dir'` 等合法非空串不受必填校验影响（/delete 另有 G-1b 守卫，
+// 只拒「解析回工作区根自身」的目标）。
 const MISSING_PATH_FORMS: Array<[string, Record<string, unknown>]> = [
   ['缺字段（undefined）', {}],
   ['null', { path: null }],
@@ -1121,7 +1126,7 @@ const MISSING_PATH_FORMS: Array<[string, Record<string, unknown>]> = [
   ['布尔 false', { path: false }],
 ]
 
-describe('G-1：/write、/mkdir、/delete 的 path 必填校验', () => {
+describe('G-1/G-1b：写路由 path 必填，且 /delete 拒绝工作区根自身', () => {
   for (const seg of ['write', 'mkdir', 'delete'] as const) {
     it('/' + seg + '：各种缺失形态一律 400，且工作区根自始至终未被触碰', async () => {
       const root = await newRoot('fs-p3-g1-' + seg + '-')
@@ -1166,11 +1171,45 @@ describe('G-1：/write、/mkdir、/delete 的 path 必填校验', () => {
     expect(dotFile.status).toBe(500)
     expect((dotFile.json as ErrorBody).ok).toBe(false)
 
-    // delete：嵌套相对路径照常删除。不用 '.' 做断言——它会命中工作区根自身（遗留风险 G-1b）。
+    // delete：嵌套相对路径照常删除（守卫只拦「根自身」，见下一用例）。
     const removed = await call(fsTest, createReq('POST', '/api/fs/delete', { path: 'sub/ok.txt' }), 'delete')
     expect(removed.status).toBe(200)
     expect(removed.json).toEqual({ ok: true })
     await expect(stat(join(root, 'sub', 'ok.txt'))).rejects.toThrow()
+  })
+
+  it('delete 指向工作区根自身 → 400 refusing to delete the workspace root，根与内容完好（G-1b）', async () => {
+    const root = await newRoot('fs-p3-g1b-root-')
+    await mkdir(join(root, 'sub'), { recursive: true })
+    await writeFile(join(root, 'keep.txt'), 'x\n', 'utf8')
+    const ctx = createCtx(root)
+    apply(ctx)
+    const fsTest = fsTestOf(ctx)
+
+    // 三种写法都解析回 root：'.'、'./'、'sub/..'（resolveIn 的越权检查只放行「根自身」，
+    // 恰是它拦不住、必须由本守卫兜住的那一层）。逐条断言 400 + 文件系统零改动。
+    const seen: string[] = []
+    for (const rel of ['.', './', 'sub/..']) {
+      const out = await call(fsTest, createReq('POST', '/api/fs/delete', { path: rel }), 'delete')
+      const err = out.json as ErrorBody
+      seen.push(rel + ' → ' + String(out.status) + ' ' + String(err.ok) + ' ' + String(err.error))
+      expect((await stat(join(root, 'keep.txt'))).isFile()).toBe(true)
+      expect((await stat(join(root, 'sub'))).isDirectory()).toBe(true)
+    }
+    expect(seen).toEqual([
+      '. → 400 false refusing to delete the workspace root',
+      './ → 400 false refusing to delete the workspace root',
+      'sub/.. → 400 false refusing to delete the workspace root',
+    ])
+    // 修复前：这三种写法各自都会 rm -rf 掉整个工作区根（abs === root 从越权检查里通过）。
+    expect((await stat(root)).isDirectory()).toBe(true)
+    expect(await readFile(join(root, 'keep.txt'), 'utf8')).toBe('x\n')
+
+    // 对照：非根的合法目标照常删除——守卫只拦「根自身」，不改变 /delete 的其余语义。
+    const removed = await call(fsTest, createReq('POST', '/api/fs/delete', { path: 'sub' }), 'delete')
+    expect(removed.status).toBe(200)
+    expect(removed.json).toEqual({ ok: true })
+    await expect(stat(join(root, 'sub'))).rejects.toThrow()
   })
 })
 
