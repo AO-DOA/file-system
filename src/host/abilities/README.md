@@ -31,7 +31,7 @@
 > 模板一律保持工具无关表述。
 > 依据与实测数据见源仓 `docs/ptc-probe-2026-09-09.md`。
 
-模板名 = 各能力目录下的 `prompt.md`（`abilities/folder-doc` / `abilities/file-doc` / `abilities/source-doc` / `abilities/translate-doc`）。**加载规则**：`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位，两个候选路径覆盖两种加载形态——源码直载/测试 `<HERE>/abilities/<dir>`（`<HERE>` = 加载器所在目录，即 `src/host/`）与打包后 `<HERE>/../src/host/abilities/<dir>`（`lib/index.js` 需回到 `src/host/`）；宿主**每次派发任务时读盘**，故改提示词免 build、免重启。**文件不存在即回退**到代码内联文本（`gen-executor.js` 与 `translate-executor.js` 的内联数组），因此删掉某个 `prompt.md` 不会让任务失败，只会退回旧表述。
+模板名 = 各能力目录下的 `prompt.md`（`abilities/folder-doc` / `abilities/file-doc` / `abilities/source-doc` / `abilities/translate-doc`）。**加载规则**：`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位，两个候选路径覆盖两种加载形态——源码直载/测试 `<HERE>/abilities/<dir>`（`<HERE>` = 加载器所在目录，即 `src/host/`）与打包后 `<HERE>/../../src/host/abilities/<dir>`（产物 `lib/host/index.js` 需回退两级再进源码树 `src/host/`）；宿主**每次派发任务时读盘**，故改提示词免 build、免重启。**文件不存在即回退**到代码内联文本（`gen-executor.js` 与 `translate-executor.js` 的内联数组），因此删掉某个 `prompt.md` 不会让任务失败，只会退回旧表述。
 
 ## 占位符
 
