@@ -379,20 +379,41 @@ export function apply(ctx: FsHostContext): void {
           return
         }
         if (seg === 'write') {
-          const abs = resolveIn(root, payload.path)
+          // path 必填（G-1，2026-09-11）：判定与 /read、/translate 的 `path required` 同源。
+          // 必须在 resolveIn 之前拦——resolveIn(root, 缺失值) 恰好解析成 root 本身，
+          // 而越权检查写作 `abs !== root && !abs.startsWith(root + sep)`，root 自身会被放行。
+          const rel = payload.path
+          if (typeof rel !== 'string' || rel === '') {
+            json(res, 400, { ok: false, error: 'path required' })
+            return
+          }
+          const abs = resolveIn(root, rel)
           await fsp.mkdir(dirname(abs), { recursive: true })
           await fsp.writeFile(abs, payload.content || '', 'utf8')
           json(res, 200, { ok: true })
           return
         }
         if (seg === 'mkdir') {
-          const abs = resolveIn(root, payload.path)
+          // 同 /write：path 必填（G-1）；缺失时 mkdir -p 的目标会退化成 root 本身。
+          const rel = payload.path
+          if (typeof rel !== 'string' || rel === '') {
+            json(res, 400, { ok: false, error: 'path required' })
+            return
+          }
+          const abs = resolveIn(root, rel)
           await fsp.mkdir(abs, { recursive: true })
           json(res, 200, { ok: true })
           return
         }
         if (seg === 'delete') {
-          const abs = resolveIn(root, payload.path)
+          // 同 /write：path 必填（G-1）。这条最致命——缺失时 abs === root 从越权检查里通过，
+          // 紧接着的 rm(recursive, force) 参数就是整个工作区根（实测已复现整根被删）。
+          const rel = payload.path
+          if (typeof rel !== 'string' || rel === '') {
+            json(res, 400, { ok: false, error: 'path required' })
+            return
+          }
+          const abs = resolveIn(root, rel)
           await fsp.rm(abs, { recursive: true, force: true })
           json(res, 200, { ok: true })
           return

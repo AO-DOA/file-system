@@ -18,8 +18,9 @@
  *   2. **路径隔离**：所有临时根用 `mkdtemp(join(tmpdir(), …))`（禁用 `Date.now()` 拼可预测
  *      路径：vitest 并行下会撞）；`DSH_HOME` 与 `DSH_FS_ISSUES_DIR` 指向进程级临时目录，
  *      后者防宿主收尾的 `syncIssueIndex()` read-modify-write 改写受版本控制的 issues/README.md。
- *   3. **锁定既有高危行为**：`/write`、`/mkdir`、`/delete` 无 path 必填校验（决策 D-10）——
- *      用例如实锁住，不"顺手修正"。
+ *   3. **写路由 path 必填（G-1，2026-09-11）**：`/write`、`/mkdir`、`/delete` 缺失 `path`
+ *      一律 400 `path required`（判据与既有 `/read`、`/translate` 同源）。源插件「锁定无校验」
+ *      的 D-10 用例已按本次修复改写：`/delete` 缺 path 曾把 `abs` 解析成工作区根并整根 `rm -rf`。
  */
 process.env.NODE_ENV ??= 'test'
 
@@ -1011,19 +1012,19 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     await expect(stat(join(root, '..', 'outside.txt'))).rejects.toThrow()
   })
 
-  it('write 无 path 必填校验：resolveIn(root, undefined) 指向根目录本身 → 500 而非 400（D-10 高危行为锁定）', async () => {
+  it('write 无 path → 400 path required，不再落到 writeFile(root)（G-1 修复，源 D-10 锁定已解除）', async () => {
     const root = await newRoot('fs-p3-write-nopath-')
     const ctx = createCtx(root)
     apply(ctx)
     const out = await call(fsTestOf(ctx), createReq('POST', '/api/fs/write', {}), 'write')
-    // 既有行为：没有 path 必填校验，落到 writeFile(root) → EISDIR → 统一 500。
-    // 迁移不得"顺手补校验"（决策 D-10），故此处锁住 500 而不是 400。
-    expect(out.status).toBe(500)
-    expect((out.json as ErrorBody).ok).toBe(false)
-    expect(typeof (out.json as ErrorBody).error).toBe('string')
+    // 修复前：无校验 → resolveIn(root, undefined) === root → writeFile(root) → EISDIR → 统一 500。
+    // 修复后：校验卡在 resolveIn 之前 → 400，且根目录不被触碰。
+    expect(out.status).toBe(400)
+    expect(out.json).toEqual({ ok: false, error: 'path required' })
+    expect((await stat(root)).isDirectory()).toBe(true)
   })
 
-  it('mkdir 建目录成功、越权 400、缺 path 时对根目录 mkdir -p 仍 200（D-10 高危行为锁定）', async () => {
+  it('mkdir 建目录成功、越权 400（源 :233 之外的 mkdir 支）', async () => {
     const root = await newRoot('fs-p3-mkdir-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1037,11 +1038,17 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const escaped = await call(fsTest, createReq('POST', '/api/fs/mkdir', { path: '../evil' }), 'mkdir')
     expect(escaped.status).toBe(400)
     expect((escaped.json as ErrorBody).error).toBe('path escapes workspace root')
+  })
 
-    // 无 path 必填校验：abs === root，mkdir -p 幂等 → 200
-    const noPath = await call(fsTest, createReq('POST', '/api/fs/mkdir', {}), 'mkdir')
-    expect(noPath.status).toBe(200)
-    expect(noPath.json).toEqual({ ok: true })
+  it('mkdir 无 path → 400 path required，不再对工作区根 mkdir -p（G-1 修复，源 D-10 锁定已解除）', async () => {
+    const root = await newRoot('fs-p3-mkdir-nopath-')
+    const ctx = createCtx(root)
+    apply(ctx)
+    const out = await call(fsTestOf(ctx), createReq('POST', '/api/fs/mkdir', {}), 'mkdir')
+    // 修复前：abs === root，mkdir -p 幂等 → 200（把「缺参数」静默当成功）。
+    expect(out.status).toBe(400)
+    expect(out.json).toEqual({ ok: false, error: 'path required' })
+    expect((await stat(root)).isDirectory()).toBe(true)
   })
 
   it('delete 删除文件与目录、越权 400、目标不存在仍 200（force + recursive）', async () => {
@@ -1072,19 +1079,21 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expect(again.json).toEqual({ ok: true })
   })
 
-  it('delete 无 path 必填校验：abs === root → 递归删除整个工作区根（D-10 高危行为锁定，源 §F-3）', async () => {
-    const root = await newRoot('fs-p3-delete-root-')
+  it('delete 无 path → 400，工作区根与其中文件不被递归删除（G-1 修复，源 §F-3 高危已消除）', async () => {
+    const root = await newRoot('fs-p3-delete-nopath-')
     await writeFile(join(root, 'keep.txt'), 'x\n', 'utf8')
     const ctx = createCtx(root)
     apply(ctx)
     const fsTest = fsTestOf(ctx)
 
     const out = await call(fsTest, createReq('POST', '/api/fs/delete', {}), 'delete')
-    expect(out.status).toBe(200)
-    expect(out.json).toEqual({ ok: true })
-    // 高危契约（决策 D-10 明确保留）：无 path 时 abs === root，rm -rf 删掉整个工作区根。
-    await expect(stat(root)).rejects.toThrow()
-    // root 变量本身不变（只是目录没了）——前端下一次 /tree 才会暴露后果。
+    expect(out.status).toBe(400)
+    expect(out.json).toEqual({ ok: false, error: 'path required' })
+    // 修复前：abs === root 从越权检查 `abs !== root && ...` 里通过 → rm(root, {recursive, force})
+    // 删掉整个工作区根（实测 stat(root) 由 true 变 false）。
+    // 修复后：校验先于 resolveIn，根目录与其内容原样保留（root 变量本就一直不变）。
+    expect((await stat(root)).isDirectory()).toBe(true)
+    expect(await readFile(join(root, 'keep.txt'), 'utf8')).toBe('x\n')
     expect(fsTest.getRoot()).toBe(root)
   })
 
@@ -1097,6 +1106,71 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTestOf(ctx), createReq('GET', '/api/fs/read?path=' + encodeURIComponent('big.txt')), 'read')
     expect(out.status).toBe(400)
     expect((out.json as ErrorBody).error).toBe('file too large: ' + String(limit + 1) + ' bytes (limit ' + String(limit) + ')')
+  })
+})
+
+// G-1（2026-09-11）：三条写路由的 path 必填校验，覆盖全部「缺失」形态。
+// 判定 = `typeof path !== 'string' || path === ''`：前者拦 undefined / null / 数字 / 对象 /
+// 布尔，后者拦空串；`'.'`、`'sub/dir'` 等合法非空串不受影响（见本块后一用例）。
+const MISSING_PATH_FORMS: Array<[string, Record<string, unknown>]> = [
+  ['缺字段（undefined）', {}],
+  ['null', { path: null }],
+  ['空串', { path: '' }],
+  ['数字 0', { path: 0 }],
+  ['对象', { path: {} }],
+  ['布尔 false', { path: false }],
+]
+
+describe('G-1：/write、/mkdir、/delete 的 path 必填校验', () => {
+  for (const seg of ['write', 'mkdir', 'delete'] as const) {
+    it('/' + seg + '：各种缺失形态一律 400，且工作区根自始至终未被触碰', async () => {
+      const root = await newRoot('fs-p3-g1-' + seg + '-')
+      await writeFile(join(root, 'keep.txt'), 'x\n', 'utf8')
+      const ctx = createCtx(root)
+      apply(ctx)
+      const fsTest = fsTestOf(ctx)
+
+      const seen: string[] = []
+      for (const [label, body] of MISSING_PATH_FORMS) {
+        const out = await call(fsTest, createReq('POST', '/api/fs/' + seg, body), seg)
+        const err = out.json as ErrorBody
+        seen.push(label + ' → ' + String(out.status) + ' ' + String(err.ok) + ' ' + String(err.error))
+        // 根必须始终在：/delete 的缺失形态在修复前会把整个工作区根删掉。
+        expect((await stat(root)).isDirectory()).toBe(true)
+      }
+      expect(seen).toEqual(MISSING_PATH_FORMS.map(([label]) => label + ' → 400 false path required'))
+      expect(await readFile(join(root, 'keep.txt'), 'utf8')).toBe('x\n')
+    })
+  }
+
+  it('合法值不误伤：path 为 "." 或嵌套相对路径时三条路由照旧工作', async () => {
+    const root = await newRoot('fs-p3-g1-legal-')
+    const ctx = createCtx(root)
+    apply(ctx)
+    const fsTest = fsTestOf(ctx)
+
+    // mkdir：'.'（工作区根自身，mkdir -p 幂等 → 200）与嵌套相对路径都放行。
+    const dotDir = await call(fsTest, createReq('POST', '/api/fs/mkdir', { path: '.' }), 'mkdir')
+    expect(dotDir.status).toBe(200)
+    expect(dotDir.json).toEqual({ ok: true })
+    const nested = await call(fsTest, createReq('POST', '/api/fs/mkdir', { path: 'sub/dir' }), 'mkdir')
+    expect(nested.status).toBe(200)
+    expect((await stat(join(root, 'sub', 'dir'))).isDirectory()).toBe(true)
+
+    // write：嵌套路径正常落盘；'.' 指向目录本身，仍按既有语义走到 writeFile → EISDIR 500
+    // （而不是被必填校验拒成 400）——这正是「只拦缺失形态、不拦合法值」的直接证据。
+    const wrote = await call(fsTest, createReq('POST', '/api/fs/write', { path: 'sub/ok.txt', content: 'hi\n' }), 'write')
+    expect(wrote.status).toBe(200)
+    expect(await readFile(join(root, 'sub', 'ok.txt'), 'utf8')).toBe('hi\n')
+    const dotFile = await call(fsTest, createReq('POST', '/api/fs/write', { path: '.', content: 'hi\n' }), 'write')
+    expect(dotFile.status).toBe(500)
+    expect((dotFile.json as ErrorBody).ok).toBe(false)
+
+    // delete：嵌套相对路径照常删除。不用 '.' 做断言——它会命中工作区根自身（遗留风险 G-1b）。
+    const removed = await call(fsTest, createReq('POST', '/api/fs/delete', { path: 'sub/ok.txt' }), 'delete')
+    expect(removed.status).toBe(200)
+    expect(removed.json).toEqual({ ok: true })
+    await expect(stat(join(root, 'sub', 'ok.txt'))).rejects.toThrow()
   })
 })
 
