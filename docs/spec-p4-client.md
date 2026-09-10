@@ -87,3 +87,11 @@
 - **`pollTask` 无 `clearTimeout`**：jsdom 下卸载后残余定时器会污染其他测试；若修正（D-8 例外 b），必须在报告单列。
 - **`EXT_BADGES`** 是产品可见文本却硬编码在纯逻辑层（`baseline/client.md` §E 指出），迁移时**保持原样**，并在最终交付摘要中作为"可选改进项"提出。
 - 官方 `conversation.view` 的 owner props（`viewRequest`/`openView`/`completeViewRequest`）本插件不消费（G-10），迁移后仍不消费，**不得顺手接入**。
+- **【硬阻塞 · 必修】`tsconfig.tests.json` 缺 client 编译面**（来源：D-6 核验报告 `docs/p2a-tsconfig-d6.md` §5-R1，已入账为决策 D-12）。
+  现状：`tsconfig.tests.json` **继承 `tsconfig.host.json`**，因此只有 `lib: ["ES2024"]` + `types: ["node"]`，**既无 `jsx` 也无 DOM lib**；而它 `include: ["tests", "src"]`，会把 `src/client/**` 一并纳入**同一个 program**。P1 能通过只因 `src/client/index.ts` 还是纯 TS 桩。
+  → P4 一旦落地 `.tsx`（决策 D-11）或用 jsdom 写组件测试，`npm run typecheck` **必然报错**（缺 `jsx` 配置 / 缺 DOM 类型）。
+  **实施者须在下列三方向中择一，并给出官方依据后写入报告**：
+  ① `tsconfig.tests.json` 增开 `jsx: "react-jsx"` 与 DOM lib；
+  ② 拆成 `tsconfig.tests.host.json` + `tsconfig.tests.client.json` 两个 leaf（root 的 references 同步更新）；
+  ③ 组件测试以 `@vitest-environment jsdom` 承载，类型检查并入 `tsconfig.client.json` 的 program。
+  **判定要求**：无论选哪个，都必须满足「host 面仍看不见 DOM、client 面仍看不见 node 全局」（`tsconfig.base.client.json:5` 的 `no ambient node types` 立场），且 `npm run typecheck` 真实通过——不得用放宽两侧可见性的方式绕过。
