@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // file-doc 生成器（file-doc 技能的确定性配套）
 //
-// 契约（来自宿主 dsh-plugin-file-system/dsh/index.js）：
-//   书库根 = $DSH_HOME/books/<projectKey(项目根绝对路径)>/（集中模型，见 docs/book-store-decisions.md 与 docs/book-store-spec.md）。
+// 契约（来自宿主 dsh-plugin-file-system-zc/lib/index.js）：
+//   书库根 = $DSH_HOME/books/<projectKey(项目根绝对路径)>/（集中模型，见 docs/feature-baseline.md §2.2 与 docs/baseline/host.md §D）。
 //   显式 --book <path> 兼容保留（传了就用它，旧/手工调用不破坏）；未传时自动推导新桶。
 //   源码路径键 = 工作区名 + '/' + 相对工作区根路径（根=工作区名）。md/markdown 不生成 L2（宿主 isMdPath 拒绝）。
 //
@@ -53,10 +53,10 @@ function argOf(name) {
 
 // ---------------------------------------------------------------------------
 // 书库集中化：桶名 + 书库根推导
-// projectKey 与 DSH session format.ts projectKey 及 src/host/fs-utils.js 同步：
+// projectKey 与 DSH session format.ts projectKey 及 src/host/fs-utils.ts 同步：
 //   逐字复刻 packages/session/session-persistence-jsonl/src/format.ts 的 projectKey()，
 //   可读编码（非哈希）：'/' '\\' ':' 连段转 '-'，其余非安全字符转 ~XXXX（十六进制大写 4 位）。
-//   对拍：/home/xuepeng/DSH → --home-xuepeng-DSH--；/home/xuepeng/源码志 → --home-xuepeng-~6E90~7801~5FD7--
+//   对拍：/home/<user>/DSH → --home-<user>-DSH--；/home/<user>/源码志 → --home-<user>-~6E90~7801~5FD7--
 // ---------------------------------------------------------------------------
 function projectKey(p) {
   if (p.length === 0) throw new Error('cannot encode an empty project path')
@@ -112,7 +112,7 @@ function resolveBook(bookOpt, rootOpt) {
 // 返回【不含 .md】的文件名主体（stem），由调用方拼 .md。
 // 如：dsh/index.js → dsh-index；src/client/index.js → src-client-index；顶层 README.md → <工作区名>-README。
 // ⚠ 命名规则三处实现，改动必须三处同步，否则宿主 hasDoc 判定与技能落盘文件名漂移：
-//   ① src/host/fs-utils.js computeDocStem
+//   ① src/host/fs-utils.ts computeDocStem
 //   ② 本函数（skills/file-doc/scripts/file-doc.mjs computeName）
 //   ③ skills/source-doc/scripts/source-annotate.mjs computeName
 function computeName(key, fileName) {
