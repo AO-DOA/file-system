@@ -6,14 +6,14 @@
 
 | 能力 | 目录 | kind | 提示词 | 骨架逻辑 |
 |---|---|---|---|---|
-| L1 目录概览 | `abilities/folder-doc/` | `folder` | `abilities/folder-doc/prompt.md` | `folder-doc/skeleton.js`（`buildFolderSkeleton` / `folderPlaceholderLeft`） |
-| L2 文件摘要 | `abilities/file-doc/` | `file` | `abilities/file-doc/prompt.md` | `file-doc/skeleton.js`（`renderFileDocSkeleton` / `filePlaceholderLeft`） |
-| L3 源码注解 | `abilities/source-doc/` | `src` | `abilities/source-doc/prompt.md` | `source-doc/skeleton.js`（`buildUnits` / `renderSourceSkeleton` / `buildSourceSkeleton`）+ `source-doc/doc-render.js`（`parseFilledSkeleton` / `langOf` / `annotationStats` / `checkHealth` / `renderAnnotatedDoc`） |
+| L1 目录概览 | `abilities/folder-doc/` | `folder` | `abilities/folder-doc/prompt.md` | `folder-doc/skeleton.ts`（`buildFolderSkeleton` / `folderPlaceholderLeft`） |
+| L2 文件摘要 | `abilities/file-doc/` | `file` | `abilities/file-doc/prompt.md` | `file-doc/skeleton.ts`（`renderFileDocSkeleton` / `filePlaceholderLeft`） |
+| L3 源码注解 | `abilities/source-doc/` | `src` | `abilities/source-doc/prompt.md` | `source-doc/skeleton.ts`（`buildUnits` / `renderSourceSkeleton` / `buildSourceSkeleton`）+ `source-doc/doc-render.ts`（`parseFilledSkeleton` / `langOf` / `annotationStats` / `checkHealth` / `renderAnnotatedDoc`） |
 | 文章翻译 | `abilities/translate-doc/` | `translate` | `abilities/translate-doc/prompt.md` | —（模型分段写入，无骨架） |
 
-`registry.js` 汇总四个能力（`GEN_ABILITIES` / `TRANSLATE_ABILITY` / `ABILITIES` / `abilityOf`），路由与执行器按 `kind` 取描述符，不再散落 kind 分支。
+`registry.ts` 汇总四个能力（`GEN_ABILITIES` / `TRANSLATE_ABILITY` / `ABILITIES` / `abilityOf`），路由与执行器按 `kind` 取描述符，不再散落 kind 分支。
 
-各能力目录下的 `prompt.md` 是**后台生成与翻译任务提示词的唯一真源**。改提示词只改它，不需要改代码、不需要 `npm run build`、不需要重启 dsh web——宿主在**每次派发任务时**读盘并渲染（`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位并读盘，`src/host/fs-utils.js` 的 `renderPromptTemplate` 替换变量）。
+各能力目录下的 `prompt.md` 是**后台生成与翻译任务提示词的唯一真源**。改提示词只改它，不需要改代码、不需要 `npm run build`、不需要重启 dsh web——宿主在**每次派发任务时**读盘并渲染（`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位并读盘，`src/host/fs-utils.ts` 的 `renderPromptTemplate` 替换变量）。
 
 ## 文件与加载规则
 
@@ -29,14 +29,14 @@
 > **该表述对四层均已不适用**（2026-09-10）：L1/L2/L3 去技能化后所在层无 bash 工具，没有 run_code
 > 可组合（工具面分别是 `read`/`write`、`read`/`write`/`glob`/`grep`、`read`/`write`/`edit`），
 > 模板一律保持工具无关表述。
-> 依据与实测数据见 [docs/ptc-probe-2026-09-09.md](../../../docs/ptc-probe-2026-09-09.md)。
+> 依据与实测数据见源仓 `docs/ptc-probe-2026-09-09.md`。
 
 模板名 = 各能力目录下的 `prompt.md`（`abilities/folder-doc` / `abilities/file-doc` / `abilities/source-doc` / `abilities/translate-doc`）。**加载规则**：`src/host/prompt-loader.js` 按 `ability.dir` + `ability.promptFile` 定位，两个候选路径覆盖两种加载形态——源码直载/测试 `<HERE>/abilities/<dir>`（`<HERE>` = 加载器所在目录，即 `src/host/`）与打包后 `<HERE>/../src/host/abilities/<dir>`（`lib/index.js` 需回到 `src/host/`）；宿主**每次派发任务时读盘**，故改提示词免 build、免重启。**文件不存在即回退**到代码内联文本（`gen-executor.js` 与 `translate-executor.js` 的内联数组），因此删掉某个 `prompt.md` 不会让任务失败，只会退回旧表述。
 
 ## 占位符
 
 - 语法**只允许 `${name}`**，由宿主读盘后按变量表替换为真实值。
-- **禁止使用 `{{name}}`**：DSH 的 system prompt 会把 `{{…}}` 当作模板变量严格解析，未注册即 assembly 报错（历史故障见 `src/host/index.js` 中 `{{model}}` 的注释）。宿主在派发前就把占位符替换干净，成品文本不会再经过变量解析。
+- **禁止使用 `{{name}}`**：DSH 的 system prompt 会把 `{{…}}` 当作模板变量严格解析，未注册即 assembly 报错（历史故障见 `src/host/index.ts` 中 `{{model}}` 的注释）。宿主在派发前就把占位符替换干净，成品文本不会再经过变量解析。
 - 未知占位符（变量表里没有的名字）**原样保留**，不抛错——便于在产物里直接看出模板笔误。
 
 | 变量 | 含义 | 示例 |
@@ -75,7 +75,7 @@
 
 **只注入一处：user message**（任务指令）。渲染结果即子 agent 收到的任务提示词，四层一致。
 
-2026-09-10 去重：此前同一份渲染结果还额外注入 system prompt 的 `fs-book-doc` 段（order 950）。system prompt 与 user message 是两条独立通道、**两处都计费**，而两者逐字相同；且任务文本含每次变化的绝对路径，注入 system 会破坏跨任务的前缀缓存。故 system 段不再注入任何任务文本（`applyGenScope` 只做工具面收敛）。依据 [docs/token-review-2026-09-08.md](../../../docs/token-review-2026-09-08.md) 待决项 A。
+2026-09-10 去重：此前同一份渲染结果还额外注入 system prompt 的 `fs-book-doc` 段（order 950）。system prompt 与 user message 是两条独立通道、**两处都计费**，而两者逐字相同；且任务文本含每次变化的绝对路径，注入 system 会破坏跨任务的前缀缓存。故 system 段不再注入任何任务文本（`applyGenScope` 只做工具面收敛）。依据源仓 `docs/token-review-2026-09-08.md` 待决项 A。
 
 ## 各技能脚本的 `--content` 语义（写模板前必看）
 
@@ -93,8 +93,8 @@
 
 | 字段 | 语义 | 谁消费 |
 |---|---|---|
-| `skeletonFile: true` | 骨架**不注入提示词**，由执行器写到 `join(cwd, 'skeleton-' + basename(abs) + '.txt')`；提示词只给 `${skeletonPath}` / `${skeletonLines}` | `gen-executor.js` 派发前 |
-| `hostBuild: true` | 产物**由宿主写盘**（`finalize`）：跳过「产物 mtime/size 未变化」空转校验，改由能力 `verify` 看注解填充率 | `gen-executor.js` 收尾 |
+| `skeletonFile: true` | 骨架**不注入提示词**，由执行器写到 `join(cwd, 'skeleton-' + basename(abs) + '.txt')`；提示词只给 `${skeletonPath}` / `${skeletonLines}` | `gen-executor.ts` 派发前 |
+| `hostBuild: true` | 产物**由宿主写盘**（`finalize`）：跳过「产物 mtime/size 未变化」空转校验，改由能力 `verify` 看注解填充率 | `gen-executor.ts` 收尾 |
 
 收尾顺序固定：`verify`（骨架存在 + 至少填了 1 条注解）→ `finalize`（解析 → 排版 → `checkHealth` 四项自检 → 写 DOC → 删骨架）→ `upsertBookIndex`。自检不通过时**不写 DOC、不删骨架**，半成品不落书库、现场留证据。
 
@@ -109,8 +109,8 @@
 
 ## 新增/修改一层
 
-1. 新建 `abilities/<name>/` 目录，写 `index.js` 能力描述符：`kind` / `dir` / `sub` / `arr` / `layer` / `scope` / `promptFile` / `docStem`，按需加 `skeleton` / `precheck` / `verify` / `finalize`（以及 L3 用的 `skeletonFile` / `hostBuild`）。
-2. 在 `abilities/registry.js` 注册该能力（生成类进 `GEN_ABILITIES`，翻译类为 `TRANSLATE_ABILITY`；`ABILITIES` 自动汇总）。
+1. 新建 `abilities/<name>/` 目录，写 `index.ts` 能力描述符：`kind` / `dir` / `sub` / `arr` / `layer` / `scope` / `promptFile` / `docStem`，按需加 `skeleton` / `precheck` / `verify` / `finalize`（以及 L3 用的 `skeletonFile` / `hostBuild`）。
+2. 在 `abilities/registry.ts` 注册该能力（生成类进 `GEN_ABILITIES`，翻译类为 `TRANSLATE_ABILITY`；`ABILITIES` 自动汇总）。
 3. 写该目录的 `prompt.md`：固定参数区写死宿主算好的绝对路径与键，步骤给出**可原样复制执行**的命令（L1 已无脚本命令，改为给出骨架原文与三处填充规则），末尾列「已知坑」。
 4. 若该能力需要新变量，在 `prompt-loader.js`（或描述符 `promptVars`）的渲染处补齐，并在本文件变量表登记。
 5. 更新 `tests/gen-scope.test.js` 的装配断言（至少覆盖：模板已加载、关键参数、产物路径、`--key`/`--rel` 差异、system 段不被注入）。
