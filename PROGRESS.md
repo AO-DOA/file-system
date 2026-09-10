@@ -29,7 +29,7 @@
 | # | 任务 | 状态 | 负责 | 验收证据 | commit |
 |---|---|---|---|---|---|
 | T-01 | host 侧功能基线清点 | 进行中 | 子A | 功能清单（功能点→代码位置→行为契约） | - |
-| T-02 | client 侧功能基线清点 | 进行中 | 子B | 同上 | - |
+| T-02 | client 侧功能基线清点 | 报告已收·落盘中 | 子B | 171 功能点；72 个 i18n key 闭环校验通过；10 项不一致裁决点 | - |
 | T-03 | 契约与配置基线清点 | 进行中 | 子C | 同上 | - |
 | T-04 | 汇总功能基线 + 迁移映射表 | 待办 | 主 | `docs/feature-baseline.md` | - |
 
@@ -105,6 +105,8 @@
 | D-5 | 主智能体不写实现代码，只做拆解/分配/验收/提交 | 用户明确要求 | 2026-09-11 |
 | D-6 | tsconfig 采用 **三 leaf + solution-only root**（`tsc -b` 驱动）；**待实测** host/client 是否触发 cordis `Context` 声明合并冲突——若无冲突，按 `packages/AGENTS.md:23`「ordinary two-entry Client plugins do not split」退回两文件结构 | `<checkout>/docs/development.zh.md:68,74`、`<checkout>/packages/AGENTS.md:23` | 2026-09-11 |
 | D-7 | 构建产物**不入库**（`.gitignore` 含 `lib/`、`client/`） | 主仓「源平面 vs 产物平面不混」`AGENTS.md:120`。与参照实现 `dsh-market`（提交 `client.js`）相反，需在交付摘要中说明差异 | 2026-09-11 |
+| D-8 | **迁移遵循行为等价**：默认逐字保留现插件行为（含既有缺陷），不趁机改功能。仅两类例外：(a) **无任何引用的死代码**（T-02 实测：`cardDismissed`/`setCardDismissed`、`genStatus`、未消费的 `isMdFile`/`isBookFile`/`picker`、4 个无 JS 引用的 CSS 类）可删；(b) **资源泄漏类**（拖拽 `mousemove`/`mouseup` 无 cleanup、`pollTask` 的 `setTimeout` 无 `clearTimeout`）在 jsdom 测试下必然暴露，可修正但**必须单独记账**并在交付摘要中列明行为差异 | 用户要求「功能不能遗失」；例外依据见 T-02 报告「附加」第 1/2/3/8 项 | 2026-09-11 |
+| D-9 | T-02 报告提出的 7 项**真实缺陷**（目录重复请求同一 `/read`、切换文件静默丢弃未保存编辑、`refreshRoot` 失败不上屏、未消费 `conversation.view` owner props 等）**本轮不修**，按 D-8 逐字保留，仅在 `docs/feature-baseline.md` 中登记为「已知行为」，留待迁移完成后由用户决定是否开新账目修正 | 行为等价优先；避免重构与改bug耦合导致无法判定回归来源 | 2026-09-11 |
 
 ---
 
