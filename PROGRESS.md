@@ -139,14 +139,14 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-40 | **P4-A** `md-utils`（纯逻辑，无 DOM；file 级三 100%） | 待办 |
-| T-41 | **P4-B** 槽位注册（`conversation.view` / id `fs` / order 12）+ 样式 effect + UI 骨架 | 待办 |
-| T-42 | **P4-C** 树与查看器（懒加载、蓝点两种行为、12 条渲染分支） | 待办 |
-| T-43 | **P4-D** 打开状态与生成/翻译（`useOpenedViewer`、读取扇出、轮询） | 待办 |
-| T-44 | **P4-E** 持久化与工作区（`fs.ui.v1`、启动恢复、拖宽、工作区切换） | 待办 |
-| T-45 | P4 阶段验收（jsdom 组件测试 + 171 功能点对照表） | 待办 |
-| T-46 | **【硬阻塞】修 `tsconfig.tests.json` 的 client 编译面缺口**（D-12 R1）：它继承 host leaf 却 `include: ["tests","src"]`，无 `jsx`/无 DOM，P4 落 `.tsx` 后 `typecheck` 必红。三方向择一（tests leaf 增开 jsx+DOM / 拆 host+client 两个 tests leaf / 组件测试走 jsdom + 并入 client leaf），**且不得放宽两侧可见性** | 待办 |
-| T-47 | **【用户可见文本差异 · P4 必办】槽 label 必须改回 `t('slotLabel')`**：源插件 `locale.js:7` 为 `slotLabel: '文件'`，页签上的用户可见文本是**「文件」**；zc 现为占位字面量 `'文件系统'`（`src/client/index.ts:52`，注释已自述 P4 会换成 `t('slotLabel')`）。**同时必须同步更新 `tests/real-composition.spec.ts:158` 的断言**（现断言 `'文件系统'`，改后会红）。注意勿与插件名 / `preset.yml` 的 `name: 文件系统`（与源一致）混淆 | 待办 |
+| T-40 | **P4-A** `md-utils`（纯逻辑，无 DOM；file 级三 100%） | **已销账**（子P4A `bf0c6f62`） | `src/client/md-utils.ts`（源 83 → 120 行，增量全为 JSDoc/类型）+ `tests/md-utils.spec.ts`（245 行 **33 例**）。**导出面 8 vs 8 名集与声明顺序完全一致**；**file 级四项 100%（含分支）**；`npx oxlint` 0 错 0 警告；并发 3 轮 33×3 全绿；**额外实证**：用 Node 24 type-stripping 同进程加载源 `.js` 与目标 `.ts`，8 导出 × **128 输入用例对照差异 0**（null/undefined、尾斜杠、多点文件名、大写扩展名、CRLF、未闭合 frontmatter、中文键等）。**`EXT_BADGES` 对象字面量逐字保留，未字典化** | `5bd6efd` |
+| T-41 | **P4-B** 槽位注册（`conversation.view` / id `fs` / order 12）+ 样式 effect + UI 骨架 | **进行中**（**P4-B~E 合并为单一包 `1dc62328`**：源 client 是 771 行**单文件**，D-8 禁止拆分 ⇒ 不可多包并行写同一文件） |
+| T-42 | **P4-C** 树与查看器（懒加载、蓝点两种行为、12 条渲染分支） | **进行中**（同上包） |
+| T-43 | **P4-D** 打开状态与生成/翻译（`useOpenedViewer`、读取扇出、轮询） | **进行中**（同上包） |
+| T-44 | **P4-E** 持久化与工作区（`fs.ui.v1`、启动恢复、拖宽、工作区切换） | **进行中**（同上包） |
+| T-45 | P4 阶段验收（jsdom 组件测试 + 171 功能点对照表） | **进行中**（同上包） |
+| T-46 | **【硬阻塞】修 `tsconfig.tests.json` 的 client 编译面缺口**（D-12 R1）：它继承 host leaf 却 `include: ["tests","src"]`，无 `jsx`/无 DOM，P4 落 `.tsx` 后 `typecheck` 必红。三方向择一（tests leaf 增开 jsx+DOM / 拆 host+client 两个 tests leaf / 组件测试走 jsdom + 并入 client leaf），**且不得放宽两侧可见性** | **进行中**（并入 P4 主体包 `1dc62328`） |
+| T-47 | **【用户可见文本差异 · P4 必办】槽 label 必须改回 `t('slotLabel')`**：源插件 `locale.js:7` 为 `slotLabel: '文件'`，页签上的用户可见文本是**「文件」**；zc 现为占位字面量 `'文件系统'`（`src/client/index.ts:52`，注释已自述 P4 会换成 `t('slotLabel')`）。**同时必须同步更新 `tests/real-composition.spec.ts:158` 的断言**（现断言 `'文件系统'`，改后会红）。注意勿与插件名 / `preset.yml` 的 `name: 文件系统`（与源一致）混淆 | **进行中**（同上包） |
 
 ### P5 测试迁移
 
@@ -255,6 +255,11 @@
 | 2026-09-11 | **P2-B/C 中止并拆包重派**：`e415e41f` 跑 3 轮零产出（工作树看不到 5 个模块中任何一个）+ 未用二级委派 → `interrupt_agent`，改派 **`2f0a55b2`**（book-store + book-index，2 模块）与 **`f7d0c73c`**（issues + task-utils + prompt-loader，3 模块）两个更窄的独立包，均在 prompt 中加了「**逐个落盘、不要攒到最后**」的进度要求。这是 T-10/P1-B 之后**第三次**用「中止 + 拆窄」处置停滞 |
 | 2026-09-11 | **P2-D 中途抽检通过**：`src/host/abilities/` 下 4 个 `prompt.md` 与 `README.md` 已落盘，**4 个 prompt.md 与源逐字一致**（`diff` 全过）——资源侧正确；TS 侧（描述符 / skeleton / doc-render / registry）由它的两个二级子智能体在推进 |
 | 2026-09-11 | **P4-A 中途抽检通过**：`src/client/md-utils.ts` 导出名与源**完全一致**、83 → 118 行（增量全为类型与 JSDoc）、**`EXT_BADGES` 逐字保留**（`js:'JS', ts:'TS', md:'MD', json:'{}' …`）——未借迁移之名把它字典化，符合规格 §6 要求 |
+| 2026-09-11 | **关键加速决策：现在就派 P4 主体（不等 P2/P3）**。依据：**client 半边只通过 HTTP 调 `/api/fs/*`，不 import 任何 host 模块**——P4 与 P2/P3 之间**只有运行时依赖、没有编译依赖**，因此可以真并行。这改变了先前「P3/P4 串行」的隐含假设，是压缩总时长的主要杠杆。派发 `1dc62328`，包内含 T-41~T-45 与两个硬待办（**T-46** tsconfig tests leaf 的 client 编译面缺口、**T-47** 槽 label 改回 `t('slotLabel')` 且同步改 `real-composition.spec.ts:158` 断言），并连带要求同步 `tsdown.config.ts` 的 entry 与 `real-composition.spec.ts` 的 import 路径 |
+| 2026-09-11 | **P4 不可多包并行的原因已查明**：源 `src/client/index.js` 是 **771 行单文件**，而 D-8 明令不许拆分文件 ⇒ P4-B~E 是**同一文件的不同段落**，多子智能体并行写会互相覆盖。故只能单包推进（子智能体被授权把「jsdom 组件测试编写」与「171 功能点对照整理」派给二级子智能体，但**实现不拆**） |
+| 2026-09-11 | **P2-D 的 `registry.ts` 抽检合格**：注释逐字保留、导出名与前缀（`GEN_ABILITIES`/`TRANSLATE_ABILITY`/`ABILITIES`/`abilityOf`）不变，22 → 55 行的增量**全部是两个类型 interface**（`AbilityContext`/`AbilityDescriptor`）用于给描述符与钩子定型。**新风险已识别**：该 interface 是 P2-D 自行归纳的，P3 执行器将按其写代码——两包之间形成**新的类型契约**，派 P3 时必须把这一点作为已知约束传给 P3 子智能体 |
+| 2026-09-11 | **T-40（P4-A）验收销账**（`5bd6efd`）。**最有价值的产出是一条覆盖率工具的实测陷阱**：v8-to-istanbul 把 **`??` 的右侧当作独立 block**，不可达即判未覆盖；而 **`||` 的恒假左操作数不判未覆盖**（主路径上总被执行）。同一语义写成 `??` 还是 `||`，分支口径不同——该子智能体初版因此只有 93.18%，改用局部变量 + `undefined` 判等后达 100%。**此经验已转告 P4 主体包与 P5 预研**（T-51 分支补齐会大量遇到）。注意：这是**工具口径**不是逻辑缺陷，改写必须运行时等价，**仍严禁任何 ignore 豁免** |
+| 2026-09-11 | **裁决 P4-A 的两处待定项**：① **接受** `parseFmRows` 内的 2 处 `as string` 断言——理由为「正则捕获组必然存在 + `noUncheckedIndexedAccess` 的必然产物」，且**非 `any`、非 `!` 非空断言、不改运行时行为**；② **接受**两处类型收紧（`labLabelKey` 的 `isDir` 必填、`extOf` 参数限定），已把「源仓唯一调用点传两参」这一事实转告 P4 主体包，要求它照此保留调用形状 |
 | 2026-09-11 | **续派 P6 手册 owner 收口两项未决点**（同一 owner 维护同一文档）：**Q2** `dsh.client` 字段规范——旧插件声明了 `client.inject: ['@deepseek-ai/dsh-client-runtime','@deepseek-ai/dsh-client-ui-slots']`，而 `-zc` 只有 `platform: 'web'`；要求在主仓查实读取点与规范文本、给出「是否需补 `inject`」的明确结论与依据，**但不得改 `package.json`**（由主智能体决策）。**Q6** agent 预设身份与技能链路——`agent.cordis.yml` 挂载的 5 个技能是**功能红线的一部分**，手册原判「不在 T-60/T-61 范围」合理，但至少要有切换后的验证方法；要求查明该链路与 profile 切换是否独立、给出可执行验证步骤 |
 | 2026-09-11 | **新派 P5 测试迁移细则预研**（只读）：子智能体 `af3c67a1` 产出 `docs/spec-p5-tests-detail.md`——源 8 文件/2446 行/135 例逐文件清单、`node:test`→vitest API 映射表（带源仓用法样例与行号）、**时序辅助函数语义必须保留**（严禁退化成固定 `sleep`）、多 worker 下的隔离与污染源清单、T-51 分支覆盖率补齐策略（明令禁止 `v8 ignore` 之类回避）。目的是让 P5（最后一大块）到时不慌 |
 | 2026-09-11 | **P2-A 完整报告归档（补充证据）**：子智能体 `79438ecb` 交全量报告，**且不采信二级子智能体 `e42b8c7f` 的自证**——它独立重跑了机器比对：导出名集**含顺序**逐字相同、`typeof` 全等、4 个常量值全等、**21 个函数的 arity（`fn.length`）0 差异**（证明未偷偷加可选参数标记）、`ZH` 72 键键序+键名+键值机器全等、**10520 条随机用例 + 7 条 win32 分支用例 mismatch 0**、反作弊扫描干净。目标 25 项导出**全部命中 `contracts.md` §E1 且无多余**。这是「验收不看自证、看独立对拍」的一次正面示范 |
