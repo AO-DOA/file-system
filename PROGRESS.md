@@ -36,28 +36,25 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 - `lib/`、`client/` **不入库**（决策 D-7）；改代码后必须 `build` 再重启才生效。
 - 验收 build 前先 `rm -rf lib client`——`tsc` 不清理 outDir，会留下陈旧产物。
 - **并行跑 coverage 必须隔离**：`--coverage.reportsDirectory=/tmp/...`。共用 `coverage/.tmp` 会让生成崩溃（实测 4 次跑崩 3 次）。
-- `dsh plugin` 命令在本机**会失败**：profile 的 node_modules 来自 pnpm store **v11**，而 `/usr/local/bin/pnpm` 想用 **v10**（`ERR_PNPM_UNEXPECTED_STORE`）。改 profile 请走手工路径（改 `dependencies` + `dsh.profile.bundles` + 补 node_modules 软链）。
+- `dsh plugin` **现在可用**（2026-09-11 修复；已非「本机必失败」）：前提是 profile 的 `package.json` 声明了 `packageManager` —— `~/.dsh/profiles/web/package.json:4` 为 `"packageManager": "pnpm@11.7.0"`（本次新增）。改 profile 直接 `dsh plugin --profile web <pnpm 参数>` 即可：它**没有子命令**，参数原样转发给 pnpm（`apps/cli/src/plugin.ts:120,134`；`--profile <name>` 必填，至少给一个 pnpm 参数），**不再需要**手工改 `dependencies` + `dsh.profile.bundles` + 补 node_modules 软链。
+- **排查线索（`ERR_PNPM_UNEXPECTED_STORE` 复发时）**：先在当前目录比 `pnpm --version` / `pnpm store path` 是否与 `node_modules/.modules.yaml` 里记录的 `storeDir` 一致——不一致就是 `packageManager` 声明缺失或版本写错。注：该 profile 的 `.modules.yaml` 现记 `"storeDir": ".../store/v11"`（**v11 这一描述属实**）。
 
-## 2.5 会话压缩能力（动态插件 —— **不持久化，重启即失**）
+## 2.5 会话压缩能力（PROFILE 层单文件 Cordis 插件 —— **持久，重启自动恢复**）
 
-主智能体的上下文压缩能力由**动态 Cordis 插件**提供，**只存在于当前进程**：dsh web 一重启就消失（`cordis_inspect_self` 返回空列表，**旧授权同样不持久**）。
+主智能体自己就能压缩本会话上下文，不必等人类敲 `/compact`。插件是 `~/.dsh/plugins/compact-tool.mjs`，由 `~/.dsh/profiles/web/cordis.patch.yml`（第 29–31 行：`- insert:` / `id: compact-tool` / `name: /home/xuepeng/.dsh/plugins/compact-tool.mjs`）挂在 **PROFILE 层**；profile 层注册的工具落 global layer（`core/scope/src/store.ts` 无 scope 时 `layer = this.global`），故**对所有预设/会话可见**，主智能体自己即可调用。**重启自动恢复、无需任何手工重建**：2026-09-11 05:03:19 启动（PID 516551）实测打印 `compact-tool: compact_context registered on the profile plane (agentPresets=true, agents=true)`，随后本会话实调成功——`compact_context [session-e2bde115-…] compacted 87 items (~104117 tokens), summarySeq=3750`。
 
-**源码已存盘，可一键重建**：
-```
-~/.dsh/dynamic-plugins/compact-tool.host.js   # v5 源码（含 AbortSignal 修正）
-~/.dsh/dynamic-plugins/README.md              # 重建三步 + 需重新查证的契约 + 沙箱限制 + 版本史
-```
-重建 = 读该文件 → `cordis_define(kind:"new", idPrefix:"cmpct", code.host=文件全文)` → `cordis_run(mode:"run")`。host-only 包**无需审批**。（`kind:"existing"` 不可用——旧 pluginId 随进程消失。）
+**用法**：空对象 `{}`（唯一可选字段 `reason`，仅写日志）；返回 `status: scheduled` = 已排到**本轮结束后的 idle 窗口**后台执行，真实结果打在 host 日志 `compact_context [<agent id>] compacted N items (~M tokens), summarySeq=…`。
+**拆卸**：删掉 patch 里那三行（`- insert:` 与 id/name），重启即恢复原状（改动前备份 `cordis.patch.yml.bak-compact-20260911-050221`）；台账与取证见 `~/.dsh/plugins/compact-tool.制作历程.md`。
 
-**调用**：空对象 `{}` 即可（唯一可选字段 `reason`，仅写日志）。返回 `status: scheduled` = 已排到**本轮结束后的 idle 窗口**后台执行；真实结果打在 host 日志：`[cordis:cmpct-1] compact_context [<sessionId>] compacted N items (~M tokens)`。
+**真实约束（源码取证）**
+- **realm 通道**：`compaction` 活在 agent preset 的 **isolate realm** 内（`presets/standard/agent.cordis.yml:138-143` 的 `isolate: { compaction: true, toolResultPruner: true }`），host 平面不可见（主仓 `packages/bundle/web-app/cordis.patch.yml:427/430/433` 有意禁用 `compaction-basic`/`command-compact`/`tool-result-pruner` 三行）⇒ 唯一通道是 `ctx.get('agentPresets').serviceFor(agent, 'compaction')`（`packages/preset/agent-presets/src/index.ts:623`）。
+- **agent 来源**：优先 `exec.agent`，fallback `agents.currentInitiator()`。
+- **为何必须排队**：`compactNow` 内部走 `runMaintenance`，agent 非 idle 时抛 `ManualCompactionError('busy')` ⇒「排队到 idle」是**插件自己监听 `agent/status` 事件**实现的（载荷 `{ agent, status }`，`packages/core/agent/src/runtime-types.ts:277`），**不是**官方 API。
+- 它跑在**真实 Node 进程**里，`new AbortController()` 可用——早期动态插件沙箱「没有 `AbortSignal`/`AbortController`」的限制**已不适用**。
 
-**关键契约（子智能体查证所得，出处为 Inspect + 主仓源码）**：
-- **realm 通道**：compaction 只在 **preset 的 isolate realm** 内，**host 平面不可见**（主仓 `bundle/web-app/cordis.patch.yml:427` 有意把三行设 `disabled: true`）⇒ 唯一通道是 `ctx.get('agentPresets').serviceFor(agent, 'compaction')`；
-- **agent 从哪来**：优先 `exec.agent`，fallback `agents.currentInitiator()`；
-- **为何必须排队**：`compactNow` 内部走 `runMaintenance`，**非 idle 时同步抛 `ManualCompactionError('busy')`** ⇒ 「排队到 idle」是**插件自己监听 `agent/status` 事件**实现的（**不是**官方 API —— 先前记忆里的 "runDeferred" 有误，已更正）；
-- **沙箱限制**：动态插件沙箱**没有 `AbortSignal`/`AbortController`**（只有 `ctx`/`harness`/`console`/`btoa`/`atob`/`TextEncoder`/`TextDecoder`）⇒ 造信号必须用宿主类的 `Ctor.any([])`，**不能** `new AbortSignal()`；`parameters` 根对象须显式 `additionalProperties: true`。
+⚠ **不要再重建退役的动态版本**（`~/.dsh/dynamic-plugins/compact-tool.host.js.retired`，以及同目录 `README.md` 里的重建三步）：它与本版注册**同名 global layer 工具 `compact_context`**，同名注册会**直接抛错**（`packages/core/tools/src/index.ts:719-721`）。
 
-⚠ **一个必须知道的限制**：该工具**注册后不会进入主智能体当前会话的 function schema** —— 主智能体**看不到、也调不了它**（schema 是会话级确定的）。要压缩只能：① 用户发 `/compact` 命令；或 ② 由子智能体代调（但工具语义是「压调用者自身」，代调压的是子智能体，不是主智能体）。
+> 背景：它**历史上曾是**动态 Cordis 插件（只活在进程内存、重启即失；源码存盘在非官方约定的 `~/.dsh/dynamic-plugins/`——全仓源码搜该路径 0 命中，这正是迁移动机）。**现已迁走，不再是那个状态。**
 
 ## 3. ⚠ 已知行为与风险
 
@@ -127,7 +124,7 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 | 3 | ~~`docs/spec-p5-tests-detail.md` 的 2 处行号~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **10 项**替换 / **9 个位置** —— 第一轮 6 处 L477/L478/L555/L559/L561/L563 + 补改 L419、L425 行内 2 项（行号 + 加粗）、L549。原记「2 处」为误。与 #2 合计 **16 项替换 / 15 个位置 / 2 文件**） |
 | 4 | ~~G-1 是否开新账目修~~ | ✅ **2026-09-11 已完成**（见 §3，两道闸门 + 运行时对照 + 80 例测试） |
 | 5 | `R3`：两个 leaf 的 compilerOptions 手抄 | 6 项严格设置重复维护，可提取 `tsconfig.base.json` |
-| 6 | pnpm store v10/v11 冲突 | 会让 `dsh plugin` 命令失败；需统一 store 或重装 profile |
+| 6 | ~~pnpm store v10/v11 冲突~~ | ✅ **2026-09-11 已完成**（根因：该 profile 的 `package.json` 缺 `packageManager` 声明 ⇒ `dsh plugin`（`apps/cli/src/plugin.ts:134` 用 `spawnSync('pnpm', …)` 走 PATH）拿到全局 pnpm **10.33.4**（store v10），而 `node_modules/.modules.yaml` 记的是 **store v11** ⇒ `ERR_PNPM_UNEXPECTED_STORE`；修法：`~/.dsh/profiles/web/package.json:4` 新增一行 `"packageManager": "pnpm@11.7.0"`，**只加这一行**（与备份 `~/.dsh/backups/web-profile-before-pnpmfix-20260911-052009`（12M）逐行 diff 仅此一处）；修后 profile 内 `pnpm --version` 10.33.4→**11.7.0**、`pnpm store path` store/v10→**store/v11**，`pnpm-lock.yaml` 与 `.modules.yaml` mtime 由 Sep 10 01:05 → **2026-09-11 05:20:27**，`dependencies` 与 `dsh.profile.bundles` 逐字未变。**留档坑**：pnpm 自管理缓存 `~/.local/share/pnpm/.tools/pnpm/` 只有 10.33.2 / 11.2.2 / 11.7.0 / 11.15.1，**无 10.33.4** ⇒ 将来给仍用 pnpm 10 的目录补声明必须写 `pnpm@10.33.2`（已缓存、离线可用）。**遗留**：`plugins/dsh-annotate`、`profiles/dsh-robot`、`profiles/lark`、`profiles/open-design`、`~/.understand-anything/repo/understand-anything-plugin` 五个目录的 node_modules 仍是 pnpm 10 装的且无声明，目前靠全局 10.33.4 正常工作，本次**刻意未动**） |
 | 7 | host 错误通道字典化（#20） | 中文 25 + 英文 17 处技术串仍在代码里；本次 G-1 复用既有英文串，未启动该项 |
 
 ## 6. 未做且明确不做的
