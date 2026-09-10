@@ -222,7 +222,13 @@ if (!existsSync(summaryPath)) {
   fail(
     `找不到覆盖率报告 ${summaryPath}。\n` +
       '  请先跑 `npm run test:coverage`（该脚本内已开启 --coverage.reportOnFailure=true，' +
-      '测试失败时也会出报告）；若换了输出目录，用 --reports-dir 指过来。',
+      '测试失败时也会出报告）；若换了输出目录，用 --reports-dir 指过来。\n' +
+      '  若刚才那次 vitest 是因并发争用崩溃的（日志里出现 "Something removed the coverage ' +
+      'directory" 或 coverage/.tmp 的 ENOENT），那是同一个 coverage.reportsDirectory 被多个 ' +
+      'vitest 同时写入所致：改用一个隔离目录重跑\n' +
+      '    npx vitest run --coverage --coverage.reportOnFailure=true ' +
+      '--coverage.reportsDirectory=<隔离目录>\n' +
+      '  再把同一个目录用 --reports-dir 指给本脚本。',
   )
 }
 
@@ -269,7 +275,11 @@ if (missing.length > 0) {
       '  parseAstAsync（不传 lang）；jsdom 环境下产物仍是 TS 语法 → 解析失败 → 该文件被排除，\n' +
       '  控制台只留一行 `Failed to parse <file>. Excluding it from coverage.`。\n' +
       '  这类文件不进分母，per-file 100% 门槛因此不会变红：漏测被伪装成「不存在」。\n' +
-      '  正确修法是给它们补 spec（让文件被真实加载），而不是把它们写进 coverage.exclude。',
+      '  正确修法是给它们补 spec（让文件被真实加载），而不是把它们写进 coverage.exclude。\n' +
+      '  实测口径（2026-09，vitest 4.1.11 / vite 8.3.0）：该路径**未复现**——未加载文件的\n' +
+      '  transform 产物已被 oxc 剥成 JS，parse 成功并照常进分母。所以本脚本是**面向未来的\n' +
+      '  护栏**（升级 vitest/vite、改 environment、动 include 都可能让分母漂移），不是对某个\n' +
+      '  现有缺陷的修复；此处报红时请按上面的方向重新定位，不要直接照抄结论。',
   )
 }
 
