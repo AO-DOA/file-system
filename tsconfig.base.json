@@ -1,0 +1,61 @@
+{
+  // Shared compiler face for the two product leaves (tsconfig.host.json and
+  // tsconfig.client.json). Every entry below was byte-identical in both leaves
+  // and is maintained here once; a face's own options stay in that face.
+  //
+  // This file owns no program: it declares no `include`/`files`/`references`
+  // and no leaf references it, so `tsc -b tsconfig.json` never treats it as a
+  // project. It is reached only through the extends chains
+  //   base -> tsconfig.host.json   -> tsconfig.tests.host.json
+  //   base -> tsconfig.client.json -> tsconfig.tests.client.json
+  //                                -> tsconfig.tests.composition.json
+  // so the three test leaves inherit every line below without copying it, and
+  // a strictness switch added here reaches all five leaves at once.
+  //
+  // Deliberately NOT here, because these are the environment boundary each
+  // face owns — lifting them would erase the host/client split the harness
+  // requires ("one program cannot see both sides of the cordis Context
+  // merges"):
+  //   * `lib`   — host sees ["ES2024"], client adds DOM, so the host half
+  //     cannot start using `document`/`window` unnoticed.
+  //   * `types` — host ["node"], client [], so the client half cannot start
+  //     using `process`/`Buffer`/`require` unnoticed.
+  //   * `jsx` / `noEmit` / `outDir` / `declaration` / `declarationDir` /
+  //     `rewriteRelativeImportExtensions` / `esModuleInterop` — emit shape,
+  //     owned by the host face; the client face never emits.
+  //   * `rootDir` — a path, and therefore meaningful only next to the
+  //     `include` it is paired with, which each leaf owns separately.
+  //   * `tsBuildInfoFile` — must stay per-leaf: one shared .tsbuildinfo
+  //     across composite projects would let their incremental state collide.
+  //
+  // NOTE: relative paths in an extended config resolve against the file that
+  // declares them, i.e. this file. It must therefore stay in the package root
+  // beside the leaves, and no path option may be added here (that would
+  // silently re-base it for every leaf).
+  "compilerOptions": {
+    // Module/dialect idiom both faces compile against.
+    "target": "es2024",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+
+    // Membership of the solution build driven by `tsconfig.json`. Every leaf
+    // is a referenced project, so every leaf is composite.
+    "composite": true,
+
+    // Strictness contract, single source of truth. Keeping it here is the
+    // point of this file: a switch added for one face can no longer leave the
+    // other face behind, and the test leaves follow their face automatically.
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // Both faces consume the same upstream .d.ts surface and neither is a
+    // library boundary being published for other consumers to check.
+    "skipLibCheck": true
+  }
+}

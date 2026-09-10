@@ -1,5 +1,10 @@
 {
   // Host face: compiled to lib/ (main entry) with declarations under lib/types.
+  // The module idiom, `composite` membership and the strictness contract live
+  // in `tsconfig.base.json`; what stays here is only what makes this the host
+  // face — its lib/types pair and its emit shape. `tsconfig.tests.host.json`
+  // extends this file, so it inherits the whole face without copying a line.
+  //
   // rootDir is src (not src/host) because the host half imports the shared locale
   // dictionary `src/shared/locale.ts` — the single source of truth for product
   // copy. A narrower rootDir rejects that import outright (TS6059 plus TS6307)
@@ -9,29 +14,22 @@
   // With rootDir at src the emitted layout mirrors the sources: the entry is
   // lib/host/index.js, and its sibling lib/shared/locale.js is what the emitted
   // `../shared/locale.js` actually resolves to.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2024",
+    // Host environment boundary, deliberately not in the base: ES2024 without
+    // DOM, so the host half cannot start depending on `document`/`window`
+    // unnoticed, and node globals without a client counterpart.
     "lib": ["ES2024"],
-    "module": "esnext",
-    "moduleResolution": "bundler",
     "rootDir": "src",
+    "types": ["node"],
+
+    // Emit shape (host-only; the client face never emits).
     "outDir": "lib",
     "declaration": true,
     "declarationDir": "lib/types",
-    "composite": true,
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo",
-    "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true,
-    "esModuleInterop": true,
-    "types": ["node"],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "skipLibCheck": true
+    "esModuleInterop": true
   },
   "include": ["src/host", "src/shared"]
 }

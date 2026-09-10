@@ -2,11 +2,15 @@
   // Client face: typecheck-only. tsdown bundles src/client into client/client.js,
   // so this project never emits; it exists to give the browser sources the DOM
   // lib and React JSX types the host face deliberately withholds.
+  // The module idiom, `composite` membership and the strictness contract live in
+  // `tsconfig.base.json`; what stays here is only what makes this the client
+  // face — the DOM lib, JSX, no emit, and no ambient node types.
+  // `tsconfig.tests.client.json` and `tsconfig.tests.composition.json` extend
+  // this file, so both inherit the whole face without copying a line.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2024",
+    // Client environment boundary, deliberately not in the base: DOM plus JSX.
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "module": "esnext",
-    "moduleResolution": "bundler",
     "jsx": "react-jsx",
     // rootDir is src (not src/client) because the client half imports the shared
     // locale dictionary `src/shared/locale.ts` — the single source of truth for
@@ -14,19 +18,14 @@
     // TS6307: the file is neither under rootDir nor in the program). Widening it
     // costs nothing here: this project is noEmit, so rootDir shapes no output.
     "rootDir": "src",
-    "noEmit": true,
-    "composite": true,
-    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
-    "allowImportingTsExtensions": true,
+    // Empty `types` is the other half of the boundary: the client half must not
+    // see `process`/`Buffer`/`require` (the harness client base demands "no
+    // ambient node types").
     "types": [],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "skipLibCheck": true
+
+    // This face never emits; tsdown owns client/client.js.
+    "noEmit": true,
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
   "include": ["src/client", "src/shared"]
 }
