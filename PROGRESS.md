@@ -66,6 +66,19 @@
 
 ---
 
+## 0.3 委派规范（多级委派）
+
+**背景**：2026-09-11 用户指出 —— P1-B 的派发包过大（5 项任务：三件套 / 入口契约 / 占位挂载 / REAL-composition / D-6），且未授权子智能体自行分派子任务，导致其串行推进、轮次拉长。用户要求：**对多任务，应给子智能体派遣子智能体的能力**。
+
+**规范**：
+
+1. **任务包上限**：单个派发包**不超过 3 项**可独立验收的交付物；超过则必须先拆包，或在 prompt 中明确要求其二级委派。
+2. **显式授权二级委派**：派发 prompt 中**必须**写入「你可以且应当为其中独立的工作派发你自己的子智能体（`subagent` 工具）」，并给出具体拆分建议。
+3. **层级与职责**：主智能体拆阶段（P0–P6）→ 阶段子智能体拆交付物 → 交付物可再拆原子任务。**验收与记账仍只在主智能体**；中间层的子任务结论由该层子智能体汇总回报。
+4. **回报义务**：使用了二级委派的子智能体，必须在报告中列出「派了哪些子任务、各自结论」，供主智能体判断是否需复核。
+
+---
+
 ## 1. 账目总表
 
 状态取值：`待办` / `进行中` / `待验收` / `已销账`
@@ -213,3 +226,5 @@
 | 2026-09-11 | **compaction 调查结案（子智能体 `956ccd03`）**：根因**不是部署缺挂载，而是消费者取错通道**——compaction 活在 **agent preset realm 内**（`packages/bundle/web-app/cordis.patch.yml:427-434` 有意把 host 平面三行 `disabled: true`），`ctx.get('compaction')` 从 realm 外取不到；正确通道为 `ctx.get('agentPresets').serviceFor(agent,'compaction')`（实测返回对象、`compactNow` 是 function）。**同时纠正主智能体两个错误判断**：①「服务未挂载」应为「消费者作用域错误」；②「`/compact` 停在 PENDING」不成立——实测 `commands.find(agent,'compact')` 为 present，人类命令本就可**用**。修复走**方案 A（改消费者，无需重启）**，已派原实现者 `3eec5d11` 执行 |
 | 2026-09-11 | **P1-B 三件套验收预检**（读三个 yml）：`cordis.patch.yml` 正确（`- insert: - id: fs` + `name: dsh-plugin-file-system-zc`，**`id: fs` 与基线一致**）；`preset.yml` 正确（`name: 文件系统` / `order: 5` 与源一致）；`agent.cordis.yml` 结构正确（`skill-filesystem` 的 `customSkillDirs` 用 `new URL('skills/', baseUrl)` 相对解析 + `tool-skill`）。**发现一处缺口**：该 yml 引用 `skills/` 目录，而 zc 仓库既无 `skills/`，其 `package.json` 的 `files` 也**不含 `skills`**（源插件两者都有）→ 技能将挂到空目录。待 P1-B 报告其处置方式后定夺 |
 | 2026-09-11 | **P1-B 第 2 步验收通过**：`src/host/index.ts:12,15` 已对齐基线（`name = 'fs'`、`inject = ['webServer','sandboxPolicy','sessions','agentLoop']`），`src/client/index.ts:11,14` 亦为（`name = 'fs'`、`inject = ['slots']`）——与 `feature-baseline.md` §2.1 逐字一致。`tests/fixtures/` 已建，REAL-composition 测试进行中 |
+| 2026-09-11 | **compaction 修复完成**：子智能体 `3eec5d11` 对 `cmpct-2` 追加 `pkg-7` 并 update 成功（`running`）——取值通道改为 `agentPresets.serviceFor(agent,'compaction')` 优先 + host 平面回退；`execute` 改为先取 agent（`exec.agent` 优先）再取 compaction；`runDeferred` 同走新通道。schema 逐字未变，`pkg-2` 保留可回滚；排队到 idle 执行的逻辑不变。**验证判据**：下次调用应返回 `scheduled`，轮末 idle 后 host 日志出现 `compact_context (deferred): compressed - ...`；若仍为 `unavailable - no compaction instance for this agent` 则通道未通 |
+| 2026-09-11 | **新增 §0.3 多级委派规范**（用户指正 P1-B 派发包过大）：① 单包 ≤3 项可独立验收交付物；② prompt 必须显式授权二级委派并给拆分建议；③ 验收与记账仍只在主智能体；④ 使用者须回报「派了哪些子任务、各自结论」。**已即时应用**：向 P1-B（`d5afe9fe`）补发授权，建议其把 D-6 与「REAL-composition 装配方法调研」派给自己的子智能体，自己只负责占位挂载收尾与汇总 |
