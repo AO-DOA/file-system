@@ -84,10 +84,13 @@
 | G-9 | 任务表为进程内 `Map`，重启即丢 | `src/host/index.js:37` | 前端收到 `task not found` |
 | G-10 | 未消费 `conversation.view` owner props（`viewRequest`/`openView`/`completeViewRequest`） | `src/client/index.js:770` | 不参与 View 焦点协议 |
 | G-11 | `AGENTS.md` §6 冒烟第 2 条「悬停可打开」在代码中无对应实现 | 文档与代码不符 | 迁移后应更新该文档表述，而非造一个实现 |
+| G-12 | `CodeBlock` 的 `copyLabel`/`copiedLabel` 自上游 0.1.5 起为必填，而源只传 `{code, lang}`（纯 JS 无类型检查故从未暴露） | 源 `src/client/index.js:110`；迁移版 `src/client/index.tsx:276-289`（`CodeBlockCall` 类型窄化） | 按 D-8/D-9 逐字保留：**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到源实现真正传递的两个字段，运行时调用与源一致 |
 
-**可按 D-8 例外删除的死代码**（无任何引用，删除不改行为）：`cardDismissed`/`setCardDismissed`、`genStatus`、未消费的 `isMdFile`/`isBookFile`/`picker`、4 个无 JS 引用的 CSS 类（`.fs-card-actions`/`.fs-card-src`/`.fs-card-err`/`.fs-folder-gen`）、`docRelPath`（仅测试用）。
+**可按 D-8 例外删除的死代码**（无任何引用，删除不改行为）：`cardDismissed`/`setCardDismissed`、`genStatus`、`picker`、4 个无 JS 引用的 CSS 类（`.fs-card-actions`/`.fs-card-src`/`.fs-card-err`/`.fs-folder-gen`）、`docRelPath`（仅测试用）。
 
-**可按 D-8 例外修正的泄漏**（须单独记账并在交付摘要列明）：G-6、G-7。
+> **订正（2026-09-11 复核实测）**：`isMdFile`/`isBookFile` **不属此列，勿删** —— 二者是 `canTranslate` 的输入（迁移版 `src/client/index.tsx:487`），而 `canTranslate` 决定翻译页签是否入列（`:491`）、是否读翻译文档（`:527`）、是否发起翻译（`:625`）、翻译按钮是否渲染（`:1043`）。原清单把它们误列为「未消费」，照删即砍掉翻译入口。
+
+**可经 D-8 例外 b 修正、但本次迁移决定不修的泄漏**（须单独记账并在交付摘要列明）：G-6、G-7。迁移版与源逐字一致地保留二者——`src/client/index.tsx:538-539` 注释明写「**不新增清理**」（`pollTask` 无 `clearTimeout`、拖拽 `document` 监听无 cleanup），仅靠 `aliveRef` 短路达到可观察等价。
 
 ---
 

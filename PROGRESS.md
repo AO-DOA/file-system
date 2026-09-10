@@ -90,7 +90,7 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 ### 其余逐字保留的既有行为（G-2 ~ G-12）
 
 详见 `docs/feature-baseline.md` §4 的登记表。要点：
-- **G-2** kind 白名单过宽；**G-3** 目录重复请求同一 `/read`；**G-4** 切换文件静默丢弃未保存编辑；**G-5** `refreshRoot` 失败不上屏；**G-6/G-7** 资源泄漏类（`pollTask` 无 `clearTimeout`、拖拽监听无 cleanup）**P4 主动保留未修**；**G-8~G-11** 任务表进程内 Map、未消费 View 焦点协议等。
+- **G-2** kind 白名单过宽；**G-3** 目录重复请求同一 `/read`；**G-4** 切换文件静默丢弃未保存编辑；**G-5** `refreshRoot` 失败不上屏；**G-6/G-7** 资源泄漏类（`pollTask` 无 `clearTimeout`、拖拽监听无 cleanup）**P4 阶段决定主动保留未修**——该决定贯穿至交付，`src/client/index.tsx:538-539` 注释明写「不新增清理」；`docs/feature-baseline.md` §4 对该两项只写 D-8 例外 b 的「允许修正」授权，非「已修」记录；**G-8~G-11** 任务表进程内 Map、未消费 View 焦点协议等。
 - **G-12**：`CodeBlock` 的 `copyLabel`/`copiedLabel` 在 primitives 里是必填，而源插件只传 `{code, lang}`（纯 JS 无类型检查故从未暴露）。迁移版**同样不传**，仅做局部类型窄化，UI 表现与源一致。
 
 ### 与主仓风格的有意差异（交付时需说明）
@@ -129,5 +129,5 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 
 ## 6. 未做且明确不做的
 
-- **`translate-doc` / `session-review` 两个技能仍不可见** —— 切换前就不可见（`~/.agents/skills/` 里只有另外三条软链），保持行为等价。
+- **`translate-doc` / `session-review` 两个技能仍不可见** —— 切换前就不可见（`~/.agents/skills/` 下实测共 **18 条软链、目标全部存在**，其中指向本插件的只有 `folder-doc`/`file-doc`/`source-doc` 三条；这两个名字在该目录下**没有任何条目**，既非活链也非断链），保持行为等价。
 - **旧插件仓 `../dsh-plugin-file-system` 保留** —— 冻结于 `3a3f89e`、工作树干净，可作回滚参照。

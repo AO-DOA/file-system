@@ -34,7 +34,7 @@ export default defineConfig({
       // D-8 forbids deleting it while the ignore-comment ban forbids hiding it.
       // The numbers below are measured, not assumed:
       //
-      //   src/host/index.ts      stmts 96.93 / branch 95.83 / funcs 97.56 / lines 98.07
+      //   src/host/index.ts      stmts 97.07 / branch 96.4 / funcs 97.56 / lines 98.15
       //     - isBookDocRel === bookDocRelValid double guard (313/320/321)
       //     - serveFile's not-a-file arm and stat-failure callback (335/337/338),
       //       reachable only inside the firstExistingFile->stat TOCTOU window
@@ -43,7 +43,7 @@ export default defineConfig({
       //     - applyGenScope's empty allow-list (186): all four descriptors'
       //       scopes are in GEN_SCOPE_TOOLS, so genScopeAllow() is never empty
       //
-      //   src/client/index.tsx  stmts 97.97 / branch 95.68 / funcs 99.17 / lines 97.42
+      //   src/client/index.tsx  stmts 97.96 / branch 95.68 / funcs 99.16 / lines 100
       //     - save()'s !hasSource guard, the trBusy guard (both call sites sit
       //       behind conditions that already imply their negation)
       //     - duplicate aliveRef checks inside pollTask callbacks
