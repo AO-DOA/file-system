@@ -25,7 +25,7 @@
 | # | 门禁 | 核验命令 | 通过标准 |
 |---|---|---|---|
 | G1 | `-zc` 四门禁全绿 | 在 `-zc` 仓：`npm run typecheck && npm run lint && npm test && npm run test:coverage` | 全部 exit 0；覆盖率 per-file 100%（含分支） |
-| G2 | **产物已构建且入库外存在** | `ls -l lib/index.js client/client.js` | 两文件存在且**不是**占位实现（`lib/index.js` 行数应为数百行量级） |
+| G2 | **产物已构建且入库外存在** | `ls -l lib/host/index.js client/client.js` | 两文件存在且**不是**占位实现（`lib/host/index.js` 行数应为数百行量级） |
 | G3 | 产物 banner 契约 | `node scripts/verify-client-banner.mjs` | 输出 `client banner ok: client/client.js ...`；exit 0 |
 | G4 | `dsh.bundle.patch` 声明存在 | `grep -n -A3 '"bundle"' package.json` | 含 `"patch": "./cordis.patch.yml"` |
 | G5 | 功能基线逐条核对 | 对照 `docs/feature-baseline.md` §2「必须逐字保留」 | 无差异（有差异需先记账） |
@@ -489,7 +489,7 @@ dsh --profile web --dump-default-config | grep -n -B1 -A1 -- '^- id: fs$'
 | **R2** | **两行指向同一个包** → 客户端直接硬失败 | 例如同时保留 `dsh-plugin-file-system` 与指向同一目录的 `file:` spec | client-modules 会抛 `client-modules: package <name> resolves from multiple active Loader sources: … remove one entry`（`packages/client/modules/src/index.ts:957`） |
 | **R3** | **profile 里旧行没删干净**（只删了 dependencies，或只删了 bundles） | `reconcilePlugins` 依赖「曾是 dependency」才剔除（`apps/cli/src/plugin.ts:78-87`）；手工编辑更容易只改一处 | `grep -n "dsh-plugin-file-system" ~/.dsh/profiles/web/package.json` 必须**无输出**（注意 `-zc` 包名**包含**旧名做前缀，grep 要用 `dsh-plugin-file-system"` 带引号或 `grep -wn`） |
 | **R4** | **客户端产物 banner 的 id 与包名不符** | banner id 是构建期从 `package.json.name` 读出的（`normalize-client-banner.mjs:13`），若 build 后再改包名就会错位 | 切换前跑 `node scripts/verify-client-banner.mjs`（G3）；切换后若页签不出现且 console 有模块加载错误，用 `head -c 120 client/client.js` 复核 |
-| **R5** | **新包产物未构建**（`lib/`、`client/` 缺失/是骨架） | 产物不入库（D-7），`link:` 安装**不会**触发 `prepare` 构建 | §0 的 G2；`ls -l lib/index.js client/client.js` 且 `wc -l lib/index.js` 不应是 37 |
+| **R5** | **新包产物未构建**（`lib/`、`client/` 缺失/是骨架） | 产物不入库（D-7），`link:` 安装**不会**触发 `prepare` 构建 | §0 的 G2；`ls -l lib/host/index.js client/client.js` 且 `wc -l lib/host/index.js` 不应是 37 |
 | **R6** | **新包没被链进 profile 的 node_modules** | 手工改 `package.json` 而未跑安装 | 验层时 `cannot resolve profile bundle "dsh-plugin-file-system-zc"`（`profile.ts:758-761`）；或 `ls -la ~/.dsh/profiles/web/node_modules/dsh-plugin-file-system-zc` |
 | **R7** | **客户端 boot 全有全无**：新插件 client 起不来 → 整个 GUI 起不来 | `assertEntriesActive` 只要有 entry pending/failed 就抛错（`packages/client/web/src/boot.ts:137-157`） | 浏览器 console 的 `web boot: N entries did not activate`；`~/.dsh/logs/web.log` 尾部。**这是好消息**：失败是响亮的，不会静默 |
 | **R8** | **`dsh.client` 声明差异**：旧插件声明了 `inject: ["@deepseek-ai/dsh-client-runtime","@deepseek-ai/dsh-client-ui-slots"]` 与 `immediately`，新插件只有 `platform` | 迁移时按 feature-baseline 逐字保留清单未覆盖该字段 | 若客户端插件等待服务而 pending，boot gate 会报 `pending (waiting for service: …)`。**待核实**（见 §8-Q2） |

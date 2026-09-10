@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // folder-doc 生成器（folder-doc 技能的确定性配套）
 //
-// 契约（来自宿主 dsh-plugin-file-system-zc/lib/index.js）：
+// 契约（来自宿主 dsh-plugin-file-system-zc/lib/host/index.js）：
 //   书库根 = $DSH_HOME/books/<projectKey(项目根绝对路径)>/（集中模型，见 docs/feature-baseline.md §2.2 与 docs/baseline/host.md §D）。
 //   显式 --book <path> 兼容保留（传了就用它，旧/手工调用不破坏）；未传时自动推导新桶。
 //   目标 = 一个文件夹（宿主已给出，不递归）。源码路径键 = 工作区名 + '/' + 相对工作区根路径（根=工作区名）。

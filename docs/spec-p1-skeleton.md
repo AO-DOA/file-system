@@ -56,8 +56,8 @@ tsconfig.tests.json    tests 面：extends host、noEmit、rootDir "."、include
 ```
 name: dsh-plugin-file-system-zc      （非 scoped，见 P1 决策 D-1）
 type: module
-main: lib/index.js
-exports: "." → lib/index.js；"./client" → client/client.js；"./package.json"
+main: lib/host/index.js
+exports: "." → lib/host/index.js；"./client" → client/client.js；"./package.json"
 files: lib, client, src, cordis.patch.yml, agent.cordis.yml, preset.yml, README.md, LICENSE
 dsh.bundle.patch: ./cordis.patch.yml
 dsh.client.platform: web

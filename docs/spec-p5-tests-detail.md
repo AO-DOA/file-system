@@ -473,9 +473,9 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 
 | 源用例（`real-composition.test.js`） | zc 现状 | 处置 |
 |---|---|---|
-| `:24` package.json loader 契约（`main` / `exports['.']` / `exports['./client']` / `dsh.bundle.patch`） | zc 版 `:171-176` 只断言了 `name` 与 `dsh.bundle.patch` | **补**：断言 `exports['.'] === './lib/index.js'`、`exports['./client'] === './client/client.js'`（值须与 `package.json` 实况一致，**不要照抄源仓的 `./dsh/index.js`**） |
+| `:24` package.json loader 契约（`main` / `exports['.']` / `exports['./client']` / `dsh.bundle.patch`） | zc 版 `:171-176` 只断言了 `name` 与 `dsh.bundle.patch` | **补**：断言 `exports['.'] === './lib/host/index.js'`、`exports['./client'] === './client/client.js'`（值须与 `package.json` 实况一致，**不要照抄源仓的 `./dsh/index.js`**） |
 | `:33` host 模块真实形态：`default === undefined`、`name === 'fs'`、`inject` 数组、`apply` 可执行 | zc 版通过 Loader entry tree 间接覆盖了 `name`/`id` | **补 `default` 与 `inject` 的显式断言**。依据 `docs/testing.zh.md:41`：「需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言」（原文见 §9） |
-| `:43` loader 自引用（`await import('dsh-plugin-file-system')`）+ `t.skip` | **不应迁移** | **删除**。理由有硬依据：① 包名已改为 `dsh-plugin-file-system-zc`；② `docs/testing.zh.md:47` 原文要求「**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例」——zc 的 `exports['.']` 指向 `lib/index.js`，正是该条禁止的形态；③ zc 版已用真 Loader 取代 |
+| `:43` loader 自引用（`await import('dsh-plugin-file-system')`）+ `t.skip` | **不应迁移** | **删除**。理由有硬依据：① 包名已改为 `dsh-plugin-file-system-zc`；② `docs/testing.zh.md:47` 原文要求「**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例」——zc 的 `exports['.']` 指向 `lib/host/index.js`，正是该条禁止的形态；③ zc 版已用真 Loader 取代 |
 | `:93` apply 装配：`webServer.register` 收到 `/api/fs` 前缀 + effect 清理可执行 | zc 版 `:135` 断言 `['prefix /api/fs']`；`afterEach` 的 `fiber.dispose()`（`:46-49`）覆盖可逆性 | **已覆盖，不重写**；若要更贴近源仓，可补一条「dispose 后路由表为空」的显式断言 |
 | `:116` `NODE_ENV !== 'test'` 时不挂 `__fsTest` | **zc 版缺失** | **必须补**。注意 P3 落地后 `__fsTest` 的挂载条件若变化，须以源码为准 |
 | `:133` `cordis.patch.yml` 插件行 `id: fs` + `name: <包名>` | zc 版 `:162-169` 覆盖 | **已覆盖** |

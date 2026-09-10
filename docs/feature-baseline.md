@@ -54,7 +54,7 @@
 
 | 项 | 现状 | 改为 |
 |---|---|---|
-| `main` / `exports["."]` / `exports["./client"]` | `./dsh/index.js` / `./dsh/client.js` | `./lib/index.js` / `./client/client.js` |
+| `main` / `exports["."]` / `exports["./client"]` | `./dsh/index.js` / `./dsh/client.js` | `./lib/host/index.js` / `./client/client.js` |
 | `files` | `dsh` | `lib` + `client`（**`src` 必须保留**：生产态 `prompt-loader.js:26-29` 候选 2 读 `../src/host/abilities/<dir>/prompt.md`） |
 | `scripts.build` | `node scripts/build.mjs`（esbuild） | tsc（host）+ tsdown（client） |
 | `scripts.test:coverage` | `node --test --test-coverage-include=<3 文件> --test-coverage-lines=100 --test-coverage-functions=100` | vitest `--coverage` + `coverage.include` 收窄 + `thresholds` **lines/functions/branches 均 100** |

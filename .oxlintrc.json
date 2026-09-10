@@ -13,7 +13,7 @@
   },
   "ignorePatterns": [
     "**/node_modules/**",
-    "lib/**", // host 构建产物（tsc：lib/index.js + lib/types）
+    "lib/**", // host 构建产物（tsc：lib/host/index.js + lib/types）
     "client/**", // client 构建产物（tsdown：client/client.js）
     "coverage/**", // 覆盖率报告
     "docs/**", // 规格/台账文档，非 TS 检查对象

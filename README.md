@@ -136,7 +136,7 @@ npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归
 
 - 手写源码一律在 `src/`：host 入口 `src/host/index.ts`、client `src/client/index.ts`、
   共享文案字典 `src/shared/locale.ts`。
-- 构建产物为 `lib/index.js`（host）与 `client/client.js`（client），两者都在 `.gitignore` 中，
+- 构建产物为 `lib/host/index.js`（host）与 `client/client.js`（client），两者都在 `.gitignore` 中，
   不手写、不提交；**改 host 或 client 后需重跑 `npm run build` 并重启 dsh web 才生效**。
 
 ## 相关文档
