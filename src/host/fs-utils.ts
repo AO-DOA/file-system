@@ -1,5 +1,5 @@
 // dsh-plugin-file-system-zc — Host 侧纯工具函数。
-// 这些函数不依赖 DSH ctx，便于单元测试；宿主入口 lib/index.js 直接 import 使用。
+// 这些函数不依赖 DSH ctx，便于单元测试；宿主入口 lib/host/index.js 直接 import 使用。
 import { resolve, basename, extname, join } from 'node:path'
 import { homedir } from 'node:os'
 
