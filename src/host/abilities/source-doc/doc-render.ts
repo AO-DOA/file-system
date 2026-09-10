@@ -6,7 +6,8 @@
 // 差异仅两处，均为宿主装配所需：① checkHealth 返回问题描述数组而不写 stderr 退出进程
 // （由调用方决定失败方式）；② 产物文本渲染与落盘解耦，frontmatter 的「层级」「生成时间」
 // 由调用方传入（脚本里写死为「源码」与当前时刻）。该技能与脚本保留，仅供会话内人工调用。
-// 只依赖 Node 内置模块（本文件实际不 import 任何模块）。
+// 只依赖 Node 内置模块与共享文案字典（第 3 批 C 类字典化后，诊断文案取自 src/shared/locale.ts）。
+import { ZH } from '../../../shared/locale.ts'
 
 // 可注解单元（对齐 skeleton.ts 的 Unit 形状：type/start/end/code/note）。
 interface Unit {
@@ -103,9 +104,9 @@ export function checkHealth(codeOut: readonly string[]): string[] {
   const total = annotatedLines + codeLines
   if (total > 0) {
     const ratio = annotatedLines / total
-    if (ratio < 0.5) bad.push(`注解占比过低（${(ratio * 100).toFixed(0)}%<50%）：疑似大量代码行未填注解`)
+    if (ratio < 0.5) bad.push(ZH.errHealthLowRatio + (ratio * 100).toFixed(0) + ZH.errHealthLowRatioEnd)
   }
-  if (total === 0) bad.push('正文没有任何可注解或代码行，产物为空')
+  if (total === 0) bad.push(ZH.errHealthEmptyBody)
 
   // 2) 行上方注解缩进一致性：对每条「行上方注解行」<注：这里以 codeOut 已渲染的行首 `[空格]*//` 判定>
   //    取其后紧跟的第一个非空代码行，比较两者前导缩进是否一致。
@@ -120,19 +121,22 @@ export function checkHealth(codeOut: readonly string[]): string[] {
     if (j >= codeOut.length) continue
     const codeIndent = ((codeOut[j] as string).match(/^[\t ]*/) as RegExpMatchArray)[0]
     if (annIndent !== codeIndent) {
-      bad.push(`行上方注解缩进与代码不一致（第 ${i} 行）. 注解缩进=${JSON.stringify(annIndent)} 代码缩进=${JSON.stringify(codeIndent)}`)
+      bad.push(
+        ZH.errHealthIndent + String(i) + ZH.errHealthIndentMid
+        + JSON.stringify(annIndent) + ZH.errHealthIndentEnd + JSON.stringify(codeIndent),
+      )
     }
   }
 
   // 3) 连续空行：正文中不应出现连续 2+ 空行（本脚本只在源码空行处插单空行）
   let run = 0
   for (const l of codeOut) {
-    if (l.trim() === '') { run++; if (run >= 2) { bad.push('正文出现连续空行（>1），排版被空行割裂'); break } }
+    if (l.trim() === '') { run++; if (run >= 2) { bad.push(ZH.errHealthBlankRun); break } }
     else run = 0
   }
 
   // 4) 至少要有注解标记
-  if (!codeOut.some(l => /\/\/\s*\[.*?\]/.test(l))) bad.push('正文找不到任何 `// [N]` 注解标记（疑似全部漏注解）')
+  if (!codeOut.some(l => /\/\/\s*\[.*?\]/.test(l))) bad.push(ZH.errHealthNoMarker)
 
   return bad
 }
@@ -175,7 +179,10 @@ export function renderAnnotatedDoc(
   for (const u of units) {
     if (srcLines) {
       if (u.start < 1 || u.end < u.start || u.end > srcLines.length)
-        throw new Error(`单元 [${u.start}-${u.end}] 越界（源码共 ${srcLines.length} 行）`)
+        throw new Error(
+          ZH.errUnitOutOfRange + String(u.start) + ZH.errUnitOutOfRangeMid + String(u.end)
+          + ZH.errUnitOutOfRangeMid2 + String(srcLines.length) + ZH.errUnitOutOfRangeEnd,
+        )
       rendered.push({
         type: u.type, start: u.start, end: u.end, note: u.note,
         code: srcLines.slice(u.start - 1, u.end).join('\n'),

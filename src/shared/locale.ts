@@ -117,6 +117,37 @@ export const ZH = {
   errInvalidBookDocRelWith: 'invalid book doc rel: ',
   errEmptyProjectPath: 'cannot encode an empty project path',
   errPathEscape: 'path escapes workspace root',
+  // host 开发者诊断串 · 第 3 批 C 类（子 agent 收尾判据 / 骨架与产物自检 / 服务缺失）。
+  // 同上：只搬家不改写——这些是诊断语（含「子 agent」、绝对路径、内部术语），改成用户话术
+  // 会丢掉现场信息，故值与原字面量逐字相同。
+  // 逐字同文的串共用一个键（不建同值多键）：errAgentLoopUnavailable 由 gen-executor 与
+  // translate-executor 各一处共用；errGenEmptyArtifact 与 errGenSkeletonLeft 由 folder-doc 与
+  // file-doc 两个能力描述符各一处共用。
+  // 含变量/绝对路径的串沿用「前缀 + 续段」拆键（先例 errFileTooLarge / errSrcTooLarge）：
+  // 变量夹在固定文案中间时，中段另立 Mid（三段则 Mid/Mid2），尾段另立 End，整句固定文案零残留。
+  errAgentLoopUnavailable: 'agentLoop 服务不可用',
+  errGenNoArtifact: '子 agent 已结束但产物未生成: ',
+  errGenArtifactStale: '子 agent 已结束但产物未更新: ',
+  errGenEmptyArtifact: '子 agent 已结束但产物为空: ',
+  errGenSkeletonLeft: '子 agent 已结束但产物仍是骨架（语义占位未填写）: ',
+  errTrNotWritten: '译文未写入目标文件: ',
+  errTrNotUpdated: '子 agent 已结束但译文未更新: ',
+  errSrcSkeletonMissing: '子 agent 已结束但骨架文件不存在: ',
+  errSrcSkeletonNoUnit: '骨架无任何可注解单元: ',
+  errSrcNoAnnotation: '子 agent 已结束但未填写任何注解（疑似空转）: ',
+  errHealthCheck: '产物健康自检未通过: ',
+  errHealthLowRatio: '注解占比过低（',
+  errHealthLowRatioEnd: '%<50%）：疑似大量代码行未填注解',
+  errHealthEmptyBody: '正文没有任何可注解或代码行，产物为空',
+  errHealthIndent: '行上方注解缩进与代码不一致（第 ',
+  errHealthIndentMid: ' 行）. 注解缩进=',
+  errHealthIndentEnd: ' 代码缩进=',
+  errHealthBlankRun: '正文出现连续空行（>1），排版被空行割裂',
+  errHealthNoMarker: '正文找不到任何 `// [N]` 注解标记（疑似全部漏注解）',
+  errUnitOutOfRange: '单元 [',
+  errUnitOutOfRangeMid: '-',
+  errUnitOutOfRangeMid2: '] 越界（源码共 ',
+  errUnitOutOfRangeEnd: ' 行）',
   // client api() 错误兜底（宿主未给 d.error 时上状态栏）
   errHttpPrefix: 'HTTP ',
   errRequestFailed: 'request failed',

@@ -9,6 +9,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { computeDocStem } from '../../fs-utils.ts'
 import { buildSourceSkeleton } from './skeleton.ts'
 import { annotationStats, parseFilledSkeleton, renderAnnotatedDoc } from './doc-render.ts'
+import { ZH } from '../../../shared/locale.ts'
 
 export default {
   kind: 'src',
@@ -30,11 +31,11 @@ export default {
   // 一条注解都没填 = 空转（实测过：输出预算全花在推理上，工具调用一个没发）。
   async verify({ skeletonPath }: { skeletonPath: string }): Promise<void> {
     const text = await readFile(skeletonPath, 'utf8').catch(() => null)
-    if (text === null) throw new Error('子 agent 已结束但骨架文件不存在: ' + skeletonPath)
+    if (text === null) throw new Error(ZH.errSrcSkeletonMissing + skeletonPath)
     const { units } = parseFilledSkeleton(text)
     const { filled, total } = annotationStats(units)
-    if (total === 0) throw new Error('骨架无任何可注解单元: ' + skeletonPath)
-    if (filled === 0) throw new Error('子 agent 已结束但未填写任何注解（疑似空转）: ' + skeletonPath)
+    if (total === 0) throw new Error(ZH.errSrcSkeletonNoUnit + skeletonPath)
+    if (filled === 0) throw new Error(ZH.errSrcNoAnnotation + skeletonPath)
   },
   // 宿主构建产物（顺序固定）：读骨架 → 解析 → 按源码真实行号取码排版 → 自检 → 落盘 → 删骨架。
   // 自检不通过时**不写 DOC、不删骨架**：半成品不落书库，骨架留现场便于排查。
@@ -55,7 +56,7 @@ export default {
     // 源写 `problems && problems.length > 0`；`problems` 运行时恒为数组（checkHealth 恒返回数组），
     // 该守卫在类型系统下恒真，故按其等价形式判定 —— 行为与源逐字相同（无可观察差异）。
     if (problems.length > 0) {
-      throw new Error('产物健康自检未通过: ' + problems.join('；'))
+      throw new Error(ZH.errHealthCheck + problems.join('；'))
     }
     await mkdir(dirname(docAbs), { recursive: true })
     await writeFile(docAbs, doc, 'utf8')

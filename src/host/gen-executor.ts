@@ -228,7 +228,7 @@ export function createGenExecutor(deps: GenExecutorDeps): RunGenDoc {
     const ability: GenAbility | undefined = abilityOf(kind)
     if (!ability) throw new Error(ZH.errUnknownGenKindWith + kind)
     const agentLoop = ctx.get('agentLoop') as AgentLoopSurface | undefined
-    if (!agentLoop) throw new Error('agentLoop 服务不可用')
+    if (!agentLoop) throw new Error(ZH.errAgentLoopUnavailable)
     // 写定向：目标归属「包含它的最深已知项目根」的桶（跨工作区共享，单一事实源）；
     // stem/「源码路径」键/docRel 全部用归属根视角，与 /tree 判定同一规则。
     const target = await bookTargetFor(rel)
@@ -344,10 +344,10 @@ export function createGenExecutor(deps: GenExecutorDeps): RunGenDoc {
       if (!ability.hostBuild) {
         const postStat = await fsp.stat(docAbs).catch((): null => null)
         if (!postStat || postStat.isDirectory()) {
-          throw new Error('子 agent 已结束但产物未生成: ' + docAbs)
+          throw new Error(ZH.errGenNoArtifact + docAbs)
         }
         if (prevStat && postStat.mtimeMs === prevStat.mtimeMs && postStat.size === prevStat.size) {
-          throw new Error('子 agent 已结束但产物未更新: ' + docAbs)
+          throw new Error(ZH.errGenArtifactStale + docAbs)
         }
       }
       // 宿主负责确定性收尾的能力：先做能力自带校验（L1/L2 占位残留、L3 注解填充率），

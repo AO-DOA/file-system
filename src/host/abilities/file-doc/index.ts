@@ -5,6 +5,7 @@ import { basename } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { computeDocStem } from '../../fs-utils.ts'
 import { renderFileDocSkeleton, filePlaceholderLeft } from './skeleton.ts'
+import { ZH } from '../../../shared/locale.ts'
 
 // docStem 入参：宿主下发的目标描述，本能力只用到源码路径键（文档名 = computeDocStem(key)）。
 interface FileDocStemTarget {
@@ -45,9 +46,9 @@ export default {
     const body = await readFile(docAbs, 'utf8').catch(() => '')
     // #15 加固（2026-09-10）：产物健康校验——防子 agent 用试探性/错误的 write 把 DOC
     // 清空成 0 字节却仍判 success。占位残留校验对空产物会漏过（空串不含占位符）。
-    if (!body.trim()) throw new Error('子 agent 已结束但产物为空: ' + docAbs)
+    if (!body.trim()) throw new Error(ZH.errGenEmptyArtifact + docAbs)
     if (filePlaceholderLeft(body)) {
-      throw new Error('子 agent 已结束但产物仍是骨架（语义占位未填写）: ' + docAbs)
+      throw new Error(ZH.errGenSkeletonLeft + docAbs)
     }
   },
 }

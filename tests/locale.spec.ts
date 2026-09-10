@@ -1,14 +1,14 @@
 // dsh-plugin-fs — 产品文案字典（src/shared/locale.ts）单元测试。
 // 只断言外部行为：字典内容（键与文案逐字）、LANG 注册表、t() 的取值/回退/缺键语义。
 // 迁移自迁移源 tests/client-md-utils.test.js 的「locale 字典契约」段，并把 72 键扩为全量对照；
-// 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键、第 2 批 B 类 10 键）同步登记在此表，
-// 键序与 ZH 逐位一致。
+// 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键、第 2 批 B 类 10 键、第 3 批 C 类 23 键）
+// 同步登记在此表，键序与 ZH 逐位一致。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { LANG, ZH, t } from '../src/shared/locale'
 
 // 迁移源 src/shared/locale.js:5-90 的全量键值对照表（迁移源 72 键逐字抄录 + 第 1 批 A 类 12 键
-// + 第 2 批 B 类 10 键）。
+// + 第 2 批 B 类 10 键 + 第 3 批 C 类 23 键）。
 // 任何键名/文案漂移都会让 toEqual 失败——这是「文案字典不可擅改」的机器护栏。
 const EXPECTED_ZH: Record<string, string> = {
   // 槽位/页签
@@ -116,6 +116,30 @@ const EXPECTED_ZH: Record<string, string> = {
   errInvalidBookDocRelWith: 'invalid book doc rel: ',
   errEmptyProjectPath: 'cannot encode an empty project path',
   errPathEscape: 'path escapes workspace root',
+  // host 开发者诊断串 · 第 3 批 C 类（子 agent 收尾判据 / 骨架与产物自检 / 服务缺失）
+  errAgentLoopUnavailable: 'agentLoop 服务不可用',
+  errGenNoArtifact: '子 agent 已结束但产物未生成: ',
+  errGenArtifactStale: '子 agent 已结束但产物未更新: ',
+  errGenEmptyArtifact: '子 agent 已结束但产物为空: ',
+  errGenSkeletonLeft: '子 agent 已结束但产物仍是骨架（语义占位未填写）: ',
+  errTrNotWritten: '译文未写入目标文件: ',
+  errTrNotUpdated: '子 agent 已结束但译文未更新: ',
+  errSrcSkeletonMissing: '子 agent 已结束但骨架文件不存在: ',
+  errSrcSkeletonNoUnit: '骨架无任何可注解单元: ',
+  errSrcNoAnnotation: '子 agent 已结束但未填写任何注解（疑似空转）: ',
+  errHealthCheck: '产物健康自检未通过: ',
+  errHealthLowRatio: '注解占比过低（',
+  errHealthLowRatioEnd: '%<50%）：疑似大量代码行未填注解',
+  errHealthEmptyBody: '正文没有任何可注解或代码行，产物为空',
+  errHealthIndent: '行上方注解缩进与代码不一致（第 ',
+  errHealthIndentMid: ' 行）. 注解缩进=',
+  errHealthIndentEnd: ' 代码缩进=',
+  errHealthBlankRun: '正文出现连续空行（>1），排版被空行割裂',
+  errHealthNoMarker: '正文找不到任何 `// [N]` 注解标记（疑似全部漏注解）',
+  errUnitOutOfRange: '单元 [',
+  errUnitOutOfRangeMid: '-',
+  errUnitOutOfRangeMid2: '] 越界（源码共 ',
+  errUnitOutOfRangeEnd: ' 行）',
   // client api() 错误兜底（宿主未给 d.error 时上状态栏）
   errHttpPrefix: 'HTTP ',
   errRequestFailed: 'request failed',
@@ -126,9 +150,9 @@ afterEach(() => {
 })
 
 describe('ZH 字典', () => {
-  it('全量 94 键与文案逐字一致（键名、顺序、值均不可漂移）', () => {
+  it('全量 117 键与文案逐字一致（键名、顺序、值均不可漂移）', () => {
     expect(Object.keys(ZH)).toEqual(Object.keys(EXPECTED_ZH))
-    expect(Object.keys(ZH)).toHaveLength(94)
+    expect(Object.keys(ZH)).toHaveLength(117)
     expect(ZH).toEqual(EXPECTED_ZH)
   })
 
@@ -202,9 +226,27 @@ const MOVED_STRINGS: Array<[string, string]> = [
 ]
 
 /** 搬走后源码里不得再出现的原文（按文件分组；含引号的按原样带引号匹配）。
- *  第 1 批 A 类 + 第 2 批 B 类共用本表：A 类的四处由第 1 批登记，index.ts 项与 fs-utils /
- *  gen-executor 两项由第 2 批扩入。`path required` 带单引号匹配，以免命中 index.ts:385
- *  注释里反引号包裹的文档性提及（那不是字面量）。 */
+ *  第 1 批 A 类 + 第 2 批 B 类 + 第 3 批 C 类共用本表：A 类的四处由第 1 批登记，index.ts 项与
+ *  fs-utils / gen-executor 两项由第 2 批扩入，其余 7 个文件由第 3 批扩入。`path required` 带
+ *  单引号匹配，以免命中 index.ts:385 注释里反引号包裹的文档性提及（那不是字面量）。
+ *  扫描判据是纯文本 includes，与「字面量是 throw 还是 bad.push 收集」无关——checkHealth 的 5 条
+ *  走 bad.push，同样被 doc-render.ts 这一项覆盖（另有一条计数断言锚定 push 形式本身）。
+ *  纯分隔符段（errUnitOutOfRangeMid = '-'）太短、做文本扫描会误命中，不登记；其值由
+ *  MOVED_STRINGS_C 与拼接同构断言锁定。 */
+const DOC_RENDER_LITERALS: string[] = [
+  '注解占比过低（',
+  '%<50%）：疑似大量代码行未填注解',
+  "'正文没有任何可注解或代码行，产物为空'",
+  '行上方注解缩进与代码不一致（第 ',
+  ' 行）. 注解缩进=',
+  ' 代码缩进=',
+  "'正文出现连续空行（>1），排版被空行割裂'",
+  "'正文找不到任何 `// [N]` 注解标记（疑似全部漏注解）'",
+  '单元 [',
+  '] 越界（源码共 ',
+  ' 行）',
+]
+
 const NO_LITERAL: Array<[string, string[]]> = [
   ['src/host/index.ts', [
     "'not a file'", "'not a file: '", 'file too large:', "'task not found'",
@@ -212,11 +254,32 @@ const NO_LITERAL: Array<[string, string[]]> = [
     "'refusing to delete the workspace root'", "'unknown gen kind: '", "'unknown route: '",
     "'invalid book doc rel: '",
   ]],
-  ['src/host/abilities/translate-doc/index.ts', ['源文档不存在: ', '源文档过大（> ', '源文档已是简体中文，无需翻译: ']],
+  // 第 1 批 A 类三串 + 第 3 批 C 类两串
+  ['src/host/abilities/translate-doc/index.ts', [
+    '源文档不存在: ', '源文档过大（> ', '源文档已是简体中文，无需翻译: ',
+    "'译文未写入目标文件: '", "'子 agent 已结束但译文未更新: '",
+  ]],
   ['src/host/abilities/source-doc/skeleton.ts', ['目标不是可读文件: ']],
   ['src/host/abilities/folder-doc/skeleton.ts', ['目标不是可读文件夹: ']],
   ['src/host/fs-utils.ts', ["'cannot encode an empty project path'", "'path escapes workspace root'"]],
-  ['src/host/gen-executor.ts', ["'unknown gen kind: '"]],
+  // 第 2 批 B 类一串 + 第 3 批 C 类三串
+  ['src/host/gen-executor.ts', [
+    "'unknown gen kind: '",
+    "'agentLoop 服务不可用'", "'子 agent 已结束但产物未生成: '", "'子 agent 已结束但产物未更新: '",
+  ]],
+  // ---- 以下 6 个文件由第 3 批 C 类扩入 ----
+  ['src/host/translate-executor.ts', ["'agentLoop 服务不可用'"]],
+  ['src/host/abilities/folder-doc/index.ts', [
+    "'子 agent 已结束但产物为空: '", "'子 agent 已结束但产物仍是骨架（语义占位未填写）: '",
+  ]],
+  ['src/host/abilities/file-doc/index.ts', [
+    "'子 agent 已结束但产物为空: '", "'子 agent 已结束但产物仍是骨架（语义占位未填写）: '",
+  ]],
+  ['src/host/abilities/source-doc/index.ts', [
+    "'子 agent 已结束但骨架文件不存在: '", "'骨架无任何可注解单元: '",
+    "'子 agent 已结束但未填写任何注解（疑似空转）: '", "'产物健康自检未通过: '",
+  ]],
+  ['src/host/abilities/source-doc/doc-render.ts', DOC_RENDER_LITERALS],
 ]
 
 describe('A 类文案字典化（第 1 批）', () => {
@@ -280,5 +343,85 @@ describe('B 类文案字典化（第 2 批）', () => {
     expect(keys.filter(k => z[k] === 'path required')).toEqual(['errPathRequired'])
     expect(keys.filter(k => z[k] === 'unknown route: ')).toEqual(['errUnknownRouteWith'])
     expect(keys.filter(k => z[k] === 'unknown gen kind: ')).toEqual(['errUnknownGenKindWith'])
+  })
+})
+
+// ---- C 类文案字典化：搬迁对照（第 3 批，2026-09-11）----
+// 开发者诊断语（子 agent 收尾判据 / 骨架与产物自检 / 服务缺失）。这些串**只搬家不改写**：
+// 它们是排障现场信息（含「子 agent」、绝对路径、内部术语），改写成用户话术即丢诊断信息。
+// 值同样取自搬迁前的源码原文（HEAD 版），逐字符相同（含标点、冒号、空格、全角括号）。
+// 回潮拦截复用上面扩展后的 NO_LITERAL 表；此处另加一条 push 形式的显式锚定（见最后一个用例）。
+const MOVED_STRINGS_C: Array<[string, string]> = [
+  ['errAgentLoopUnavailable', 'agentLoop 服务不可用'],
+  ['errGenNoArtifact', '子 agent 已结束但产物未生成: '],
+  ['errGenArtifactStale', '子 agent 已结束但产物未更新: '],
+  ['errGenEmptyArtifact', '子 agent 已结束但产物为空: '],
+  ['errGenSkeletonLeft', '子 agent 已结束但产物仍是骨架（语义占位未填写）: '],
+  ['errTrNotWritten', '译文未写入目标文件: '],
+  ['errTrNotUpdated', '子 agent 已结束但译文未更新: '],
+  ['errSrcSkeletonMissing', '子 agent 已结束但骨架文件不存在: '],
+  ['errSrcSkeletonNoUnit', '骨架无任何可注解单元: '],
+  ['errSrcNoAnnotation', '子 agent 已结束但未填写任何注解（疑似空转）: '],
+  ['errHealthCheck', '产物健康自检未通过: '],
+  ['errHealthLowRatio', '注解占比过低（'],
+  ['errHealthLowRatioEnd', '%<50%）：疑似大量代码行未填注解'],
+  ['errHealthEmptyBody', '正文没有任何可注解或代码行，产物为空'],
+  ['errHealthIndent', '行上方注解缩进与代码不一致（第 '],
+  ['errHealthIndentMid', ' 行）. 注解缩进='],
+  ['errHealthIndentEnd', ' 代码缩进='],
+  ['errHealthBlankRun', '正文出现连续空行（>1），排版被空行割裂'],
+  ['errHealthNoMarker', '正文找不到任何 `// [N]` 注解标记（疑似全部漏注解）'],
+  ['errUnitOutOfRange', '单元 ['],
+  ['errUnitOutOfRangeMid', '-'],
+  ['errUnitOutOfRangeMid2', '] 越界（源码共 '],
+  ['errUnitOutOfRangeEnd', ' 行）'],
+]
+
+describe('C 类文案字典化（第 3 批）', () => {
+  it('23 个新键的字典值逐字等于搬迁前的原字面量', () => {
+    for (const [key, original] of MOVED_STRINGS_C) {
+      expect((ZH as Record<string, string>)[key], key).toBe(original)
+    }
+  })
+
+  it('含变量的三段按原拼接顺序复现后，与原模板串逐字相同', () => {
+    expect(ZH.errHealthLowRatio + String(25) + ZH.errHealthLowRatioEnd)
+      .toBe('注解占比过低（' + String(25) + '%<50%）：疑似大量代码行未填注解')
+    expect(ZH.errHealthIndent + String(0) + ZH.errHealthIndentMid + JSON.stringify('  ') + ZH.errHealthIndentEnd + JSON.stringify(''))
+      .toBe('行上方注解缩进与代码不一致（第 ' + String(0) + ' 行）. 注解缩进=' + JSON.stringify('  ') + ' 代码缩进=' + JSON.stringify(''))
+    expect(
+      ZH.errUnitOutOfRange + String(1) + ZH.errUnitOutOfRangeMid + String(3)
+      + ZH.errUnitOutOfRangeMid2 + String(2) + ZH.errUnitOutOfRangeEnd,
+    ).toBe('单元 [1-3] 越界（源码共 2 行）')
+  })
+
+  it('带绝对路径/前缀式诊断串按原拼接顺序复现后，与原串逐字相同', () => {
+    expect(ZH.errGenNoArtifact + '/abs/a.md').toBe('子 agent 已结束但产物未生成: /abs/a.md')
+    expect(ZH.errGenEmptyArtifact + '/abs/a.md').toBe('子 agent 已结束但产物为空: /abs/a.md')
+    expect(ZH.errGenSkeletonLeft + '/abs/a.md').toBe('子 agent 已结束但产物仍是骨架（语义占位未填写）: /abs/a.md')
+    expect(ZH.errTrNotWritten + '/abs/a.md').toBe('译文未写入目标文件: /abs/a.md')
+    expect(ZH.errSrcSkeletonMissing + '/abs/skeleton-t1.txt').toBe('子 agent 已结束但骨架文件不存在: /abs/skeleton-t1.txt')
+    expect(ZH.errHealthCheck + '正文为空').toBe('产物健康自检未通过: 正文为空')
+  })
+
+  it('逐字同文的三组诊断串各只登记一个键（agentLoop ×2、产物为空 ×2、产物仍是骨架 ×2）', () => {
+    const keys = Object.keys(ZH)
+    const z = ZH as Record<string, string>
+    expect(keys.filter(k => z[k] === 'agentLoop 服务不可用')).toEqual(['errAgentLoopUnavailable'])
+    expect(keys.filter(k => z[k] === '子 agent 已结束但产物为空: ')).toEqual(['errGenEmptyArtifact'])
+    expect(keys.filter(k => z[k] === '子 agent 已结束但产物仍是骨架（语义占位未填写）: ')).toEqual(['errGenSkeletonLeft'])
+  })
+
+  it('checkHealth 的 5 条收集式诊断（bad.push）同样纳入扫描——守卫不因非 throw 形式漏过', () => {
+    const file = 'src/host/abilities/source-doc/doc-render.ts'
+    const text = readFileSync(new URL('../' + file, import.meta.url), 'utf8')
+    // 5 条诊断全部经 `bad.push(ZH.<key>)` 收集（不是 throw）：计数锚定 push 形式本身，
+    // 任何一条改回裸串都会掉数（文本扫描对同值裸串本就不敏感）。
+    // `\s*` 容纳 max-len 拆分后的换行写法（`bad.push(` 与首段分行）。
+    expect(text.match(/bad\.push\(\s*ZH\./g)).toHaveLength(5)
+    // 显式复跑 doc-render.ts 的扫描项：文本 includes 与 throw/push 无关，故 push 形式天然覆盖。
+    for (const literal of DOC_RENDER_LITERALS) {
+      expect(text.includes(literal), file + ' 残留裸串: ' + literal).toBe(false)
+    }
   })
 })

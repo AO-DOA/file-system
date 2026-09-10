@@ -9,6 +9,7 @@ import { TRANSLATE_ABILITY } from './abilities/registry.ts'
 import { upsertBookIndex } from './book-index.ts'
 import type { BookStore } from './book-store.ts'
 import { TASK_TIMEOUT_MS, genAgentPreset, onDisposeFailure, withTimeout } from './task-utils.ts'
+import { ZH } from '../shared/locale.ts'
 
 // ---- 注入面（类型层，运行时无对应物）----
 // 与 gen-executor.ts 同一策略：只声明真正触达的成员，不 import 具体服务包。
@@ -139,7 +140,7 @@ export function createTranslateExecutor(deps: TranslateExecutorDeps): RunTransla
 
   return async function runTranslate(rel: string, taskId: string): Promise<void> {
     const agentLoop = ctx.get('agentLoop') as AgentLoopSurface | undefined
-    if (!agentLoop) throw new Error('agentLoop 服务不可用')
+    if (!agentLoop) throw new Error(ZH.errAgentLoopUnavailable)
     // 写定向：目标归属「包含它的最深已知项目根」的桶（与 /tree、runGenDoc 同一规则）。
     const target = await bookTargetFor(rel)
     const abs = target.abs

@@ -43,9 +43,9 @@ export default {
   // 收尾校验：译文确实落盘；更新模式下还要确认内容真的变了（防空转误报 success）。
   async verify({ docAbs, prevStat }: { docAbs: string; prevStat: { mtimeMs: number; size: number } | null | undefined }): Promise<void> {
     const st = await stat(docAbs).catch(() => null)
-    if (!st || st.isDirectory()) throw new Error('译文未写入目标文件: ' + docAbs)
+    if (!st || st.isDirectory()) throw new Error(ZH.errTrNotWritten + docAbs)
     if (prevStat && st.mtimeMs === prevStat.mtimeMs && st.size === prevStat.size) {
-      throw new Error('子 agent 已结束但译文未更新: ' + docAbs)
+      throw new Error(ZH.errTrNotUpdated + docAbs)
     }
   },
 }

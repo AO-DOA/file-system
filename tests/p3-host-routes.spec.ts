@@ -313,11 +313,12 @@ function parseJson(body: string): unknown {
 }
 
 /**
- * 文案字典化守卫（第 1 批 A 类 + 第 2 批 B 类，2026-09-11）：把「上屏错误确实取自 locale 字典」
- * 变成机械断言。判据：取值等于某个字典值，或以某个字典值开头——含变量的串由调用方在代码里
- * 拼接，故只命中前缀。
- * 只挂在已字典化的用例上：C 类诊断串（`子 agent 已结束…` / `agentLoop 服务不可用` 等，
- * 含绝对路径的开发者诊断语）尚未字典化，挂上去是假红。「有人改回裸串」这条回潮由
+ * 文案字典化守卫（第 1 批 A 类 + 第 2 批 B 类 + 第 3 批 C 类，2026-09-11）：把「上屏错误确实取自
+ * locale 字典」变成机械断言。判据：取值等于某个字典值，或以某个字典值开头——含变量的串由调用方
+ * 在代码里拼接，故只命中前缀。
+ * 只挂在已字典化的用例上：本文件覆盖的 HTTP 路由层文案已全部入字典；C 类开发者诊断语由执行器 /
+ * 能力描述符抛出，本文件里可达的只有 `/gen-doc` 无 agentLoop 那一条（见「任务状态机」段的
+ * expectDictError(task.error)），其余 C 类串不在路由层上屏。「有人改回裸串」这条回潮由
  * tests/locale.spec.ts 的源码扫描守卫拦（运行时取值守卫对同值裸串不敏感）。
  * @param error - 响应体里的 error 字段。
  */
@@ -1355,6 +1356,8 @@ describe('POST /gen-doc', () => {
     const task = await waitSettled(fsTest, taskId)
     expect(task.status).toBe('error')
     expect(task.error).toMatch(/agentLoop/)
+    // C 类诊断语上屏（第 3 批）：task.error 逐字取自 ZH.errAgentLoopUnavailable
+    expectDictError(task.error)
     // 任务记录目标文档路径：带桶格式 @<桶>/目录概览/<文件夹名>.md
     expect(task.docRel).toBe('@' + projectKey(root) + '/目录概览/src.md')
 
