@@ -18,16 +18,16 @@
 | 迁移源（**只读，全程未改动一字节**） | `../dsh-plugin-file-system` @ `3a3f89e` |
 | profile | `~/.dsh/profiles/web`：`dependencies` 与 `dsh.profile.bundles` 均已指向 `-zc` |
 | 运行态 | dsh web 运行中，端口 3080；boot manifest 已装载 `-zc`（rev `ceedbcfa…`）。PID 每次重启都变：以 `~/.dsh/logs/web.log` 最近一次「启动命令」行或 `pgrep -f 'dsh web'` 为准（2026-09-11 05:18 实测 516551） |
-| 五项门禁 | **全绿**：typecheck 0 输出 / lint 0 错 0 警告 / 553 例 / coverage 100×4 / build 成功 |
+| 五项门禁 | **全绿**：typecheck 0 输出 / lint 0 错 0 警告 / **564 例** / coverage 100×4 / build 成功。数字口径：`typecheck`（exit 0、无输出）与 `npm test`（**19 spec / 564 例全过**）为 2026-09-11 字典化后**本轮实测**；`lint` / `coverage` / `build` 沿用字典化前的最近一次实测——本轮纪律未重跑这三项，故不声称其覆盖了字典化改动 |
 | 技术栈 | TypeScript(strict) + vitest/jsdom + tsdown；产物 `lib/host/index.js` + `client/client.js` |
 | 功能基线 | 171 功能点（155 已迁移 / 10 不适用 / 6 有意保留）；11 条路由三方一致；135 例逐条对账矩阵 0 处待填 |
 
 ## 2. 日常操作
 
 ```bash
-npm run typecheck      # tsc -b tsconfig.json（5 个 leaf）
+npm run typecheck      # tsc -b tsconfig.json（5 个 leaf；tsconfig.base.json 经 extends 生效、本身不是 project）
 npm run lint           # oxlint，0 错 0 警告
-npm test               # vitest，19 spec / 553 例
+npm test               # vitest，19 spec / 564 例（2026-09-11 字典化后实测）
 npm run test:coverage  # per-file 100% + scripts/verify-coverage-scope.mjs 分母守卫
 npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banner 校验
 ```
@@ -77,13 +77,17 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 
 **文案**：复用同文件既有的英文技术串风格（`path required` / `refusing to delete the workspace root`），**未新增 locale 键**——`tests/locale.spec.ts` 硬断言 `ZH` 恰 72 键，新增键会立刻让它变红。host 错误通道字典化属既有待办 #20，不在本次范围。
 
+> **订正（2026-09-11 本轮）**：上段「未新增 locale 键」的前提**已被本轮的字典化取代**——`path required` 与 `refusing to delete the workspace root` 现为 `ZH.errPathRequired` / `ZH.errRefuseDeleteRoot`（第 2 批 B 类），`ZH` 已由 72 键增至 **117 键**，`tests/locale.spec.ts` 的键数硬断言同步改为 117（实测 `tests/locale.spec.ts:155` 为 `toHaveLength(117)`）。上段其余叙述是 G-1 修复时点的**历史记录**（当时确实一个键都没加），保留不改。
+
 **验证**：测试 74 → **80 例**全绿（含 6 种缺失形态 × 3 路由、`'.'`/`'./'`/`'sub/..'` 三种回根写法，以及 `delete 'sub'` → 200 的反向对照，证明守卫只拦根自身）；`src/host/index.ts` 覆盖率由 96.93/96.21/97.56/98.07 升至 **97.05/96.4/97.56/98.15**。
 
 ### 覆盖率例外（决策 D-13，用户裁决）
 
 `src/host/index.ts` 与 `src/client/index.tsx` **不进 per-file 100% 门禁**（`vitest.config.ts` 的 `coverage.exclude` 显式列入，同处注释写明实测值与逐条不可达出处）。
 
-理由：两文件剩余未覆盖语句**经逐条证明逻辑不可达**（源插件原样移植的防御性双保险与竞态兜底）——D-8 不许删、禁令不许 ignore、D-2 要求覆盖，三者不可兼得。实测：`index.ts` 96.93/96.21/97.56/98.07；`client/index.tsx` 97.97/95.68/99.17/97.42。
+理由：两文件剩余未覆盖语句**经逐条证明逻辑不可达**（源插件原样移植的防御性双保险与竞态兜底）——D-8 不许删、禁令不许 ignore、D-2 要求覆盖，三者不可兼得。实测（顺序 stmts/branch/funcs/lines）：`index.ts` **97.07/96.4/97.56/98.15**；`client/index.tsx` **97.96/95.68/99.16/100**。
+
+> 数值出处是 `vitest.config.ts:37,46` 的注释（G-1 修复后的重测值），**本轮未重跑 `test:coverage`**（纪律所限），故字典化是否再移动这两个数值**未核实**。原记 `index.ts` 96.93/96.21/97.56/98.07、`client/index.tsx` 97.97/95.68/99.17/97.42 是 G-1 修复**前**的快照，已过期。另一处对不齐的读数：上节 G-1「验证」写的「升至 **97.05**/96.4/97.56/98.15」是当次快照，与配置注释现记的 stmts **97.07** 相差 0.02 个百分点——差异来源未进一步核实，引用时以配置注释为准。
 
 `src/` 下**其余全部文件仍受 per-file 四项 100% 严格门禁**。
 
@@ -98,9 +102,46 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 | 差异 | 原因 |
 |---|---|
 | host 产物是 `lib/host/index.js` 而非 `lib/index.js` | `tsconfig.host.json` 的 `rootDir` 上提到 `src`，以解决 `../shared/locale.ts` 的跨面导入（TS6059/TS6307） |
-| solution 根 `tsconfig.json` 无 `extends` | 树外包没有 `tsconfig.base.json` |
+| solution 根 `tsconfig.json` 自身无 `extends`（只有 `"files": []` + 5 条 `references`） | 根不拥有程序，只做 solution 清单；`extends` 由两个产品 leaf 各自指向 `tsconfig.base.json`（2026-09-11 提取，结构见本节末「tsconfig 五 leaf 结构」），测试 leaf 再经 leaf 间接继承 |
 | 包名非 `@deepseek-ai/` scope | 该 scope 仅组织成员可发布（决策 D-1） |
 | `dsh.client` 未写 `inject` | 实测「不写与旧插件行为完全等价」——旧插件那两个名字在客户端 graph 里都不存在（空转） |
+
+### host 错误串字典化（2026-09-11 三批收口 —— 待办 #7 / 规范报告 §4-2 结项）
+
+三批把 host 代码里**剩余的 47 处**硬编码文案搬进 `ZH`，新增 **45 键**（逐字同文的串共用一个键，不建同值多键）；`ZH` 由 **72 键增至 117 键**（实测逐批 `72 → 84 → 94 → 117`，增量 12 / 10 / 23 = 45）。**文案逐字未变** —— 这是用户明确裁决的原则「**只搬家不改写**」，因此没有任何上屏文本发生变化，也没有新增、删除、改写任何一个字。
+
+| 批 | commit | 分类 | 新增键 | 搬运处数 | 覆盖内容（举例） |
+|---|---|---|---|---|---|
+| 1 | `f46f456` | **A 类**：正常 UI 可达的用户文案 | 12 | 11 | 三个能力目录的 `throw`（folder-doc / source-doc 骨架、translate-doc 描述符：`目标不是可读文件夹/文件`、`源文档不存在/过大/已是简体中文`）、`/read` 的 `not a file` / `file too large`、`task not found` |
+| 2 | `7a3253c` | **B 类**：协议/安全/防御串 | 10 | 16 | `path required`（5 条路由共用一键）、`refusing to delete the workspace root`、`path escapes workspace root`、`unknown route` / `unknown gen kind`、`body too large`、`invalid json body`、`invalid book doc rel`、`not a directory`、`cannot encode an empty project path` |
+| 3 | `18dcb9f` | **C 类**：会真上屏但属开发者诊断语 | 23 | 20 | 子 agent 收尾判据（产物空/未生成/未更新/仍是骨架）、骨架与产物自检（`checkHealth` 五项 + `注解占比过低`/缩进/空行/无标记/单元越界）、`agentLoop 服务不可用`、`译文未写入目标文件` |
+
+**三批分类口径**：A 类=正常 UI 操作可达的用户文案；B 类=协议安全防御串（只有直连 API 才会看到的拒绝语）；C 类=会真上屏、但用词是**开发者诊断语**（含「子 agent」、绝对路径、内部术语）——这一类**刻意不改成用户话术**，改了会丢掉现场信息，故值与原字面量逐字相同。
+含变量的串沿用本仓既有的「前缀 + 续段」拆键先例（`errFileTooLarge` / `errSrcTooLarge`）：变量夹在固定文案中间时，中段另立 `…Mid`（三段则 `…Mid`/`…Mid2`）、尾段另立 `…End`，使整句固定文案零残留（四段例：`errFileTooLarge`、`errUnitOutOfRange`）。
+
+**机器护栏同步升级**：`tests/locale.spec.ts` 的键数硬断言由 72 改为 **117**（实测 `:155`），并新增「同值串共键」的反查断言（实测 `:341-345`、`:408-412` 按值反查键名集合），堵住「同一句文案建了两个键」这种漂移。
+
+**一个机制发现**：`ZH` 的类型由注解式 `export const ZH: Record<string, string>` 改为 `as const satisfies Record<string, string>` 之后，**键名拼错会从「静默 `undefined` 写进 HTTP 响应体」升级为编译期 TS2551 报错**（属性不存在），即错误从运行期上屏缺口前移到 `tsc`。（依据：`src/shared/locale.ts:4-8` 的注释与本轮三批提交；**未独立构造反例复现**——构造需要改 `src/`，超出本轮「只改台账」的纪律。）附带代价与解法：字面量对象失去索引签名，故 `t()` 里的 `LANG[lang ?? ''] ?? ZH` 需显式标注 `Record<string, string>`，host 直取拼接也不会再撞 lint 的 `restrict-plus-operands`。
+
+### tsconfig 五 leaf 结构（2026-09-11 提取 `tsconfig.base.json` 后 —— 待办 #5 / R3 结项）
+
+- **形态**：`tsconfig.base.json`（共享面）+ **2 个产品 leaf**（`tsconfig.host.json` / `tsconfig.client.json`）+ **3 个测试 leaf**（`tsconfig.tests.host.json` / `tsconfig.tests.client.json` / `tsconfig.tests.composition.json`），由一个只做清单的根 `tsconfig.json`（`"files": []` + 5 条 `references`）驱动 `tsc -b`。
+- **继承链**（实测 `grep extends tsconfig*.json`）：`base → host → tests.host`；`base → client → tests.client`、`base → client → tests.composition`。**测试 leaf 通过 extends 链自动继承** base 的每一条，无需抄写；因此在 base 里加一个严格开关会一次到达全部 5 个 leaf。
+- **base 自己不拥有程序**：不声明 `include`/`files`/`references`，也没有任何 leaf 引用它 ⇒ `tsc -b tsconfig.json` 从不把它当作 project。
+- **上提的 13 项**（在两个产品 leaf 里**逐字节相同**，故只维护一份）：`target` / `module` / `moduleResolution` / `allowImportingTsExtensions` / `composite` / `strict` / `noUncheckedIndexedAccess` / `exactOptionalPropertyTypes` / `noImplicitOverride` / `noFallthroughCasesInSwitch` / `noUnusedLocals` / `noUnusedParameters` / `skipLibCheck`。
+- **故意不上提的项及原因**：
+  - `lib`（host `["ES2024"]`、client 另加 DOM）、`types`（host `["node"]`、client `[]`）—— 这是 host/client 的**环境边界**，上提会抹掉「一个程序看不到 cordis Context 两侧」的分野（host 就可能在无人察觉时开始用 `document`/`window`，client 开始用 `process`/`Buffer`）。
+  - `jsx` / `noEmit` / `outDir` / `declaration` / `declarationDir` / `rewriteRelativeImportExtensions` / `esModuleInterop` —— 属**产物形态**，由 host 面独有（client 面从不 emit）。
+  - `rootDir` —— 是**路径项**，只在与它成对的 `include` 旁边才有意义，各 leaf 自己拥有。
+  - `tsBuildInfoFile` —— 必须 **per-leaf**：composite 项目共用一个 `.tsbuildinfo` 会让彼此的增量状态互相冲撞。
+- **一条坑**：相对路径在 extended 配置里按**声明它的那个文件**解析（即 base 自己）⇒ base 必须留在包根、且**不得在其中加任何路径项**（加了会把全部 leaf 的基准静默挪走）。
+- **证据**：`npm run typecheck` 实测 **exit 0、无输出**；`npx tsc --showConfig -p tsconfig.host.json` 实测上述 13 项与 leaf 自有项（`lib`/`types`/`rootDir`/`outDir`/`declarationDir`/`tsBuildInfoFile`…）全部就位。
+
+### 注释与台账里的数字会漂移：写「怎么得到」比写「是多少」耐用（2026-09-11 教训）
+
+- **现象**：`vitest.config.ts` 覆盖率注释里**写死的行号**随代码漂移 —— 本轮字典化让 `src/host/index.ts` 两处不可达语句的行号从 `453/454`、`505/506` 漂到 `485/486`、`537/538`（**+32**，commit `db252bf` 只改行号），而这期间覆盖率**百分比没有随之移动**（同一次订正未改数值行；该数值 97.07/96.4/97.56/98.15 是 G-1 加测试后的重测值，与行号漂移无关。**「字典化未移动覆盖率」属推断，本轮未重跑 `test:coverage` 核实**）。
+- **同一类教训本轮出现了两次**：§1「运行态」把 PID 从写死值改为「怎么获取」（commit `433cf76`：「以 `~/.dsh/logs/web.log` 最近一次「启动命令」行或 `pgrep -f 'dsh web'` 为准」），与这里的行号是同一个病 —— 写死的是**快照**，而快照会随每次提交失效。
+- **做法**：注释与台账里优先写**怎么得到**（命令、锚点符号名、判据），确需写值时一并写明**测量时点与出处**；每次改动后回扫全仓写死的数字（行号、PID、例数、覆盖率、键数）。本轮台账订正的 553→564、72 键→117 键、覆盖率快照，都是这条的实例。
 
 ## 4. 回滚
 
@@ -119,13 +160,13 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 
 | # | 待办 | 说明 |
 |---|---|---|
-| 1 | T-62 交付摘要 | 应写「**G-1 已加固**（唯一有意的行为差异，含运行时前后对照）」+ G-2~G-12 逐字保留项 + 与主仓风格的差异 + D-13 覆盖率例外 |
+| 1 | ~~T-62 交付摘要~~ | ✅ **2026-09-11 已完成**（commit `cf13458`；新增 `docs/delivery-summary-2026-09-11.md`，实测 **238 行**。含「G-1 已加固」（唯一有意的行为差异 + 运行时前后对照）+ G-2~G-12 逐字保留项 + 与主仓风格差异 + D-13 覆盖率例外 + 回滚；文内对未独立核实项逐条显式标注「（转述，未独立核实）」） |
 | 2 | ~~`src/host/abilities/README.md` 的 4 处 `.js` 文件名~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **6 处**替换点 / 6 个位置 —— L16、L34 行内 3 个不同文件名、L115、L116。原记「4 处」为误） |
 | 3 | ~~`docs/spec-p5-tests-detail.md` 的 2 处行号~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **10 项**替换 / **9 个位置** —— 第一轮 6 处 L477/L478/L555/L559/L561/L563 + 补改 L419、L425 行内 2 项（行号 + 加粗）、L549。原记「2 处」为误。与 #2 合计 **16 项替换 / 15 个位置 / 2 文件**） |
 | 4 | ~~G-1 是否开新账目修~~ | ✅ **2026-09-11 已完成**（见 §3，两道闸门 + 运行时对照 + 80 例测试） |
-| 5 | `R3`：两个 leaf 的 compilerOptions 手抄 | 6 项严格设置重复维护，可提取 `tsconfig.base.json` |
+| 5 | ~~`R3`：两个 leaf 的 compilerOptions 手抄~~ | ✅ **2026-09-11 已完成**（commit `5c7dced`；提取 `tsconfig.base.json`，消除两个产品 leaf **逐字节相同的 13 项**——原记「6 项严格设置」为误，实际是 13 项：4 项模块方言 + `composite` + **7** 项严格开关 + `skipLibCheck`；测试 leaf 经 extends 链自动继承。实测 `npm run typecheck` exit 0 无输出、`npx tsc --showConfig -p tsconfig.host.json` 各项就位。结构与「哪些项故意不上提」见 §3） |
 | 6 | ~~pnpm store v10/v11 冲突~~ | ✅ **2026-09-11 已完成**（根因：该 profile 的 `package.json` 缺 `packageManager` 声明 ⇒ `dsh plugin`（`apps/cli/src/plugin.ts:134` 用 `spawnSync('pnpm', …)` 走 PATH）拿到全局 pnpm **10.33.4**（store v10），而 `node_modules/.modules.yaml` 记的是 **store v11** ⇒ `ERR_PNPM_UNEXPECTED_STORE`；修法：`~/.dsh/profiles/web/package.json:4` 新增一行 `"packageManager": "pnpm@11.7.0"`，**只加这一行**（与备份 `~/.dsh/backups/web-profile-before-pnpmfix-20260911-052009`（12M）逐行 diff 仅此一处）；修后 profile 内 `pnpm --version` 10.33.4→**11.7.0**、`pnpm store path` store/v10→**store/v11**，`pnpm-lock.yaml` 与 `.modules.yaml` mtime 由 Sep 10 01:05 → **2026-09-11 05:20:27**，`dependencies` 与 `dsh.profile.bundles` 逐字未变。**留档坑**：pnpm 自管理缓存 `~/.local/share/pnpm/.tools/pnpm/` 只有 10.33.2 / 11.2.2 / 11.7.0 / 11.15.1，**无 10.33.4** ⇒ 将来给仍用 pnpm 10 的目录补声明必须写 `pnpm@10.33.2`（已缓存、离线可用）。**遗留**：`plugins/dsh-annotate`、`profiles/dsh-robot`、`profiles/lark`、`profiles/open-design`、`~/.understand-anything/repo/understand-anything-plugin` 五个目录的 node_modules 仍是 pnpm 10 装的且无声明，目前靠全局 10.33.4 正常工作，本次**刻意未动**） |
-| 7 | host 错误通道字典化（#20） | 中文 25 + 英文 17 处技术串仍在代码里；本次 G-1 复用既有英文串，未启动该项 |
+| 7 | ~~host 错误通道字典化（#20）~~ | ✅ **2026-09-11 已完成**（三批：`f46f456` 第1批 / `7a3253c` 第2批 / `18dcb9f` 第3批）。共 **47 处**搬运 / **45 键**新增，`ZH` 72 → **117 键**（逐批实测 72→84→94→117）。**原记「中文 25 + 英文 17」= 42 处，与实测 47 处不符（差 5 处）；差异来源未核实**。文案逐字未变（用户裁决：只搬家不改写）；总账、三批分类口径与机器护栏见 §3 |
 
 ## 6. 未做且明确不做的
 
