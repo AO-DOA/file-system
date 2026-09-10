@@ -1,0 +1,107 @@
+// dsh-plugin-fs — 产品文案字典（唯一真相源）。
+// host 与 client 共用：client 经 t() 取值；host 直取 ZH[key]（U3 引用 errGenMd / errTranslateOnlyMd / errBookNoTranslate）。
+// 多语言扩展点：新增语言在 LANG 注册并补全 ZH 对应键；当前 zh 单语，en 留未来。
+
+/** key → 文案。产品文案唯一真源，字典外不得硬编码。 */
+export const ZH: Record<string, string> = {
+  // 槽位/页签
+  slotLabel: '文件',
+  // 查看模式页签（labLabelKey 的 key → 文案映射）
+  labDocDir: '目录概览',
+  labDocFile: '文件摘要',
+  labAnnot: '源码注解',
+  labTr: '文章翻译',
+  labSrc: '源码',
+  // MarkdownText 内置按钮/脚注标签
+  mdCopy: '复制',
+  mdCopied: '已复制',
+  mdFootnotes: '脚注',
+  // 通用状态
+  loading: '加载中...',
+  emptyFile: '（空文件）',
+  emptyDir: '空目录',
+  frontmatter: 'frontmatter',
+  // a11y title / 提示
+  a11yDocDir: '含目录概览',
+  a11yDocFiles: '含文件摘要/源码注解/文章翻译',
+  a11yDirty: '● 未保存',
+  a11yExpandTree: '展开文件树',
+  a11yCollapseTree: '折叠文件树',
+  a11yRefresh: '刷新',
+  a11yGen: '生成/重新生成：目录概览·文件摘要·源码注解',
+  a11yTrLoading: '翻译中…',
+  a11yTrRegen: '重新翻译（覆盖已有译文）',
+  a11yTrNew: '翻译为中文（特殊名词用 ( ) 内解释）',
+  // 按钮
+  btnGen: '生成解读',
+  btnEdit: '编辑',
+  btnView: '查看',
+  btnSave: '保存',
+  btnTr: '翻译',
+  btnTrRegen: '重新翻译',
+  btnTrLoading: '翻译中…',
+  pickWs: '选择工作区',
+  // 生成菜单项
+  genFolder: '生成目录概览',
+  genFolderRegen: '重新生成目录概览',
+  genFile: '生成文件摘要',
+  genFileRegen: '重新生成文件摘要',
+  genSrc: '生成源码注解',
+  genSrcRegen: '重新生成源码注解',
+  // 占位卡（文件夹无目录概览）
+  rootDirName: '工作区根目录',
+  folderCardTitle: '创建本目录的目录概览',
+  folderCardDesc1: '用目录概览技能(folder-doc)生成该目录的概览说明，便于快速了解其结构、边界与上下游（目录层/L1）。',
+  folderCardDesc2: '点击右上角「生成解读」，在下拉中选择「目录概览」。',
+  pathSep: ' · ',
+  wsItemSep: '  ·  ',
+  // 生成/读取中
+  genFolderBusy: '正在生成目录概览…',
+  genFileBusy: '正在生成文件摘要（L2）…',
+  genSrcBusy: '正在生成源码注解（L3）…',
+  // 状态/错误串（前缀式，调用方拼接详情）
+  okSaved: '已保存',
+  okTrDone: '翻译完成',
+  errReadFail: '读取失败: ',
+  errLoadFail: '加载失败: ',
+  errRestoreFail: '恢复失败: ',
+  errSaveFail: '保存失败: ',
+  errGenFail: '生成失败',
+  errGenFailWith: '生成失败: ',
+  errGenNoTaskId: '生成失败：未返回任务 id',
+  errGenTaskGone: '生成任务不存在：',
+  errGenNoDocRel: '生成完成，但未返回文档路径',
+  errGenReadFail: '生成完成，但读取文档失败: ',
+  errTrFail: '翻译失败: ',
+  errTrNoTaskId: '翻译失败：未返回任务 id',
+  errTrNoDocRel: '翻译完成，但未返回文档路径',
+  errTrReadFail: '翻译完成，但读取译文失败: ',
+  errPollTimeout: '任务状态轮询超时，请稍后刷新任务状态',
+  // host 错误串（U3 host 侧直取；wire 展示原文案不变）
+  errGenMd: 'markdown 文档不需要生成文件层文档/源码注解',
+  errTranslateOnlyMd: '仅支持 Markdown 文档翻译',
+  errBookNoTranslate: '书库内文档不参与翻译',
+  errTargetMissing: '目标不存在（路径需相对当前工作区根）',
+  errTargetNotDir: '目录概览只能对文件夹生成（当前目标是文件）',
+  errTargetNotFile: '文件摘要/源码注解只能对文件生成（当前目标是文件夹）',
+  errTaskTimeout: '生成/翻译任务超时未完成，请重试',
+  // client api() 错误兜底（宿主未给 d.error 时上状态栏）
+  errHttpPrefix: 'HTTP ',
+  errRequestFailed: 'request failed',
+}
+
+/** 语言码 → 字典。当前仅 zh；新增语言在此登记并补全 ZH 对应键。 */
+export const LANG: Record<string, Record<string, string>> = { zh: ZH }
+
+/**
+ * 取当前语言文案；缺省 zh。缺键时 warn 并返回 key 本身（开发期即可发现未登记文案）。
+ * @param key - ZH 中的文案键。
+ * @param lang - 语言码；未注册或缺省时回退 zh（与源实现 `LANG[lang] || ZH` 同语义）。
+ * @returns 对应文案；键未登记时返回 key 本身。
+ */
+export function t(key: string, lang?: string): string {
+  const dict = LANG[lang ?? ''] ?? ZH
+  if (Object.prototype.hasOwnProperty.call(dict, key)) return dict[key] as string
+  console.warn('[locale] missing key: ' + key)
+  return key
+}

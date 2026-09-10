@@ -112,7 +112,7 @@
 
 | # | 任务 | 状态 |
 |---|---|---|
-| T-20 | **P2-A 基础层**：`fs-utils`（238 行/25 导出）+ `locale`（100 行/3 导出，72 键）+ D-6 核验 | **进行中**（子P2A，已授权二级委派） |
+| T-20 | **P2-A 基础层**：`fs-utils`（238 行/25 导出）+ `locale`（100 行/3 导出，72 键）+ D-6 核验 | **已销账**（主智能体实测验收；子P2A `79438ecb` 已授权并使用二级委派 `e42b8c7f`） | **五门禁全绿（主智能体亲测）**：`typecheck` exit 0；`lint` 0 错 0 警告（13 files / 80 rules）；`test` **68 passed**（`locale.spec` 9 + `fs-utils.spec` 56 + `real-composition` 3）；**`test:coverage` 四项全 100%（含分支）**——`fs-utils.ts` 100/100/100/100、`locale.ts` 100/100/100/100（**源头实测分支仅 88.75%，迁移后已真补到 100**，无 `v8 ignore`/`istanbul ignore`/`any`——主智能体独立扫描确认为零）；`build` 成功。**3 轮并发 `npm test` 全绿**（68×3，无 flaky）。导出面主智能体独立复核：`fs-utils` 25/25 名集一致、`locale` 3/3、**72 键键名+键序+键值全等**；行数 238→243、100→107（增量全为类型注解）。D-6 结案见 §2 | `2e088a8`(D-6) + 本轮 |
 | T-21 | **P2-B 书库层**：`book-store` + `book-index` + `issues` | 待办 |
 | T-22 | **P2-C 任务与提示词**：`task-utils` + `prompt-loader` | 待办 |
 | T-23 | **P2-D 能力目录**：`abilities/` 四能力（描述符 + skeleton + doc-render）+ `registry`；`prompt.md` 原样保留 | 待办 |
@@ -146,6 +146,7 @@
 | T-44 | **P4-E** 持久化与工作区（`fs.ui.v1`、启动恢复、拖宽、工作区切换） | 待办 |
 | T-45 | P4 阶段验收（jsdom 组件测试 + 171 功能点对照表） | 待办 |
 | T-46 | **【硬阻塞】修 `tsconfig.tests.json` 的 client 编译面缺口**（D-12 R1）：它继承 host leaf 却 `include: ["tests","src"]`，无 `jsx`/无 DOM，P4 落 `.tsx` 后 `typecheck` 必红。三方向择一（tests leaf 增开 jsx+DOM / 拆 host+client 两个 tests leaf / 组件测试走 jsdom + 并入 client leaf），**且不得放宽两侧可见性** | 待办 |
+| T-47 | **【用户可见文本差异 · P4 必办】槽 label 必须改回 `t('slotLabel')`**：源插件 `locale.js:7` 为 `slotLabel: '文件'`，页签上的用户可见文本是**「文件」**；zc 现为占位字面量 `'文件系统'`（`src/client/index.ts:52`，注释已自述 P4 会换成 `t('slotLabel')`）。**同时必须同步更新 `tests/real-composition.spec.ts:158` 的断言**（现断言 `'文件系统'`，改后会红）。注意勿与插件名 / `preset.yml` 的 `name: 文件系统`（与源一致）混淆 | 待办 |
 
 ### P5 测试迁移
 
@@ -237,4 +238,8 @@
 | 2026-09-11 | **会话压缩已执行**（`scheduled` 生效）。恢复后主智能体按 §0.1 读回台账，未凭记忆接续 |
 | 2026-09-11 | **T-11（P1-B）收口**：子智能体 `d5afe9fe` running 多轮、产物齐备却始终不交报告（与 T-10 同款停滞模式），按已记录的中止阈值执行 `interrupt_agent`。**主智能体亲自跑五门禁验收**（属验收职责，非实现，符合 §0.2）：**全绿**。`tests/real-composition.spec.ts` 已被 P1-B 扩到 178 行（新增第 3 例：`cordis.patch.yml` 与 `package.json` 的 `dsh.bundle.patch` 一致性），真过 Loader 的断言面完整。**唯一未交付项 = D-6** → 转 P2-A 交付物 3（同一位子智能体顺手核验，避免为一次 tsc 实验单开一轮） |
 | 2026-09-11 | **发现 P1-B 遗留缺口 → 新开 T-13**：`agent.cordis.yml:23` 引用 `new URL('skills/', baseUrl)`，但本仓**无 `skills/` 目录**，且 `package.json` 的 `files` 也**不含 `skills`**（源插件两者都有）。源 `skills/` 为 **5 技能 / 13 文件**（`file-doc`、`folder-doc`、`session-review`、`source-doc`、`translate-doc`）。若不管，技能会挂到空目录 = **功能遗失**（触红线 2）。派子智能体 `5917319f`（子P1C）执行逐字复制 + `files` 补齐 + 引用扫描；**明令其不得跑 npm 门禁命令**（主智能体正在并行跑，避免 tsbuildinfo/产物争用） |
-| 2026-09-11 | **派发 T-20（P2-A 基础层）**：子智能体 `79438ecb`，交付物 3 项 = `locale.ts`（72 键）+ `fs-utils.ts`（25 导出，**分支覆盖须从源实测 88.75% 补到 100%，严禁 `v8 ignore` 或删逻辑回避**）+ D-6 核验。**按 §0.3 显式授权二级委派**（建议：locale / fs-utils 各派一个子任务，自己留 D-6 与收尾门禁），并要求回报二级委派清单
+| 2026-09-11 | **派发 T-20（P2-A 基础层）**：子智能体 `79438ecb`，交付物 3 项 = `locale.ts`（72 键）+ `fs-utils.ts`（25 导出，**分支覆盖须从源实测 88.75% 补到 100%，严禁 `v8 ignore` 或删逻辑回避**）+ D-6 核验。**按 §0.3 显式授权二级委派**（建议：locale / fs-utils 各派一个子任务，自己留 D-6 与收尾门禁），并要求回报二级委派清单 |
+| 2026-09-11 | **T-20（P2-A）验收通过并销账**。① D-6 已单独结案提交（`2e088a8`）。② 主智能体**亲跑五门禁**：全绿；**覆盖率 `fs-utils.ts` / `locale.ts` 四项全 100%（含分支）**——源头实测分支只有 88.75%，迁移版真补到位，且独立扫描确认零 `v8 ignore`/`istanbul ignore`/`any`。③ **3 轮并发 `npm test` 68×3 全绿**（无 flaky）。④ 导出面复核：25/25、3/3、72 键键名+键序+键值全等。**P2-A 的核心承诺「per-file 100% 含分支」已达成**——这是 D-2「真严格」取向的第一次实证 |
+| 2026-09-11 | **发现并登记 T-47（用户可见文本差异）**：源 `locale.js:7` 为 `slotLabel: '文件'`、源 `src/client/index.js:769` 为 `label: () => t('slotLabel')`——页签上的可见文本是**「文件」**；zc 占位写的是 `'文件系统'`（`src/client/index.ts:52`），且 `tests/real-composition.spec.ts:158` 把 `'文件系统'` 断言死了。P4 换 `t('slotLabel')` 时**必须同步改这条断言**，否则 P4 门禁假红。**同批核对**：`preset.yml` 的 `name: 文件系统` 与源一致，**不是**同一个字段，勿混淆 |
+| 2026-09-11 | **T-12（README）交付并回改**：子智能体产出 149 行 README（节序取主仓 `.agents/skills/dsh-doc/templates/package-bundle.md` 的 bundle 形态），源 README 功能点承接表一条不漏；`## 安全提示` 载 G-1 高危、`## 已知行为` 载 G-2~G-10、`## 实现进度` 如实标注 P2–P6 未完成且 `/api/fs` 当前只有 `__ping` 占位路由。主智能体验收发现**一处事实错误**（第 3、54 行把页签名写成「文件系统」）→ 已回改，现全文仅标题保留「文件系统」（那是插件概念，与源 README 写法一致）。**G-11 裁决**：不并入 T-14、不修——它描述的是**源仓** `AGENTS.md` §6 与实现不符，zc 仓无该节，不构成 zc 的用户可见差异 |
+| 2026-09-11 | **新派 P6 预研（只读）**：子智能体 `585f8199` 产出 `docs/p6-cutover-runbook.md`——现状勘查（旧插件当前如何被装进 profile）、切换步骤（含备份与 `--dump-config` 验层）、回滚、冒烟清单、重启时序警告。**硬约束**：命令必须核实出处，禁止执行任何改状态的 `dsh` 命令、禁止改 `~/.dsh/profiles/`、禁止重启 |
