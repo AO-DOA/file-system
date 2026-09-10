@@ -8,7 +8,7 @@ DSH 打包插件（bundle）：为 DSH web 装载「文件」页签（插件名 
 TypeScript（strict）+ vitest/jsdom + tsdown，覆盖率按 per-file 100% 要求。重写尚未完成，
 当前只落地了骨架与装载，真实路由、四层能力与页签界面在后续阶段交付（见「实现进度」）。
 
-**已知高危行为**：`POST /api/fs/delete` 缺 `path` 参数可递归删除整个工作区根，详见「安全提示」。
+**安全加固（相对上一版唯一的有意差异）**：`POST /api/fs/delete` 两条通往「递归删除整个工作区根」的路径均已封死，详见「安全提示」。
 
 ## 目录
 
@@ -73,13 +73,20 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 
 ## 安全提示
 
-**`POST /api/fs/delete` 在缺少 `path` 参数时，会把工作区根解析为删除目标并执行递归强制删除（`rm -rf` 语义）。**
-`path` 缺失时越权检查因「根等于根」而通过，删除动作没有二次确认。同一路由表下
-`POST /api/fs/write`、`POST /api/fs/mkdir` 同样没有必填参数校验。
+**已加固（相对上一版唯一的有意差异）**：`POST /api/fs/delete` 曾存在两条通往「递归删除整个工作区根」的路径，现已各加一道闸门。
 
-- 这是从上一版逐字保留的既有行为，迁移目标是与上一版行为等价，**本轮不修**。
-- 暴露面限于直连 API：这三条路由没有任何前端调用，页签界面不会触发它们。
-- 因此不要对这三条路由直接发请求（尤其不要省略 `path`）；脚本与集成若调用它们，必须自行保证 `path` 存在且在工作区内。
+| 情形 | 上一版行为 | 现在 |
+|---|---|---|
+| 缺少 `path`（或非字符串 / 空串） | `abs === root` 从越权检查里通过 → `rm(root, {recursive, force})`，**整个工作区根连同内容被删**，返回 200 | 400 `path required` |
+| `path` 合法但解析回工作区根（`'.'`、`'./'`、`'sub/..'`） | 同上（200，全损） | 400 `refusing to delete the workspace root` |
+
+两道闸门分别插在 `resolveIn` **之后**、`rm` **之前**——先判「有没有」，再判「是不是根」。修复经**运行时前后对照**证实：同一探针在修复前后各跑一次，修复前 `delete '.'` 返回 200 且 root 与其中的文件全部消失；修复后返回 400 且 root 完好。
+
+`POST /api/fs/write`、`POST /api/fs/mkdir` 同时补了 `path` 必填校验（缺失 → 400 `path required`）。这两条**不**加「拒绝根自身」的守卫——`mkdir root` 幂等、`write root` 报 EISDIR，都不会毁数据，加了反而改变既有语义。
+
+**影响面**：`/mkdir`、`/delete` 没有任何前端调用；`/write` 有一处（源码保存），其 `path` 恒非空 ⇒ **页签界面行为零变化**。改动只影响直接向这三条路由发请求的脚本与集成。
+
+> 这是本项目**唯一**有意偏离「与上一版行为等价」的地方。决策、运行时证据与逐条差异见 [`PROGRESS.md`](PROGRESS.md) 与 [`docs/feature-baseline.md`](docs/feature-baseline.md) 的 G-1 登记。
 
 ## 已知行为
 

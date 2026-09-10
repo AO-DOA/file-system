@@ -40,17 +40,26 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 
 ## 3. ⚠ 已知行为与风险
 
-### G-1 高危：三条路由无 `path` 必填校验（**保留不修**，决策 D-10）
+### G-1 ✅ **已修复**（2026-09-11，用户要求；**本项目唯一有意的行为差异**）
 
-`POST /api/fs/delete`、`/write`、`/mkdir` 均无 `if (!payload.path)` 校验。
+**缺陷**：`POST /api/fs/delete`、`/write`、`/mkdir` 三条写路由无 `path` 必填校验。`/delete` 后果最重——`resolveIn(root, 缺失值)` 把 `abs` 解析成**工作区根**，而越权检查写作 `abs !== root && …`，**`abs === root` 恰好通过**，于是 `rm(abs, {recursive:true, force:true})` **递归删除整个工作区根**。
 
-`/delete` 的后果最重：`resolveIn(root, 缺失值)` 把 `abs` 解析为**工作区根**，而越权检查写作 `abs !== root && …` —— **`abs === root` 恰好通过**，于是 `rm(abs, {recursive:true, force:true})` **递归删除整个工作区根**。
+**修复后有两道闸门**（都插在 `resolveIn` **之后**、`rm` **之前**——先判「有没有」，再判「是不是根」）：
 
-**运行时实证**（非推测）：无 `path` 的 `POST /delete` 返回 200，且 `stat(root)` 由 true 变 false。
+| 情形 | 修复前 | 现在 |
+|---|---|---|
+| 缺 `path` / 非字符串 / 空串 | `rm(root)` **全损**，返回 200 | 400 `path required`（**三条写路由都加**） |
+| `path` 合法但解析回根（`'.'`、`'./'`、`'sub/..'`） | 同上（200，全损） | 400 `refusing to delete the workspace root`（**仅 `/delete`**） |
 
-**缓解**：① 三条路由**无任何前端调用**（grep 证实），界面不会触发；② API 需认证；③ 传了正常 `path` 就是正常删单个文件。**真实风险 = 任何已认证调用者漏传 `path` 即全损。**
+**`/mkdir` 与 `/write` 故意不加第二道守卫**：`mkdir root` 幂等、`write root` 报 EISDIR，都不毁数据，加了反而改变既有语义。
 
-**修法（若日后决定修）**：三条路由各加 `if (!payload.path) return json(res, 400, …)`。属行为变化，需单独记账。
+**运行时前后对照已证实**（非静态推理）：同一探针在修复前后各跑一次——修复前 `delete '.'` → `200 {"ok":true}`、`rootAlive=false keepAlive=false`；修复后 → `400 refusing to delete the workspace root`、`rootAlive=true keepAlive=true`。**G-1 修好后 `delete '.'` 仍能删根**，所以 G-1b 是同一缺陷的另一半，不是新需求。
+
+**影响面**：`/mkdir`、`/delete` 无任何前端调用；`/write` 有一处（`save()`，其 `path: opened.path` 恒非空且有 `hasSource` 守卫）⇒ **页签界面行为零变化**。改动只影响直连这三条路由的脚本与集成。
+
+**文案**：复用同文件既有的英文技术串风格（`path required` / `refusing to delete the workspace root`），**未新增 locale 键**——`tests/locale.spec.ts` 硬断言 `ZH` 恰 72 键，新增键会立刻让它变红。host 错误通道字典化属既有待办 #20，不在本次范围。
+
+**验证**：测试 74 → **80 例**全绿（含 6 种缺失形态 × 3 路由、`'.'`/`'./'`/`'sub/..'` 三种回根写法，以及 `delete 'sub'` → 200 的反向对照，证明守卫只拦根自身）；`src/host/index.ts` 覆盖率由 96.93/96.21/97.56/98.07 升至 **97.05/96.4/97.56/98.15**。
 
 ### 覆盖率例外（决策 D-13，用户裁决）
 
@@ -92,12 +101,13 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 
 | # | 待办 | 说明 |
 |---|---|---|
-| 1 | T-62 交付摘要 | 需显著标注 G-1 高危（含运行时实证）+ G-2~G-12 + 上表的风格差异 + D-13 覆盖率例外 |
+| 1 | T-62 交付摘要 | 应写「**G-1 已加固**（唯一有意的行为差异，含运行时前后对照）」+ G-2~G-12 逐字保留项 + 与主仓风格的差异 + D-13 覆盖率例外 |
 | 2 | `src/host/abilities/README.md` 的 4 处 `.js` 文件名 | 目标文件现已存在（`prompt-loader.ts` / `gen-executor.ts` / `translate-executor.ts` / `tests/gen-scope.spec.ts`），引用可更新为 `.ts` |
 | 3 | `docs/spec-p5-tests-detail.md` 的 2 处行号 | 引主仓 `docs/testing.zh.md` 写的 `:41`/`:47`，实测应为 **`:40`/`:45`** |
-| 4 | G-1 是否开新账目修 | 用户 2026-09-11 决定「先到此为止」，保留 |
+| 4 | ~~G-1 是否开新账目修~~ | ✅ **2026-09-11 已完成**（见 §3，两道闸门 + 运行时对照 + 80 例测试） |
 | 5 | `R3`：两个 leaf 的 compilerOptions 手抄 | 6 项严格设置重复维护，可提取 `tsconfig.base.json` |
 | 6 | pnpm store v10/v11 冲突 | 会让 `dsh plugin` 命令失败；需统一 store 或重装 profile |
+| 7 | host 错误通道字典化（#20） | 中文 25 + 英文 17 处技术串仍在代码里；本次 G-1 复用既有英文串，未启动该项 |
 
 ## 6. 未做且明确不做的
 

@@ -73,7 +73,7 @@
 
 | # | 项 | 位置 | 后果 |
 |---|---|---|---|
-| G-1 | **`POST /delete` 无 `path` 必填校验** | `src/host/index.js:258-262` + `fs-utils.js:148-157` | `path` 缺失时 `abs === root` 通过越权检查 → `rm(recursive, force)` **删掉整个工作区根**。`/write`、`/mkdir` 同样无校验。**暴露面限于直连 API（三条路由均无 client 调用）** |
+| G-1 | ~~`POST /delete` 无 `path` 必填校验~~ → **迁移版已修复（本次迁移唯一有意的行为差异）** | 源 `src/host/index.js:258-262` + `fs-utils.js:148-157`；迁移版 `src/host/index.ts` 的 `/delete` 分支 | **源行为**：`path` 缺失时 `abs === root` 通过越权检查 → `rm(recursive, force)` **删掉整个工作区根**；`/write`、`/mkdir` 同样无校验。**迁移版加两道闸门**：① 缺 `path` / 非字符串 / 空串 → 400 `path required`（三条写路由都加）；② `abs === root`（`'.'`、`'./'`、`'sub/..'`）→ 400 `refusing to delete the workspace root`（**仅 `/delete`**，`/mkdir` 与 `/write` 不加，因为 `mkdir root` 幂等、`write root` 报 EISDIR，不毁数据）。闸门插在 `resolveIn` **之后**、`rm` **之前**。**运行时前后对照已证实**（同一探针：修复前 `delete '.'` → 200 且 root 与其中文件全消失；修复后 → 400 且 root 完好）。用户 2026-09-11 明确要求修复 |
 | G-2 | `POST /gen-doc` 的 kind 白名单过宽（含 `translate`） | `registry.js:17` | `{kind:'translate', path:'<非 md>'}` 会被接受 |
 | G-3 | 目录节点打开时重复请求同一 `/read` URL | `src/client/index.js:227-239` | 冗余请求 |
 | G-4 | 切换文件/工作区**静默丢弃未保存编辑**（无确认） | `src/client/index.js:215-216,489` | 用户输入丢失 |
