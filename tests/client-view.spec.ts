@@ -841,16 +841,22 @@ describe('viewer: tabs and editing (C)', () => {
     expect(document.querySelector('.fs-dirty')).toBeNull()
     await pickView('labSrc')
     expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
-    // 视图切换会退出编辑态（R3 的既有行为），合并后的按钮于是回到「编辑」，而 dirty 内容仍在
-    //（`edit` 只在**切换文件**时重播种，见 `useOpenedViewer` 的打开 effect）。所以「切视图之后
-    // 要保存」这条路径在合并后要点两下：先回编辑态，再点同一个按钮保存 —— 这是 B 的代价，
-    // 登记在报告里；中间这一步顺带证明缓冲区没有丢。
-    await click(button(L('btnEdit')))
-    expect((document.querySelector('.fs-area') as HTMLTextAreaElement).value).toBe('const a = 2')
-    // Saving clears it and leaves edit mode; the write carries the edited text.
-    await click(button(L('btnSave')))
+    // 视图切换会退出编辑态（R3 的既有行为），而 dirty 内容仍在（`edit` 只在**切换文件**时
+    // 重播种，见 `useOpenedViewer` 的打开 effect）。此时 `editMode === false` 而 `dirty === true`，
+    // 判据 `canSave = editMode || dirty` 让按钮显示「✓ 保存」：有未保存内容时直达保存，
+    // 不再需要「先点一次回编辑态、再点一次保存」（旧判据只看 `editMode` 的两击路径）。
+    expect(document.querySelector('.fs-area')).toBeNull()
+    expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
+    const directSave = namedToolbarButton(L('btnSave'))
+    expect(directSave.getAttribute('aria-label')).toBe(L('btnSave'))
+    expect(directSave.querySelector('.fs-btnlabel')?.textContent).toBe(L('btnSave'))
+    // 「编辑」这个态此时**不存在**：同一个节点已经换成保存，右列仍是那一个按钮。
+    expect(document.querySelectorAll(`.fs-hbar-right button[aria-label="${L('btnEdit')}"]`)).toHaveLength(0)
+    // 一下落地：Saving clears it and leaves edit mode; the write carries the edited text.
+    await click(directSave)
     expect(document.querySelector('.fs-dirty')).toBeNull()
     expect(document.querySelector('.fs-area')).toBeNull()
+    expect(namedToolbarButton(L('btnEdit')).querySelector('[data-icon="IconEditOutline16"]')).not.toBeNull()
     const write = calls.find(call => call.url === '/api/fs/write')
     expect(write?.init?.body).toBe(JSON.stringify({ path: 'app.ts', content: 'const a = 2' }))
   })

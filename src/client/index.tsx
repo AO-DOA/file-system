@@ -1224,25 +1224,32 @@ function FsView(props: FsViewProps): React.JSX.Element {
     ? (rootName ? rootName + '/' + openedPath : openedPath)
     : (rootName || openedPath)
   const pathLabel = opened ? <div className="fs-hd-path">{openedFullPath}</div> : null
+  // 编辑与保存**合成同一个按钮**（用户裁决 B）：平时点它进编辑态，有未保存内容时点它保存。
+  // 能合并的依据是「保存即回到查看态」本来就闭环 —— `save()` 里带着 `setEditMode(false)`，
+  // 所以合并不存在「卡在编辑态」的死角；而平常（查看）状态下「保存」按钮点下去也没有用途。
+  // 图标与文案随态切换，两个图标都来自 primitives（编辑＝铅笔、保存＝DSH 保存惯例的 ✓）。
+  // 合并后不再有独立的「查看」按钮：它原本只做「不保存就退回查看态」，而那条路径已由
+  // 保存/切视图覆盖（代价见报告：编辑内容**没有**「放弃编辑」入口）。这一点在改成 `canSave`
+  // 之后**更彻底**：只要还有未保存内容，按钮就直达保存，退回查看态不再有专用入口。
+  // 判据是 `canSave`，而不是只看 `editMode`（用户裁决 2.2）：视图选择器的下拉 `onSelect` 会
+  // `setEditMode(false)`（R3 既有行为），而 `edit` 只在**切换文件**时重播种 ⇒ 「进过编辑态、
+  // 留了改动、又退回查看态」时 `dirty` 仍在而 `editMode` 已为 false。只看 `editMode` 的话按钮
+  // 显示「编辑」，保存要点两下（先回编辑态、再点同一个按钮）；`canSave` 让这一态直接显示
+  // 「✓ 保存」，点一下即落地。代价：编辑态与「脏查看态」现在共用同一个外观。
+  // 文字进 `.fs-btnlabel` 由样式表按容器宽度隐藏，纯图标态的可访问名靠恒定的 aria-label。
+  const canSave = viewer.editMode || viewer.dirty
   const editActions = (opened && viewer.hasSource && viewer.mode === 'source')
     ? [
       viewer.dirty ? <span key="dirty" className="fs-dirty">{t('a11yDirty')}</span> : null,
-      // 编辑与保存**合成同一个按钮**（用户裁决 B）：查看态点它进编辑态，编辑态点它保存。
-      // 能合并的依据是「保存即回到查看态」本来就闭环 —— `save()` 里带着 `setEditMode(false)`，
-      // 所以合并不存在「卡在编辑态」的死角；而平常（查看）状态下「保存」按钮点下去也没有用途。
-      // 图标与文案随态切换，两个图标都来自 primitives（编辑＝铅笔、保存＝DSH 保存惯例的 ✓）。
-      // 合并后不再有独立的「查看」按钮：它原本只做「不保存就退回查看态」，而那条路径已由
-      // 保存/切视图覆盖（代价见报告：编辑内容**没有**「放弃编辑」入口）。
-      // 文字进 `.fs-btnlabel` 由样式表按容器宽度隐藏，纯图标态的可访问名靠恒定的 aria-label。
       tip((
         <Button
-          icon={viewer.editMode ? <IconCheckOutline16 /> : <IconEditOutline16 />}
-          onClick={viewer.editMode ? viewer.save : viewer.toggleEdit}
-          aria-label={viewer.editMode ? t('btnSave') : t('btnEdit')}
+          icon={canSave ? <IconCheckOutline16 /> : <IconEditOutline16 />}
+          onClick={canSave ? viewer.save : viewer.toggleEdit}
+          aria-label={canSave ? t('btnSave') : t('btnEdit')}
         >
-          <span className="fs-btnlabel">{viewer.editMode ? t('btnSave') : t('btnEdit')}</span>
+          <span className="fs-btnlabel">{canSave ? t('btnSave') : t('btnEdit')}</span>
         </Button>
-      ), viewer.editMode ? t('btnSave') : t('btnEdit'), 'edit'),
+      ), canSave ? t('btnSave') : t('btnEdit'), 'edit'),
     ]
     : null
 

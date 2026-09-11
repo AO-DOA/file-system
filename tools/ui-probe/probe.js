@@ -172,24 +172,36 @@ function portals(o) {
   return (o.ws ? panelHtml('ws') : '') + (o.view ? panelHtml('view') : '') + (o.gen ? panelHtml('gen') : '')
 }
 
+/**
+ * 带 `.fs-tipwrap` 锚点层的按钮。源码里每个挂了 `Tooltip` 气泡的按钮外面都包这一层原生 span
+ *（`tip()`：`<Tooltip><span className="fs-tipwrap">{btn}</span></Tooltip>`；primitives 的 `Button`
+ * 在 React 18 下挂不上 ref，气泡的锚点必须是原生元素）。它只做收缩包裹（`display:inline-flex`），
+ * 但**必须复刻**：顶栏是 `@container` 分档 + `minmax(0,1fr)` 分配，少一层就量的是另一个 DOM。
+ * 视图选择器与解读选择这两个「悬停即开下拉」的锚点**不挂**气泡（挂上会双弹），故不带这一层。
+ */
+function tipwrap(inner) { return `<span class="fs-tipwrap">${inner}</span>` }
+
 function scenario(o) {
   const left = [
-    o.ws ? wrapped(btn({
+    o.ws ? wrapped(tipwrap(btn({
       size: 'vp-md', icon: true, label: WS[o.ws], extra: 'fs-wsbtn',
       labelClass: wsIcon ? 'fs-btnlabel fs-wslabel' : null,
-    }), inlinePanel('ws')) : '',
-    `<div class="fs-hd-actions">${btn({ size: 'vp-sm', icon: true })}${btn({ size: 'vp-sm', icon: true })}</div>`,
+    })), inlinePanel('ws')) : '',
+    `<div class="fs-hd-actions">${tipwrap(btn({ size: 'vp-sm', icon: true }))}${tipwrap(btn({ size: 'vp-sm', icon: true }))}</div>`,
   ].join('')
   const mid = [
     o.view ? `<div class="fs-viewwrap">${wrapped(btn({ size: 'vp-sm', label: o.viewLabel || '源码', extra: 'fs-viewbtn' }), inlinePanel('view'))}</div>` : '',
     o.path ? `<div class="fs-hbar-path"><div class="fs-hd-path">${PATHS[o.path]}</div></div>` : '',
   ].join('')
   const right = [
-    btn({ size: 'vp-sm', icon: true, label: '分栏', labelClass: 'fs-btnlabel' }),
+    tipwrap(btn({ size: 'vp-sm', icon: true, label: '分栏', labelClass: 'fs-btnlabel' })),
     o.gen ? `<div class="fs-genwrap">${wrapped(btn({ size: 'vp-sm', icon: true, label: o.genLabel || '解读选择', disabled: !!o.genDisabled, labelClass: 'fs-btnlabel' }), inlinePanel('gen'))}</div>` : '',
     o.dirty ? '<span class="fs-dirty">● 未保存</span>' : '',
-    o.edit ? btn({ size: 'vp-md', icon: true, label: o.editLabel || '编辑', labelClass: 'fs-btnlabel' }) : '',
-    o.save ? btn({ size: 'vp-md', icon: true, label: '保存', labelClass: 'fs-btnlabel' }) : '',
+    // 编辑与保存是**同一个按钮**（`canSave = editMode || dirty` 驱动同一节点换态），复刻里
+    // 因此只有一个。`editLabel` 标的是该场景下按钮显示的那一态：有未保存内容（`dirty`）时
+    // 是「保存」，否则是「编辑」—— 与源码的 `canSave` 判据一致。
+    // 两种文案都是两个汉字、图标都是 16px，几何等价，所以取哪一态不影响任何读数。
+    o.edit ? tipwrap(btn({ size: 'vp-md', icon: true, label: o.editLabel || '编辑', labelClass: 'fs-btnlabel' })) : '',
   ].join('')
   return `<div class="fs-wrap">
   <div class="fs-hbar">
@@ -201,14 +213,16 @@ function scenario(o) {
 </div>`
 }
 
+// 场景表：`edit` 现已代表**合并后的单个**编辑/保存按钮（旧版这里是 `edit` + `save` 两个），
+// `editLabel` 是它在 `canSave = editMode || dirty` 下显示的那一态文案（有 `dirty` 即为「保存」）。
 const all = [
   { id: 'S0-empty', ws: 'mid' },
-  { id: 'S1-source', ws: 'mid', view: true, path: 'mid', gen: true, dirty: true, edit: true, save: true },
-  { id: 'S2-trlong', ws: 'long', view: true, viewLabel: '文章翻译', path: 'long', gen: true, genLabel: '重新翻译', dirty: true, edit: true, save: true },
+  { id: 'S1-source', ws: 'mid', view: true, path: 'mid', gen: true, dirty: true, edit: true, editLabel: '保存' },
+  { id: 'S2-trlong', ws: 'long', view: true, viewLabel: '文章翻译', path: 'long', gen: true, genLabel: '重新翻译', dirty: true, edit: true, editLabel: '保存' },
   { id: 'S3-dir', ws: 'mid', view: true, viewLabel: '目录概览', path: 'mid', gen: true },
-  { id: 'S4-trbusy', ws: 'mid', view: true, path: 'long', gen: true, genLabel: '翻译中…', genDisabled: true, dirty: true, edit: true, save: true },
-  { id: 'S5-short', ws: 'short', view: true, path: 'short', gen: true, edit: true, save: true },
-  { id: 'S6-wsxlong', ws: 'xlong', view: true, viewLabel: '文章翻译', path: 'long', gen: true, genLabel: '重新翻译', dirty: true, edit: true, save: true },
+  { id: 'S4-trbusy', ws: 'mid', view: true, path: 'long', gen: true, genLabel: '翻译中…', genDisabled: true, dirty: true, edit: true, editLabel: '保存' },
+  { id: 'S5-short', ws: 'short', view: true, path: 'short', gen: true, edit: true },
+  { id: 'S6-wsxlong', ws: 'xlong', view: true, viewLabel: '文章翻译', path: 'long', gen: true, genLabel: '重新翻译', dirty: true, edit: true, editLabel: '保存' },
 ]
 const scenarios = only6 ? all.slice(0, 6) : all
 
