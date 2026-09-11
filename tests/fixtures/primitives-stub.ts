@@ -126,6 +126,44 @@ export function Menu(props: StubMenuProps): ReactNode {
   return createElement('div', { className: 'stub-menu-wrap' }, props.anchor, placed)
 }
 
+/** Props of the stand-in tooltip. */
+interface StubTooltipProps {
+  label: string | (() => string)
+  side?: string
+  delayMs?: number
+  disabled?: boolean
+  maxWidth?: number
+  children: ReactNode
+}
+
+/**
+ * Stand-in hover tooltip: renders the anchor **unchanged** and publishes the
+ * wiring on a wrapper span.
+ *
+ * What it does reproduce: which bubble text is attached to which anchor, and
+ * whether the bubble is suppressed (`disabled`). That is the part the plugin
+ * owns — and the reason the real `Tooltip` is used at all is that its bubble is
+ * a controlled, `position:fixed` surface instead of the native `title` bar, so
+ * specs also assert the anchors carry no `title`.
+ *
+ * What it deliberately does NOT reproduce: the hover/focus lifecycle and the
+ * bubble's placement. The real one mounts the bubble only while hovered and
+ * positions it from the cloned child's rect — geometry that jsdom has no layout
+ * for. Do not read a passing spec here as evidence about how the bubble looks;
+ * the geometry probe (report §D) is the evidence for that.
+ * @param props - see {@link StubTooltipProps}.
+ * @returns the anchor wrapped in a label-carrying span.
+ */
+export function Tooltip(props: StubTooltipProps): ReactNode {
+  const label = typeof props.label === 'function' ? props.label() : props.label
+  return createElement('span', {
+    className: 'stub-tooltip',
+    'data-label': label,
+    'data-side': props.side || 'right',
+    'data-disabled': props.disabled ? '1' : '',
+  }, props.children)
+}
+
 /** Props of the stand-in markdown renderer. */
 interface StubMarkdownProps {
   text: string

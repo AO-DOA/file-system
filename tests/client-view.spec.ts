@@ -352,6 +352,51 @@ function viewBtn(): HTMLElement {
 }
 
 /**
+ * The refresh icon button in the left toolbar group. Selected by its accessible
+ * name rather than by position: every toolbar button now sits inside a
+ * `.fs-tipwrap` anchor layer (the `Tooltip` anchor), so `:first-child` /
+ * `:last-child` positional selectors would match the wrapper instead.
+ * @returns the refresh button.
+ */
+function refreshButton(): HTMLElement {
+  return namedToolbarButton(L('a11yRefresh'))
+}
+
+/**
+ * The fold/unfold icon button — the one whose accessible name changes with the
+ * panel state, so both names are accepted.
+ * @returns the fold button.
+ */
+function foldButton(): HTMLElement {
+  const hit = document.querySelector(
+    `.fs-hd-actions button[aria-label="${L('a11yCollapseTree')}"],`
+    + ` .fs-hd-actions button[aria-label="${L('a11yExpandTree')}"]`,
+  )
+  if (hit === null) throw new Error('no fold button')
+  return hit as HTMLElement
+}
+
+/**
+ * A toolbar button found by its accessible name.
+ * @param label - the expected `aria-label`.
+ * @returns the matching button.
+ */
+function namedToolbarButton(label: string): HTMLElement {
+  const hit = document.querySelector(`.fs-hbar button[aria-label="${label}"]`)
+  if (hit === null) throw new Error('no toolbar button named ' + label)
+  return hit as HTMLElement
+}
+
+/**
+ * The split-view entry in the right toolbar group (same button as the R4
+ * block's local helper, hoisted here for the layout cases).
+ * @returns the split button.
+ */
+function splitButton(): HTMLElement {
+  return namedToolbarButton(L('btnSplit'))
+}
+
+/**
  * Whether the view-selector button currently reads the given view name.
  * @param key - locale key of the expected view label (`labSrc`, `labDocFile`, …).
  * @returns whether the button shows that label.
@@ -777,11 +822,13 @@ describe('viewer: tabs and editing (C)', () => {
     mount()
     await flush()
     await click(row('app.ts'))
-    expect(button(L('btnEdit'))).toBeTruthy()
-    await click(button(L('btnEdit')))
+    const action = button(L('btnEdit'))
+    expect(action).toBeTruthy()
+    await click(action)
     const area = document.querySelector('.fs-area') as HTMLTextAreaElement
     expect(area).not.toBeNull()
-    expect(button(L('btnView'))).toBeTruthy()
+    // 同一个按钮换态（编辑 ⇄ 保存），不是多出第二个按钮：编辑态下「保存」就是它。
+    expect(button(L('btnSave'))).toBe(action)
     // Typing raises 「● 未保存」.
     await act(async () => {
       typeInto(area, 'const a = 2')
@@ -794,6 +841,12 @@ describe('viewer: tabs and editing (C)', () => {
     expect(document.querySelector('.fs-dirty')).toBeNull()
     await pickView('labSrc')
     expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
+    // 视图切换会退出编辑态（R3 的既有行为），合并后的按钮于是回到「编辑」，而 dirty 内容仍在
+    //（`edit` 只在**切换文件**时重播种，见 `useOpenedViewer` 的打开 effect）。所以「切视图之后
+    // 要保存」这条路径在合并后要点两下：先回编辑态，再点同一个按钮保存 —— 这是 B 的代价，
+    // 登记在报告里；中间这一步顺带证明缓冲区没有丢。
+    await click(button(L('btnEdit')))
+    expect((document.querySelector('.fs-area') as HTMLTextAreaElement).value).toBe('const a = 2')
     // Saving clears it and leaves edit mode; the write carries the edited text.
     await click(button(L('btnSave')))
     expect(document.querySelector('.fs-dirty')).toBeNull()
@@ -1041,11 +1094,46 @@ describe('worktree switching, persistence and drag (D)', () => {
     mount()
     await flush()
     expect(document.querySelector('.fs-side')).not.toBeNull()
-    await click(document.querySelector('.fs-hd-actions button:last-child') as HTMLElement)
+    await click(foldButton())
     expect(document.querySelector('.fs-side')).toBeNull()
     expect(document.querySelector('.fs-split')).toBeNull()
-    await click(document.querySelector('.fs-hd-actions button:last-child') as HTMLElement)
+    await click(foldButton())
     expect(document.querySelector('.fs-side')).not.toBeNull()
+  })
+
+  it('keeps the split pane rendered while the tree is collapsed', async () => {
+    // 折叠文件树与分屏是两个独立开关：折叠态下点「分栏」，右侧窗格与它的分隔条都必须出现
+    //（缺陷：`fs-body` 只在「未折叠」分支里渲染这两件，折叠后开关翻转却什么都不发生）。
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(splitButton())
+    expect(document.querySelectorAll('.fs-splitpane')).toHaveLength(1)
+    // 折叠：树没了，分屏照旧 —— 分隔条仍在，顺序仍是 editor → splitBar → splitPane
+    //（拖拽回调靠 previousElementSibling / nextElementSibling 取两侧窗格）。
+    await click(foldButton())
+    expect(document.querySelector('.fs-side')).toBeNull()
+    const body = document.querySelector('.fs-body') as HTMLElement
+    expect(body.children).toHaveLength(3)
+    expect(body.children[1]?.className).toContain('fs-split')
+    expect(body.children[2]?.className).toContain('fs-splitpane')
+    expect(document.querySelector('.fs-splitpane .fs-main')).not.toBeNull()
+    // 折叠态下关掉分屏：只剩左侧窗格。
+    await click(splitButton())
+    expect(document.querySelectorAll('.fs-splitpane')).toHaveLength(0)
+    expect((document.querySelector('.fs-body') as HTMLElement).children).toHaveLength(1)
+  })
+
+  it('renders no split pane when the tree is collapsed and no split was opened', async () => {
+    // 另一半的反向对照：折叠本身不得凭空造出分隔条 / 窗格。
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(foldButton())
+    expect(document.querySelector('.fs-side')).toBeNull()
+    expect(document.querySelectorAll('.fs-split')).toHaveLength(0)
+    expect(document.querySelectorAll('.fs-splitpane')).toHaveLength(0)
+    expect((document.querySelector('.fs-body') as HTMLElement).children).toHaveLength(1)
   })
 
   it('drags the splitter within the clamped range', async () => {
@@ -1074,7 +1162,7 @@ describe('worktree switching, persistence and drag (D)', () => {
     mount()
     await flush()
     const before = hits('/api/fs/tree?path=.')
-    await click(document.querySelector('.fs-hd-actions button:first-child') as HTMLElement)
+    await click(refreshButton())
     expect(hits('/api/fs/tree?path=.')).toBe(before + 1)
     expect(hits('/api/fs/set-root')).toBe(0)
   })
@@ -2445,27 +2533,49 @@ describe('narrow toolbar: icon bands (R2)', () => {
     mount()
     await flush()
     await click(row('full.md'))
-    // 四个按钮的可见文字都在 `.fs-btnlabel` 里 —— 窄档样式表隐藏的正是这一层；
+    // 三个按钮的可见文字在 `.fs-btnlabel` 里 —— 窄档样式表隐藏的正是这一层；
     // 文字节点留在 DOM 里，纯图标态的可访问名由常驻的 aria-label 给出。
-    // （分屏按钮 R4 与它们同组，所以在最前。）
+    // （分屏按钮 R4 与它们同组，所以在最前；编辑/保存已合并成一个按钮，故只剩一个「编辑」。）
     expect(Array.from(document.querySelectorAll('.fs-hbar-right .fs-btnlabel'))
       .map(node => (node.textContent || '').trim()))
-      .toEqual([L('btnSplit'), L('btnGen'), L('btnEdit'), L('btnSave')])
+      .toEqual([L('btnSplit'), L('btnGen'), L('btnEdit')])
     expect(rightButton(L('btnSplit')).getAttribute('aria-label')).toBe(L('btnSplit'))
     expect(rightButton(L('btnGen')).getAttribute('aria-label')).toBe(L('btnGen'))
     expect(rightButton(L('btnEdit')).getAttribute('aria-label')).toBe(L('btnEdit'))
-    expect(rightButton(L('btnSave')).getAttribute('aria-label')).toBe(L('btnSave'))
     // 视图选择器的文字**就是**当前视图名（R3.2），因此不参与图标化：它没有 label 层。
     expect(viewBtn().querySelector('.fs-btnlabel')).toBeNull()
   })
 
-  it('gives the save button the DSH check glyph and the edit button its pencil', async () => {
+  it('merges edit and save into one button that swaps glyph and name with the mode', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    // 查看态：铅笔 + 「编辑」，点它进编辑态（而不是点一个没有用途的「保存」）。
+    const idle = rightButton(L('btnEdit'))
+    expect(idle.querySelector('[data-icon="IconEditOutline16"]')).not.toBeNull()
+    expect(idle.getAttribute('aria-label')).toBe(L('btnEdit'))
+    await click(idle)
+    const area = document.querySelector('.fs-area')
+    expect(area).not.toBeNull()
+    // 编辑态：**同一个 DOM 节点**换成 ✓ + 「保存」（同一个节点 ⇒ 气泡锚点不会重挂）。
+    const editing = rightButton(L('btnSave'))
+    expect(editing).toBe(idle)
+    expect(editing.querySelector('[data-icon="IconCheckOutline16"]')).not.toBeNull()
+    expect(editing.getAttribute('aria-label')).toBe(L('btnSave'))
+    expect(editing.querySelector('.fs-btnlabel')?.textContent).toBe(L('btnSave'))
+    // 右列不再有第二个按钮，也再没有「查看」这个第三态。
+    expect(document.querySelectorAll('.fs-hbar-right button[aria-label="' + L('btnView') + '"]')).toHaveLength(0)
+    // 保存 = 回查看态（`save()` 里带 `setEditMode(false)`），按钮自动换回铅笔。
+    await click(editing)
+    expect(document.querySelector('.fs-area')).toBeNull()
+    expect(rightButton(L('btnEdit')).querySelector('[data-icon="IconEditOutline16"]')).not.toBeNull()
+  })
+
+  it('gives the interpretation button the plus glyph', async () => {
     mount()
     await flush()
     await click(row('full.md'))
     // `icon` 在宽档也渲染：窄档只是把文字藏起来，图标本来就是常驻的。
-    expect(rightButton(L('btnSave')).querySelector('[data-icon="IconCheckOutline16"]')).not.toBeNull()
-    expect(rightButton(L('btnEdit')).querySelector('[data-icon="IconEditOutline16"]')).not.toBeNull()
     expect(rightButton(L('btnGen')).querySelector('[data-icon="IconPlusOutline16"]')).not.toBeNull()
   })
 
@@ -2508,9 +2618,12 @@ describe('narrow toolbar: icon bands (R2)', () => {
     expect(label).not.toBeNull()
     expect(label?.className).toContain('fs-btnlabel')
     expect((label?.textContent || '').trim()).toBe(name)
-    // 文字被藏起来之后，当前工作区的标识只剩恒定的 aria-label / 悬停 title。
+    // 文字被藏起来之后，当前工作区的标识只剩恒定的 aria-label，以及受控的悬停气泡
+    // （气泡文案就是完整工作区名 —— 长名本来会被 `.fs-wsbtn{max-width:220px}` 截断）。
+    // 原生 `title` 已撤：留着它会与气泡同时出现（双气泡）。
     expect(ws.getAttribute('aria-label')).toBe(name)
-    expect(ws.getAttribute('title')).toBe(name)
+    expect(ws.getAttribute('title')).toBeNull()
+    expect(ws.closest('.fs-tipwrap')?.parentElement?.getAttribute('data-label')).toBe(name)
   })
 
   it('routes the bands through container queries instead of JS thresholds', () => {
@@ -2527,6 +2640,133 @@ describe('narrow toolbar: icon bands (R2)', () => {
     expect(css).toContain('@container (max-width:550px){.fs-wslabel{display:none}}')
     // 「解读选择」的包装不给 `min-width:0`：给了它，里面的按钮会溢出压住「● 未保存」。
     expect(css).toContain('.fs-genwrap{display:inline-flex;align-items:center}')
+  })
+})
+
+describe('toolbar tooltips: primitives Tooltip instead of native title (D)', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  /**
+   * The tooltip attached to a toolbar button, read off the stand-in's wrapper.
+   * @param el - the button.
+   * @returns the bubble label the plugin wired up, or null when there is none.
+   */
+  function tooltipLabel(el: HTMLElement): string | null {
+    return el.closest('.fs-tipwrap')?.parentElement?.getAttribute('data-label') ?? null
+  }
+
+  it('anchors a controlled bubble on every toolbar button and drops the native title', async () => {
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(row('full.md'))
+    const wsName = (document.querySelector('.fs-wsbtn')?.textContent || '').trim()
+    // 每个按钮都换成 primitives 的受控气泡（原生 `title` 会与它同时出现 ⇒ 双气泡）。
+    expect(tooltipLabel(refreshButton())).toBe(L('a11yRefresh'))
+    expect(tooltipLabel(foldButton())).toBe(L('a11yCollapseTree'))
+    expect(tooltipLabel(namedToolbarButton(wsName))).toBe(wsName)
+    expect(tooltipLabel(splitButton())).toBe(L('a11ySplit'))
+    expect(tooltipLabel(namedToolbarButton(L('btnEdit')))).toBe(L('btnEdit'))
+    // 折叠态翻转文案：同一个按钮，气泡说清点下去会发生什么。
+    await click(foldButton())
+    expect(tooltipLabel(foldButton())).toBe(L('a11yExpandTree'))
+  })
+
+  it('keeps every toolbar button free of title while still naming it', async () => {
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(row('full.md'))
+    const buttons = Array.from(document.querySelectorAll<HTMLElement>('.fs-hbar button'))
+    // 顶栏按钮的覆盖面：工作区 / 刷新 / 折叠 / 视图选择器 / 解读选择 / 分屏 / 编辑。
+    expect(buttons).toHaveLength(7)
+    for (const el of buttons) {
+      // ① 原生气泡的载体必须一个不剩 —— 它不受页面控制、会压住正文。
+      expect(el.getAttribute('title')).toBeNull()
+      // ② 可访问名不能因为撤掉 title 而丢：要么来自 aria-label，要么来自可见文字。
+      const named = (el.getAttribute('aria-label') || '').trim().length > 0
+        || (el.textContent || '').trim().length > 0
+      expect(named).toBe(true)
+    }
+    // 常驻纯图标的那两个（刷新 / 折叠）原先只有 `title`，本轮补上 aria-label。
+    expect(refreshButton().getAttribute('aria-label')).toBe(L('a11yRefresh'))
+    expect(foldButton().getAttribute('aria-label')).toBe(L('a11yCollapseTree'))
+    // 悬停即展开下拉的两个锚点**不挂**气泡（挂上会双弹）：解读选择与视图选择器。
+    expect(tooltipLabel(namedToolbarButton(L('btnGen')))).toBeNull()
+    expect(tooltipLabel(viewBtn())).toBeNull()
+    // 它们的可读提示来自别处：解读选择是 aria-label，视图选择器是那串恒等于当前视图名的文字。
+    expect(namedToolbarButton(L('btnGen')).getAttribute('aria-label')).toBe(L('btnGen'))
+    expect(viewBtn().textContent).toBe(L('labSrc'))
+  })
+
+  it('publishes the bubble through a native anchor layer, not through Button', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    // primitives 的 `Button` 是普通函数组件（React 18 挂不上 ref ⇒ Tooltip 拿不到锚点、
+    // 气泡永不渲染），所以锚点必须是原生元素 —— 这里把这条前提钉住，别被「顺手去掉那层 span」改回去。
+    const wrap = namedToolbarButton(L('btnEdit')).closest('.fs-tipwrap')
+    expect(wrap?.tagName).toBe('SPAN')
+    apply(makeCtx())
+    const css = document.head.querySelector('style[data-plugin="fs"]')?.textContent ?? ''
+    expect(css).toContain('.fs-tipwrap{display:inline-flex;align-items:center}')
+    // 与 `Menu` 自己那层 `.mr` root 同一个做法：收缩包裹，不给 `min-width:0`
+    //（给了就会抹掉内层按钮的 min-content 下限，回到「按钮溢出压兄弟」的老问题）。
+    expect(css).not.toContain('.fs-tipwrap{display:inline-flex;align-items:center;min-width:0}')
+  })
+})
+
+describe('unsaved-changes guard on page leave (C)', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  /**
+   * Fire a cancelable `beforeunload` and report whether a handler blocked it.
+   * @returns whether `defaultPrevented` came back true.
+   */
+  function leavePage(): boolean {
+    const event = new window.Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('registers the guard only while the edit buffer is dirty', async () => {
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    const guardAdds = (): number => add.mock.calls.filter(call => call[0] === 'beforeunload').length
+    const guardRemoves = (): number => remove.mock.calls.filter(call => call[0] === 'beforeunload').length
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    // 干净态：不拦（拦了会让每次刷新都弹确认框）。
+    expect(guardAdds()).toBe(0)
+    expect(leavePage()).toBe(false)
+    // 进编辑态但还没打字 ⇒ 仍然不脏，仍不拦。
+    await click(button(L('btnEdit')))
+    expect(guardAdds()).toBe(0)
+    expect(leavePage()).toBe(false)
+    // 打字 ⇒ dirty ⇒ 挂上守卫，页面级离开被拦下。
+    const area = document.querySelector('.fs-area') as HTMLTextAreaElement
+    await act(async () => { typeInto(area, 'const a = 2') })
+    await flush()
+    expect(guardAdds()).toBe(1)
+    expect(leavePage()).toBe(true)
+    // 保存 ⇒ dirty 归 false ⇒ 守卫卸载（不是留着一条永远拦的监听）。
+    await click(button(L('btnSave')))
+    expect(guardRemoves()).toBe(1)
+    expect(leavePage()).toBe(false)
+  })
+
+  it('does not guard an untouched buffer after switching to another file', async () => {
+    mount()
+    await flush()
+    await click(row('app.ts'))
+    await click(button(L('btnEdit')))
+    const area = document.querySelector('.fs-area') as HTMLTextAreaElement
+    await act(async () => { typeInto(area, 'x') })
+    await flush()
+    expect(leavePage()).toBe(true)
+    // 页内切换文件（G-4：静默丢弃未保存编辑）**不触发** `beforeunload`，所以守卫拦不住它 ——
+    // 这是本段的已知覆盖边界，写在源码注释里；要盖住它得加应用内确认，本段不做。
+    await click(row('full.md'))
+    expect(leavePage()).toBe(false)
   })
 })
 
@@ -2668,6 +2908,8 @@ describe('split view (R4)', () => {
     // 参与同一套窄档收纳：文字在 `.fs-btnlabel` 层里，可访问名恒定。
     expect(splitBtn().querySelector('.fs-btnlabel')?.textContent).toBe(L('btnSplit'))
     expect(splitBtn().getAttribute('aria-label')).toBe(L('btnSplit'))
-    expect(splitBtn().getAttribute('title')).toBe(L('a11ySplit'))
+    // 气泡文案说清「再点一次关闭」这个非通用交互；原生 `title` 已换成受控气泡（不双气泡）。
+    expect(splitBtn().getAttribute('title')).toBeNull()
+    expect(splitBtn().closest('.fs-tipwrap')?.parentElement?.getAttribute('data-label')).toBe(L('a11ySplit'))
   })
 })

@@ -205,6 +205,56 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 
 **本段新引入、已登记的残留**：见 §5 #10 / #11。
 
+### 顶栏三个下拉被 `overflow` 裁剪（提交 `d84da01`；2026-09-12 00:03 用仓库探针复现）
+
+**现象**（用户报「解读选择胶囊 图层错误」）：悬停在「解读选择」/ 视图选择器上（工作区按钮是点击式）
+**看不到下拉**，屏幕上只有一条又宽又扁的深色长条——后者是浏览器**原生 `title` 气泡**（§5 #12），
+与下拉无关，本段只修下拉。
+
+**根因**：`Menu` 默认**内联**渲染（`portal = false`），面板 `.mr-list` 是 `position:absolute`
+（相对锚点 root，`top:calc(100% + 4px)`）⇒ 它是 `.fs-hbar`（**第一段为消跨列重叠加的兜底裁剪**）
+与 `.fs-hbar-mid` 两条 `overflow:hidden` 的**后代**，作为裁剪链内的绝对定位盒被整块切掉。
+修法**不是**撤裁剪（撤了跨列重叠立刻回来，见上文消融实验），而是给三处 `Menu` 各加 `portal`
+（面板挂到 `document.body`，逃出两条裁剪盒）——这也是 primitives 类型注释写明的用例：
+「Use when an ancestor's overflow clipping would crop the in-place list」（`lib/types/Menu.d.ts`）。
+
+**量级**（修复前，仓库探针 `--menus=inline`，7 场景 × 551 档 = **3857 档**，判据＝可见矩形 ∩ 全部
+`overflow != visible` 祖先裁剪盒）：
+
+| 面板 | 档数 | 承载形态 | 被整块裁 | 可见高集合 | 面板高 | 中心不可命中 |
+|---|---|---|---|---|---|---|
+| 视图选择器 | **3306** | `hbar` | **3306 [200–1200]** | **0**（恒零） | 176 | 3306 |
+| 解读选择 | 3306 | `hbar` | 102 | **0, 6** | 232 | 180 |
+| 工作区 | 3857 | `hbar` | 0 | 2 | 64 | 0 |
+
+即**视图选择器下拉在全部有该菜单的 3306 档里整块不可见**（可见高恒 0），解读选择可见高只剩 0–6px。
+
+**修法**：`src/client/index.tsx` 的三处 `Menu`（`genMenu` / `wsMenu` / 视图选择器）各加 `portal`，
+**CSS 声明零改动**（那段 CSS 只多了 3 行注释）；`closeOnPointerLeave` **原样保留**——React 的
+enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍是锚点的后代，指针移进面板**不**触发
+锚点 `pointerleave`（用真实 `react-dom@18` 复现：移到面板 0 次 leave，移到 React 树外的裸元素必然 leave）。
+
+**回归证据**（修复后，同口径实测）：
+- **三项铁律与修复前逐档逐字段 0 差异**（3857 档）：跨列可见重叠 **0 档** / 同列 **0 档** / 顶栏高集合
+  恒 **{48}** / 右列被整块裁下界 **357**（最后被裁档 356，门禁 ≤360，余量 3px）。
+- **打开态**：`portal` 形态三个面板 **0 档被裁**、可见高恒等于面板高（64 / 176 / 232）；三个面板同时
+  打开时视图面板中心有 1546 档被另一个 portal 面板盖住，用 `--menu=view` 单开该数为 **0**（合成场景
+  产物，不是缺陷）。
+- **打开态不改变顶栏几何**：带 `--menus` 与不带的两份 JSON，3857 档 × 全部非 `menu` 字段 **0 差异**。
+- 门禁 19 spec / **586 例**（较修复前 +4 例 portal 断言）+ coverage 100×4 + lint 0 错 0 警告 +
+  typecheck exit 0（原始输出 `/tmp/verify-final.txt`，该段授权面只含 `src/` 与 `tests/`，未跑 build）。
+- 几何数据的产物：`/tmp/menu-merge/out-full-inline-inline.json`、`out-full-portal-portal.json`
+  （**运行产物不进仓库**，跑法见 `tools/ui-probe/README.md` §1.5，两行命令即可复跑）。
+- 诊断报告（含订正项与诚实清单）已归档：`docs/agent/reports/2026-09-11-ui-revamp-menu-clipping.md`。
+
+**生效条件**：改的是 `src/`，运行中的页面要看到修复须 `npm run build` + 重启 dsh web（**未核实是否已做**）。
+
+**订正（本段记录，与 `docs/spec-ui-revamp.md` 有关，影响 §5 #12 的措辞）**：`Tooltip` 那条要求写在
+规格 **§1 R2**（「三个按钮收成纯图标，且全部保留 `Tooltip` + `aria-label`」），而**§2 第 87 行已明文
+把它作废**：「原文写的『原生 `<button>` + `Tooltip` + `aria-label`』是我写错了」，现行口径是
+`<Button size icon title>` + 补 `aria-label`（再包一层 `Tooltip` 会**出双气泡**）。所以待办 #12 **不是**
+「按规格换 Tooltip」，而是「原生 `title` 长条怎么处理」。
+
 ## 4. 回滚
 
 ```bash
@@ -233,6 +283,7 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 | 9 | ~~`.fs-genwrap` 造成的同列重叠~~ | ✅ **2026-09-11 23:29:46 已完成**（第三段 a 去掉 `.fs-genwrap` 的 `min-width:0`：同列可见重叠由基线 **1002 档** → **0 档**（3857 档口径，含第三段 b 的 R4 分屏按钮后仍为 0）。代价已如实登记：右列整块裁下界由面板 284 退到 314，第三段 b 再因分屏按钮退到 356——见 §5 #11） |
 | 10 | 面板 **≤400px** 时中列视图名被 `.fs-hbar-mid{overflow:hidden}` 裁掉 | **已知边界，不修**（第三段 b 用户裁决：牺牲显示、保住功能键）。区间实测：S1/S2/S4/S6 为面板 200–400、S3 为 200–252、S5 为 200–352（步长 1）。成因：中列是 `minmax(0,1fr)`，要给视图名保 min-content 就得把溢出推给右列，直接违反「右列不被整块裁」的门禁。视图选择器与路径仍在（路径给全），只是窄档下视图名被裁 |
 | 11 | 右列整块裁下界由 314 退到 **356**（R4 分屏按钮给右列 +42px min-content） | **已知残留，随功能引入**。判据与口径见上节表格第三行：门禁要求下界 ≤360，实测 356、**余量仅 4px**（口径 A 的绝对像素端点会随字体渲染小幅移动，换字体族需复测）。同一探针的 S0 场景（无打开对象、右列只有分屏按钮）另在**面板 200–209 有 10 档右列部分裁切**（可见但不完整，门禁口径不含此项）。进一步消解只能把分屏按钮挪去左列或再收一档，代价都是挤掉别的东西，本段未做 |
+| 12 | 顶栏的原生 `title` 气泡（挂在「解读选择」上的长条，文案即 `a11yGen`：`生成/重新生成：目录概览·文件摘要·源码注解·文章翻译`） | **待用户裁决**。它是**浏览器原生**气泡：宽度 / 深色底 / 位置 / 层级完全不受页面控制，表现为按钮下方一条又宽又扁的深色条、**压住正文**，且不受任何 `overflow` 裁剪（正是这一点让它比被裁的下拉更显眼）。**规格口径已订正（见 §3 末节「顶栏三个下拉被 `overflow` 裁剪」的末段「订正」）**：`Tooltip` 那要求写在 `docs/spec-ui-revamp.md` **§1 R2**，而 **§2 第 87 行已明文作废**该写法（`Button` 已透传 `title`，再包一层 `Tooltip` 会**出双气泡**）⇒ 待裁决的是「这条长条怎么处理」（缩短文案 / 只留 `aria-label` / 另设计气泡 / 维持原状），**不是**「按规格换 Tooltip」。同批一并裁决**可访问名缺口**：`foldBtn` / `refreshBtn` **只有 `title`、没有 `aria-label`**（实测 `src/client/index.tsx` 里 `IconPanelLeftOutline16` 与 `IconRefreshOutline16` 两个 `Button`），而规格 §2 现行口径要求纯图标按钮「`<Button size icon title>` + 补 `aria-label`」；`viewBtn` 只有 `title`（有可见文字，名字来自文字）；`edit` / `save` 只有 `aria-label`（无 `title`）；`genAnchor` / `wsAnchor` / `splitBtn` 两个都有。**反向风险**：`genAnchor` 悬停即开 Menu，若给它加气泡需决定关掉气泡（`disabled`）或留 `delayMs` 时差，否则悬停会同时出气泡与下拉 |
 
 ## 6. 未做且明确不做的
 

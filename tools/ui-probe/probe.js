@@ -9,8 +9,12 @@
 //
 // 用法: node tools/ui-probe/probe.js --tag=<名> [--css=<tsx文件>] [--wsicon] [--splitpane]
 //                   [--extra=<css文件>] [--only6] [--sn=1] [--sw=10] [--dumpW=400]
+//                   [--menus=inline|portal] [--menu=ws|view|gen]
 //                   [--shell-css=<dir>] [--outdir=<dir>] [--chrome=<路径>] [--window=1600,1000]
 // 注意：只有 `--名=值` 形式被识别，位置参数会被**静默忽略**（踩过的坑，见 README）。
+//
+// `--menus` 是**菜单打开态**（交互态）场景：默认不开面板；`inline` 复刻修复前的内联面板、
+// `portal` 复刻修复后的 portal 面板，逐档量面板自身的可见高与被整块裁掉的档数。
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -50,6 +54,24 @@ const dumpW = Number(args.dumpW || 0)
 const extra = args.extra ? '\n' + fs.readFileSync(args.extra, 'utf8') : ''
 // 分屏开启态：body 里多一条分隔条 + 一份只读副本窗格（顶栏几何不随它变，用于验证这一点）。
 const splitPaneOn = args.splitpane === '1'
+/**
+ * 菜单打开态（交互态场景）：不带该选项时**一个面板都不注入**，既有四项门禁的读数口径不变。
+ * - `--menus=inline`：面板留在锚点旁（`.mr` root 内、`position:absolute`）⇒ 它是 `.fs-hbar` /
+ *   `.fs-hbar-mid` 的后代，落进那两条 `overflow:hidden` 的裁剪链 —— 这是修复前（Menu 未传
+ *   `portal`）的真实形态。
+ * - `--menus=portal`：面板搬到 `#stage` 之外（模拟 `createPortal(list, document.body)`）⇒
+ *   祖先链里没有 `.fs-hbar` —— 这是修复后的形态。
+ * 裸 `--menus`（无值）等同于 `inline`，即「修复前的基线」。
+ */
+const menus = args.menus === undefined ? '' : (args.menus === '1' ? 'inline' : args.menus)
+if (menus && menus !== 'inline' && menus !== 'portal') {
+  throw new Error(`--menus 只认 inline / portal（或不带值＝inline），收到：${menus}`)
+}
+/** `--menu=<kind>`：只打开 ws / view / gen 中的一个 —— 真实使用同一时刻只开一个菜单。 */
+const menuOnly = args.menu || ''
+if (menuOnly && !['ws', 'view', 'gen'].includes(menuOnly)) {
+  throw new Error(`--menu 只认 ws / view / gen，收到：${menuOnly}`)
+}
 
 /** 从 index.tsx 的 CSS 常量数组逐字提取样式文本。 */
 function extractCss(file) {
@@ -125,24 +147,46 @@ function btn(o) {
   const inner = (o.icon ? iconSpan : '') + text
   return `<button type="button" class="${cls}"${o.disabled ? ' disabled' : ''}>${inner}</button>`
 }
-/** Menu 的 root 是 inline-flex 的 span，锚点在里面；宽度与裸按钮等价，探针保留这一层。 */
-function wrapped(inner) { return `<span class="mr">${inner}</span>` }
+/**
+ * 复刻一个打开态的下拉面板（Menu 的 `.list`：`min-width:218px` / `padding:4px`，行是 `.item`）。
+ * 项文案取 locale 里的真实值；`--menu=<kind>` 时只生成被点名的那个。形态由 `--menus` 决定：
+ * portal 形态给面板再挂上 `.portal`（`position:fixed` + `z-index:1100`），坐标由浏览器端按锚点算。
+ */
+function panelHtml(kind) {
+  if (menuOnly && menuOnly !== kind) return ''
+  const rows = {
+    ws: ['dsh-fs'],
+    view: ['文件摘要', '源码注解', '文章翻译'],
+    gen: ['目录概览', '文件摘要', '源码注解', '文章翻译'],
+  }[kind].map(t => `<div class="mr-item" role="menuitem"><span class="mr-itemLabel">${t}</span></div>`).join('')
+  const cls = 'mr-list' + (menus === 'portal' ? ' mr-portal' : '')
+  return `<div class="${cls}" data-menu="${kind}" role="menu"><div class="mr-viewport" role="presentation">${rows}</div></div>`
+}
+/** 内联形态的面板：与锚点同处一个 `.mr` root（`position:absolute` 相对它，落进裁剪链）。 */
+function inlinePanel(kind) { return menus === 'inline' ? panelHtml(kind) : '' }
+/** Menu 的 root 是 inline-flex 的 span（`.mr`，`position:relative`），锚点在里面；宽度与裸按钮等价，探针保留这一层。 */
+function wrapped(inner, panel) { return `<span class="mr">${inner}${panel || ''}</span>` }
+/** portal 形态的面板：挂在 `#stage` 之外（挂在 body 直下的容器里），祖先链里没有 `.fs-hbar`。 */
+function portals(o) {
+  if (menus !== 'portal') return ''
+  return (o.ws ? panelHtml('ws') : '') + (o.view ? panelHtml('view') : '') + (o.gen ? panelHtml('gen') : '')
+}
 
 function scenario(o) {
   const left = [
     o.ws ? wrapped(btn({
       size: 'vp-md', icon: true, label: WS[o.ws], extra: 'fs-wsbtn',
       labelClass: wsIcon ? 'fs-btnlabel fs-wslabel' : null,
-    })) : '',
+    }), inlinePanel('ws')) : '',
     `<div class="fs-hd-actions">${btn({ size: 'vp-sm', icon: true })}${btn({ size: 'vp-sm', icon: true })}</div>`,
   ].join('')
   const mid = [
-    o.view ? `<div class="fs-viewwrap">${wrapped(btn({ size: 'vp-sm', label: o.viewLabel || '源码', extra: 'fs-viewbtn' }))}</div>` : '',
+    o.view ? `<div class="fs-viewwrap">${wrapped(btn({ size: 'vp-sm', label: o.viewLabel || '源码', extra: 'fs-viewbtn' }), inlinePanel('view'))}</div>` : '',
     o.path ? `<div class="fs-hbar-path"><div class="fs-hd-path">${PATHS[o.path]}</div></div>` : '',
   ].join('')
   const right = [
     btn({ size: 'vp-sm', icon: true, label: '分栏', labelClass: 'fs-btnlabel' }),
-    o.gen ? `<div class="fs-genwrap">${wrapped(btn({ size: 'vp-sm', icon: true, label: o.genLabel || '解读选择', disabled: !!o.genDisabled, labelClass: 'fs-btnlabel' }))}</div>` : '',
+    o.gen ? `<div class="fs-genwrap">${wrapped(btn({ size: 'vp-sm', icon: true, label: o.genLabel || '解读选择', disabled: !!o.genDisabled, labelClass: 'fs-btnlabel' }), inlinePanel('gen'))}</div>` : '',
     o.dirty ? '<span class="fs-dirty">● 未保存</span>' : '',
     o.edit ? btn({ size: 'vp-md', icon: true, label: o.editLabel || '编辑', labelClass: 'fs-btnlabel' }) : '',
     o.save ? btn({ size: 'vp-md', icon: true, label: '保存', labelClass: 'fs-btnlabel' }) : '',
@@ -175,10 +219,10 @@ ${btnCss}
 ${menuCss}
 ${cssSrc}
 </style></head><body>
-<div id="stage"></div><pre id="OUT"></pre>
+<div id="stage"></div><div id="portal"></div><pre id="OUT"></pre>
 <script>
-const SCEN = ${JSON.stringify(scenarios.map(s => ({ id: s.id, html: scenario(s) })))};
-const NARROW = ${sn}, WIDE = ${sw};
+const SCEN = ${JSON.stringify(scenarios.map(s => ({ id: s.id, html: scenario(s), portal: portals(s) })))};
+const NARROW = ${sn}, WIDE = ${sw}, MENUS = ${JSON.stringify(menus)};
 const DUMP_W = ${JSON.stringify(dumpW)};
 const WIDTHS = [];
 for (let w = 1200; w >= 701; w -= WIDE) WIDTHS.push(w);
@@ -187,11 +231,32 @@ function inter(a,b){const x=Math.max(a.left,b.left),y=Math.max(a.top,b.top),x2=M
 function area(r){return r?(r.right-r.left)*(r.bottom-r.top):0}
 function rect(el){const r=el.getBoundingClientRect();return{left:r.left,top:r.top,right:r.right,bottom:r.bottom}}
 function clipRect(el){let r=rect(el),p=el.parentElement;while(p){const cs=getComputedStyle(p);if(cs.overflowX!=='visible'||cs.overflowY!=='visible'){r=inter(r,rect(p))||{left:0,top:0,right:0,bottom:0}}p=p.parentElement}return r}
+/**
+ * portal 形态的面板按真实实现定位：锚点 root 的 rect 下方 4px（Menu 读 rootRef 的 getBoundingClientRect）。
+ * 面板本身已经是 .mr-portal（position:fixed），这里只补 left/top。内联形态不用管 ——
+ * 面板由 .mr-list 的 position:absolute;top:calc(100% + 4px) 自己贴在锚点下方。
+ */
+function placePortals(){if(MENUS!=='portal')return;const map={ws:'.mr .fs-wsbtn',view:'.fs-viewwrap',gen:'.fs-genwrap'};
+ for(const kind in map){const a=stage.querySelector(map[kind]),p=portalEl.querySelector('[data-menu="'+kind+'"]');
+  if(!a||!p)continue;const r=rect(a);p.style.left=r.left+'px';p.style.top=(r.bottom+4)+'px'}}
+/**
+ * 菜单打开态读数：与其它四项**同一套判据**（clipRect）。host 是按**祖先链**实测的承载形态 ——
+ * hbar = 面板还在 .fs-hbar 子树里（会被那两条 overflow:hidden 裁），body = 面板已挂到
+ * #stage 之外（祖先链无 .fs-hbar）。判据不依赖 --menus 的名字，只看 DOM。
+ */
+function menuRead(){const res={};for(const p of document.querySelectorAll('[data-menu]')){const kind=p.getAttribute('data-menu');
+ const raw=rect(p),vis=clipRect(p);const cx=(vis.left+vis.right)/2,cy=(vis.top+vis.bottom)/2;
+ const hit=area(vis)>0.5?document.elementFromPoint(cx,cy):null;
+ res[kind]={host:p.closest('.fs-hbar')?'hbar':'body',
+  rawH:+(raw.bottom-raw.top).toFixed(1),visH:+(vis.bottom-vis.top).toFixed(1),visW:+(vis.right-vis.left).toFixed(1),
+  rawTop:+raw.top.toFixed(1),visTop:+vis.top.toFixed(1),
+  gone:area(vis)<=0.5,cropped:area(vis)>0.5&&(vis.bottom-vis.top)<(raw.bottom-raw.top)-0.5,
+  hit:!!hit&&(hit===p||p.contains(hit))}}return res}
 function colOf(el){if(el.closest('.fs-hbar-left'))return'L';if(el.closest('.fs-hbar-mid'))return'M';if(el.closest('.fs-hbar-right'))return'R';return null}
 function tag(el){const cls=el.className.split(' ').filter(c=>c!=='vp-ghost'&&c!=='vp-btn').slice(0,2).join('.');return cls+':'+(el.textContent||'').slice(0,8)}
-const stage=document.getElementById('stage'),out=[];
-for(const scen of SCEN){stage.innerHTML=scen.html;const wrap=stage.querySelector('.fs-wrap');
- for(const w of WIDTHS){wrap.style.width=w+'px';void wrap.offsetHeight;
+const stage=document.getElementById('stage'),portalEl=document.getElementById('portal'),out=[];
+for(const scen of SCEN){stage.innerHTML=scen.html;portalEl.innerHTML=scen.portal;const wrap=stage.querySelector('.fs-wrap');
+ for(const w of WIDTHS){wrap.style.width=w+'px';void wrap.offsetHeight;placePortals();
   let cand=[...stage.querySelectorAll('button, .fs-hd-path, .fs-dirty')].filter(el=>colOf(el));
   cand=cand.filter(el=>!cand.some(o=>o!==el&&el.contains(o)));
   const items=cand.map(el=>{const vis=clipRect(el),raw=rect(el);
@@ -215,7 +280,8 @@ for(const scen of SCEN){stage.innerHTML=scen.html;const wrap=stage.querySelector
       clickable:it.clickable,hitTag:it.hitTag})),
       colBoxes:cols.map(c=>({c:c.className,box:[+rect(c).left.toFixed(1),+rect(c).right.toFixed(1),+rect(c).top.toFixed(1),+rect(c).bottom.toFixed(1)]})),
       hbar:[+hb.left.toFixed(1),+hb.right.toFixed(1),+hb.top.toFixed(1),+hb.bottom.toFixed(1)],
-      panes:[...stage.querySelectorAll('.fs-main, .fs-splitpane')].map(p=>({c:p.className,w:+(rect(p).right-rect(p).left).toFixed(1)}))})
+      panes:[...stage.querySelectorAll('.fs-main, .fs-splitpane')].map(p=>({c:p.className,w:+(rect(p).right-rect(p).left).toFixed(1)}))
+      ,...(MENUS?{menu:menuRead()}:{})})
     continue
   }
   out.push({s:scen.id,w,visN:visPairs.length,sameColN:sameCol.length,goneN:goneList.length,
@@ -228,6 +294,9 @@ for(const scen of SCEN){stage.innerHTML=scen.html;const wrap=stage.querySelector
     goneList:goneList.slice(0,8),unclickList:unclickList.slice(0,8),vis:visPairs.slice(0,3),same:sameCol.slice(0,3),colN:colOverlap,
     // 顶栏「单行」断言：折行会让顶栏高度成倍增长，故以高度集合判定是否全程单行。
     hbarH:+(hb.bottom-hb.top).toFixed(1),
+    // 菜单打开态（只有 --menus 会注入面板，故不带该选项时这一字段不出现）：面板自身的
+    // 可见高 / 是否被整块裁 / 承载形态（按祖先链判：hbar＝仍在 .fs-hbar 子树里）。
+    ...(MENUS?{menu:menuRead()}:{}),
     // 两档的切换点断言：工作区 label 是否已让位、右列三个按钮的 label 是否在图标态。
     wsLabShown:(function(){const e=stage.querySelector('.fs-wslabel');return e?e.offsetWidth>0:null})(),
     wsBtnW:(function(){const e=stage.querySelector('.fs-wsbtn');return e?+e.getBoundingClientRect().width.toFixed(1):null})(),
@@ -237,7 +306,9 @@ document.getElementById('OUT').textContent=JSON.stringify(out);
 </script></body></html>`
 
 fs.mkdirSync(outDir, { recursive: true })
-const outFile = path.join(outDir, `probe-${tag}.html`)
+// 打开态跑两个形态时产物会互相覆盖，故文件名带上形态（不带 --menus 时与旧文件名一致）。
+const suffix = menus ? `-${menus}` : ''
+const outFile = path.join(outDir, `probe-${tag}${suffix}.html`)
 fs.writeFileSync(outFile, html)
 // --window-size 必须比最宽采样档大出一截：窗口不够宽时视口外的元素拿不到
 // elementFromPoint 命中，会被判成「不可点」=> 假红（见 README「跑法」）。
@@ -248,7 +319,7 @@ const dump = execFileSync(chrome, [
 const m = /<pre id="OUT">([\s\S]*?)<\/pre>/.exec(dump)
 if (!m) throw new Error('未从 dump 里取到 OUT')
 const data = JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'))
-const jsonFile = path.join(outDir, `out-${tag}.json`)
+const jsonFile = path.join(outDir, `out-${tag}${suffix}.json`)
 fs.writeFileSync(jsonFile, JSON.stringify(data, null, 1))
 console.log('wrote', jsonFile, 'rows=', data.length)
 
@@ -265,6 +336,29 @@ for (const r of data) {
   b.hbarHs.add(r.hbarH)
 }
 const rng = a => a.length ? `${Math.min(...a)}–${Math.max(...a)}` : '-'
+// 菜单打开态专项（只有 --menus 跑得出数据）：面板自身的可见高与被整块裁掉的档数。
+// 判据与四项门禁**同一套**（clipRect = 元素矩形 ∩ 所有 overflow!=visible 祖先裁剪盒）。
+if (menus) {
+  const per = {}
+  for (const r of data) for (const k of Object.keys(r.menu || {})) {
+    const mm = r.menu[k]
+    per[k] ||= { n: 0, gone: 0, cropped: 0, noHit: 0, minVisH: Infinity, rawH: 0, hosts: new Set(), badW: [], hs: new Set() }
+    const b = per[k]
+    b.n++
+    b.rawH = Math.max(b.rawH, mm.rawH)
+    b.minVisH = Math.min(b.minVisH, mm.visH)
+    b.hs.add(mm.visH)
+    b.hosts.add(mm.host)
+    if (mm.gone) { b.gone++; b.badW.push(r.w) } else if (mm.cropped) { b.cropped++; b.badW.push(r.w) }
+    if (!mm.hit) b.noHit++
+  }
+  console.log(`菜单打开态（--menus=${menus}${menuOnly ? ' --menu=' + menuOnly : ''}）| 面板 | 档数 | 承载形态（祖先链） | 被整块裁 | 被裁（部分+整块） | 最小可见高 | 面板高 | 中心不可命中`)
+  for (const [k, b] of Object.entries(per)) {
+    console.log(`${k} | ${b.n} | ${[...b.hosts].join('/')} | ${b.gone} | ${b.cropped + b.gone} [${rng(b.badW)}] | ${b.minVisH.toFixed(1)} | ${b.rawH.toFixed(1)} | ${b.noHit}`)
+    const hs = [...b.hs].sort((x, y) => x - y)
+    console.log(`  ${k} 可见高集合（去重，最多列 8 个）: ${hs.slice(0, 8).join(', ')}${hs.length > 8 ? ' …' : ''}`)
+  }
+}
 console.log('场景 | 档数 | 跨列重叠 | 同列重叠 | 被裁 | 右列被裁 | 顶栏高集合')
 for (const [k, b] of Object.entries(byScen)) {
   console.log(`${k} | ${b.n} | ${b.vis} [${rng(b.visW)}] | ${b.same} [${rng(b.sameW)}] | ${b.gone} [${rng(b.goneW)}] | ${b.goneRightW.length} [${rng(b.goneRightW)}] | ${[...b.hbarHs].join(',')}`)

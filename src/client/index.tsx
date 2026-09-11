@@ -14,7 +14,7 @@ import {
   Button, CodeBlock, IconBrowseOutline16, IconCheckOutline16, IconChevronRightOutline14,
   IconEditOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16,
   IconLoadingOutline16, IconPanelLeftOutline16, IconPlusOutline16, IconRefreshOutline16,
-  MarkdownText, Menu, Tag,
+  MarkdownText, Menu, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
@@ -829,6 +829,33 @@ interface FsViewProps {
 }
 
 /**
+ * 给一个顶栏按钮挂上 primitives 的 `Tooltip`（悬停/聚焦气泡）。
+ *
+ * **为什么需要外面这层原生 `<span>`（实测，不是推断）**：`Tooltip` 靠 `cloneElement(children, {ref})`
+ * 拿到锚点（`lib/index.js` 的 `anchor = useRef(null)`），而 primitives 的 `Button` 是**普通函数组件、
+ * 没有 `forwardRef`**（同版本 `Button.tsx` 的实现；宿主自己的 4 处 `Tooltip` 也一律包原生
+ * `<button>` / `<span>`，从不包 `Button`）。本项目跑 React **18.3.1**，往函数组件上挂 `ref` 只会
+ * 得到一条警告（`Function components cannot be given refs`）且 `anchor.current` 恒为 null ——
+ * 于是气泡**永远不渲染**。所以锚点必须是原生元素：按钮外面加一层只做收缩包裹的 `.fs-tipwrap`。
+ * 这一层不改变任何被测量盒子的几何（3857 档逐档实测 0 差异，见
+ * `docs/agent/reports/2026-09-12-collapse-split-edit-merge.md` §7.2）。
+ *
+ * 气泡替代的是原生 `title`：原生气泡的宽度/底色/位置/层级全不受页面控制，会在正文上压一条
+ * 又宽又扁的深色长条（用户截图的那条就是它），换成 `Tooltip` 才是受控浮层。
+ * @param btn - 要挂气泡的按钮元素。
+ * @param label - 气泡文案（纯图标态下它也是可读的那一份提示；可访问名另由 `aria-label` 给出）。
+ * @param key - 用在数组子节点里时的 React key（`tip()` 自己生成元素，没处传 key）。
+ * @returns 包好气泡的锚点元素。
+ */
+function tip(btn: React.JSX.Element, label: string, key?: string): React.JSX.Element {
+  return (
+    <Tooltip key={key} label={label}>
+      <span className="fs-tipwrap">{btn}</span>
+    </Tooltip>
+  )
+}
+
+/**
  * 文件系统页签主视图：工作区切换 + 文件树（可折叠/拖宽）+ 查看/编辑器。
  * @param props - 见 {@link FsViewProps}。
  * @returns 页签主视图元素。
@@ -993,6 +1020,25 @@ function FsView(props: FsViewProps): React.JSX.Element {
     }).catch(swallowTreeLoadFailure)
   }, [opened && opened.path])
   const viewer = useOpenedViewer(opened || {}, onTrDone)
+  // 未保存内容的离开提示（C）：编辑内容只活在内存里（`UiState` 只持久化
+  // rootPath / curWsId / treeW / collapsed / opened / expanded），所以刷新或关标签页会让它**全丢**
+  // —— 文件本身无损，丢的是那份还没写盘的编辑。`dirty` 期间就挂 `beforeunload`，变回 false 时卸载
+  // （依赖 `dirty`，每次翻转重挂一次，不常驻监听）。
+  // **覆盖边界（如实写明）**：它只拦「刷新 / 关闭标签页 / 关窗」这类**页面级离开**；
+  //   * **拦不住页内切文件、切工作区、切视图** —— 那些走的是 React 状态切换，根本不触发
+  //     `beforeunload`（G-4 的「切换文件静默丢弃未保存编辑」因此照旧）。
+  //   * 要盖住页内切换得加应用内确认（弹窗 / 拦截 onOpen），本段不做。
+  // 现代浏览器忽略自定义文案，只显示自家的通用确认话术；`preventDefault()` 是现行规范要求的写法，
+  // `returnValue` 只为老浏览器（它们只看这个字段）保留。
+  React.useEffect(() => {
+    if (!viewer.dirty) return
+    function onBeforeUnload(e: BeforeUnloadEvent): void {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [viewer.dirty])
   const [wsMenuOpen, setWsMenuOpen] = React.useState(false)
   // 解读选择下拉（R1）：当前对象可用的解读入口（未生成→生成；已生成→重新生成，覆盖重写）。
   const [genMenuOpen, setGenMenuOpen] = React.useState(false)
@@ -1032,6 +1078,12 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const genLabel = genBusy ? t('btnTrLoading') : t('btnGen')
   // 窄档（R2）：三个按钮的可见文字收进 `.fs-btnlabel`，由样式表按容器实测宽度隐藏；
   // 文字节点仍在 DOM 里，纯图标时的可访问名由 aria-label 保证（Button 透传原生属性）。
+  // 气泡统一走 primitives 的 `Tooltip`（`tip()` 说明为什么锚点要加一层原生 span），
+  // 相应地**去掉 `title`**：留着它会同时冒出原生那条深色长条，正是本次要消掉的「双气泡」。
+  // 例外只有一个：**悬停即展开下拉的锚点不挂气泡**（解读选择与视图选择器）——它们的悬停手势
+  // 已经被下拉占用（外层 `.fs-genwrap` / `.fs-viewwrap` 的 `onMouseEnter` 开菜单），再挂气泡就是
+  // 悬停同时弹两个浮层。这两处改为只留 `aria-label` + 可见文字/下拉本身作可读提示。
+  // 解读选择的旧 `title`（即 `a11yGen` 那条长文案）就是用户截图里压在正文上的深色长条。
   const genAnchor = (
     <Button
       size="sm"
@@ -1039,7 +1091,6 @@ function FsView(props: FsViewProps): React.JSX.Element {
       onClick={() => { if (genItems.length) setGenMenuOpen(true) }}
       disabled={genBusy}
       aria-label={genLabel}
-      title={genBusy ? t('btnTrLoading') : t('a11yGen')}
     >
       <span className="fs-btnlabel">{genLabel}</span>
     </Button>
@@ -1079,29 +1130,32 @@ function FsView(props: FsViewProps): React.JSX.Element {
   )
   const curWs = wsItems.find(w => w.workspaceId === curWsId)
   const curWsName = (curWs && curWs.title) || rootName || t('pickWs')
-  const foldBtn = (
+  // 折叠/刷新是**常驻纯图标**（这两个按钮没有 `.fs-btnlabel`，任何宽度下都只有图标），
+  // 所以它们的提示只能靠气泡与可访问名 —— 补上原先缺的 `aria-label`（规格 §2 的现行口径：
+  // 纯图标按钮 = `Button size icon` + `aria-label`；源码文本从 `title` 移到气泡里）。
+  const foldBtn = tip(
     <Button
       size="sm"
       icon={<IconPanelLeftOutline16 />}
       onClick={() => setCollapsed(!collapsed)}
-      title={collapsed ? t('a11yExpandTree') : t('a11yCollapseTree')}
-    />
+      aria-label={collapsed ? t('a11yExpandTree') : t('a11yCollapseTree')}
+    />,
+    collapsed ? t('a11yExpandTree') : t('a11yCollapseTree'),
   )
   // 工作区名也收进 label 层（本段第三档）：它比右列三个按钮更晚才让位，因为它是「当前在
   // 看哪个工作区」的标识，容器还放得下就用文字（见样式表里那条更窄的档）。
-  // 文字被藏起来时，可访问名与悬停名由恒定的 aria-label / title 给出；长名本来就被
-  // `.fs-wsbtn{max-width:220px}` 截断，title 顺带补全完整名。
-  const wsAnchor = (
+  // 文字被藏起来时，可访问名由恒定的 aria-label 给出；长名本来就被
+  // `.fs-wsbtn{max-width:220px}` 截断，气泡顺带补全完整名。
+  const wsAnchor = tip((
     <Button
       className="fs-wsbtn"
       icon={<IconFolderOpenOutline16 />}
       onClick={() => setWsMenuOpen(true)}
       aria-label={curWsName}
-      title={curWsName}
     >
       <span className="fs-btnlabel fs-wslabel">{curWsName}</span>
     </Button>
-  )
+  ), curWsName)
   const wsMenu = (
     <Menu
       open={wsMenuOpen}
@@ -1114,13 +1168,15 @@ function FsView(props: FsViewProps): React.JSX.Element {
       onClose={() => setWsMenuOpen(false)}
     />
   )
-  const refreshBtn = (
+  // 刷新也是常驻纯图标：同样补 `aria-label` + 气泡（原先只有 `title`）。
+  const refreshBtn = tip(
     <Button
       size="sm"
       icon={<IconRefreshOutline16 />}
       onClick={() => refreshRoot()}
-      title={t('a11yRefresh')}
-    />
+      aria-label={t('a11yRefresh')}
+    />,
+    t('a11yRefresh'),
   )
   // 视图选择器（R3）：单个按钮 + 悬停下拉，取代原来一排 Pill。
   // 按钮文字恒等于当前视图名（`labLabelKey(viewer.mode)`），与所显示内容不分离；点击按钮主体
@@ -1142,7 +1198,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
               className="fs-viewbtn"
               size="sm"
               onClick={() => viewer.setMode(viewer.mode)}
-              title={t('a11yViewPick')}
+              // 这里**不挂气泡**（也不留 `title`）：悬停这个按钮就是展开视图下拉的手势
+              // （外层 `.fs-viewwrap` 的 `onMouseEnter`），再挂气泡会同时弹两个浮层。
+              // 它的可读提示因此来自按钮上那串恒等于当前视图名的文字 + 悬停即现的下拉。
             >
               {t(labLabelKey(viewer.mode, viewIsDir))}
             </Button>
@@ -1169,14 +1227,22 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const editActions = (opened && viewer.hasSource && viewer.mode === 'source')
     ? [
       viewer.dirty ? <span key="dirty" className="fs-dirty">{t('a11yDirty')}</span> : null,
-      // 编辑/保存同走 `.fs-btnlabel`：窄档只留图标，此时 aria-label 就是它们的可访问名。
-      // 保存按钮原先没有图标（R2 让它与 DSH 的保存惯例一致：GoalBar 与 QueueDock 都用 ✓）。
-      <Button key="edit" icon={<IconEditOutline16 />} onClick={viewer.toggleEdit} aria-label={viewer.editMode ? t('btnView') : t('btnEdit')}>
-        <span className="fs-btnlabel">{viewer.editMode ? t('btnView') : t('btnEdit')}</span>
-      </Button>,
-      <Button key="save" icon={<IconCheckOutline16 />} onClick={viewer.save} aria-label={t('btnSave')}>
-        <span className="fs-btnlabel">{t('btnSave')}</span>
-      </Button>,
+      // 编辑与保存**合成同一个按钮**（用户裁决 B）：查看态点它进编辑态，编辑态点它保存。
+      // 能合并的依据是「保存即回到查看态」本来就闭环 —— `save()` 里带着 `setEditMode(false)`，
+      // 所以合并不存在「卡在编辑态」的死角；而平常（查看）状态下「保存」按钮点下去也没有用途。
+      // 图标与文案随态切换，两个图标都来自 primitives（编辑＝铅笔、保存＝DSH 保存惯例的 ✓）。
+      // 合并后不再有独立的「查看」按钮：它原本只做「不保存就退回查看态」，而那条路径已由
+      // 保存/切视图覆盖（代价见报告：编辑内容**没有**「放弃编辑」入口）。
+      // 文字进 `.fs-btnlabel` 由样式表按容器宽度隐藏，纯图标态的可访问名靠恒定的 aria-label。
+      tip((
+        <Button
+          icon={viewer.editMode ? <IconCheckOutline16 /> : <IconEditOutline16 />}
+          onClick={viewer.editMode ? viewer.save : viewer.toggleEdit}
+          aria-label={viewer.editMode ? t('btnSave') : t('btnEdit')}
+        >
+          <span className="fs-btnlabel">{viewer.editMode ? t('btnSave') : t('btnEdit')}</span>
+        </Button>
+      ), viewer.editMode ? t('btnSave') : t('btnEdit'), 'edit'),
     ]
     : null
 
@@ -1258,18 +1324,19 @@ function FsView(props: FsViewProps): React.JSX.Element {
   // 分屏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝状态、右＝操作」。它与右列三个按钮
   // 共用同一套窄档收纳（文字进 `.fs-btnlabel`，≤672px 的档只留图标），可访问名由恒定的
   // aria-label 给出；没有打开对象时不可用（没有可复制的视图）。
-  const splitBtn = (
+  // 分屏按钮：气泡文案是 `a11ySplit`（说清「再点一次关闭」这个非通用交互），而按钮自己的
+  // 可访问名仍是恒定的 `btnSplit`（与它可见的「分栏」二字一致）。
+  const splitBtn = tip((
     <Button
       size="sm"
       icon={<SplitGlyph />}
       onClick={toggleSplit}
       disabled={!opened}
       aria-label={t('btnSplit')}
-      title={t('a11ySplit')}
     >
       <span className="fs-btnlabel">{t('btnSplit')}</span>
     </Button>
-  )
+  ), t('a11ySplit'))
   const splitBar = splitOn
     ? <div className={'fs-split' + (draggingSplit ? ' active' : '')} onMouseDown={startSplitDrag} />
     : null
@@ -1289,6 +1356,13 @@ function FsView(props: FsViewProps): React.JSX.Element {
       </div>
     )
 
+  // 右侧分屏（R4）的两件套：分隔条 + 只读副本窗格。它们与「文件树折叠」是两个互不相干的开关，
+  // 所以**两个分支都必须渲染**——先前只把它们写进「未折叠」分支，于是折叠文件树之后再点「分栏」，
+  // 开关状态翻转了、右侧窗格却不出现（`splitOn` 为真而 `.fs-splitpane` 不在 DOM 里）。
+  // 三者的兄弟顺序在两处必须一致（editor → splitBar → splitPane）：拖拽回调正是靠
+  // `previousElementSibling` / `nextElementSibling` 取左右窗格来测宽度的。
+  const splitParts = <>{splitBar}{splitPane}</>
+
   let body: React.JSX.Element
   if (!collapsed) {
     const side = (
@@ -1304,10 +1378,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
       </div>
     )
     const split = <div className={'fs-split' + (dragging ? ' active' : '')} onMouseDown={startDrag} />
-    // 右侧分屏（R4）：分隔条与窗格都复用左侧树宽那套类与交互（`.fs-split` + startSplitDrag）。
-    body = <div className="fs-body">{side}{split}{editor}{splitBar}{splitPane}</div>
+    body = <div className="fs-body">{side}{split}{editor}{splitParts}</div>
   } else {
-    body = <div className="fs-body">{editor}</div>
+    body = <div className="fs-body">{editor}{splitParts}</div>
   }
 
   const hbar = (
@@ -1351,6 +1424,13 @@ const CSS = [
   // 别改回内联渲染 —— 内联就是「鼠标放上去看不到下拉」的成因；`.fs-hbar-mid` 那条同理。
   '.fs-hbar-left{justify-self:start;display:flex;align-items:center;gap:8px}',
   '.fs-hd-actions{flex:none;display:flex;align-items:center;gap:2px;min-width:0}',
+  // 顶栏气泡（`Tooltip`）的锚点层：`Tooltip` 需要一个能挂 ref 的**原生**元素
+  //（primitives 的 `Button` 是普通函数组件，React 18 下挂不上 ref，见 `tip()` 的注释），
+  // 所以每个挂气泡的按钮外面包这一层。它只做收缩包裹（inline-flex + 居中），
+  // 让按钮照旧当 flex 项参与列宽分配 —— 与 `Menu` 自己那层 `.mr` root 同一个做法
+  //（`.mr` 的 `position:relative;display:inline-flex`，探针已按「宽度与裸按钮等价」处理）。
+  // 它不写 `min-width:0`：写了会把内层按钮的 min-content 下限抹掉，回到「按钮溢出压兄弟」的老问题。
+  '.fs-tipwrap{display:inline-flex;align-items:center}',
   '.fs-wsbtn{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   '.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}',
   '.fs-hbar-path{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}',

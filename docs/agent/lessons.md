@@ -67,6 +67,64 @@
 - **证据**：`reports/2026-09-11-ui-revamp-stage3b.md` §0 与 §7 第 7 条（S0 在面板 200–209 的 10 档部分裁切）。
 - **重试**：不要把部分裁切混进门禁（会得到一套无法通过的门槛），但要盯着它别从 0 变回非 0。
 
+### B-4 指标口径必须连同**统计集合**与**产出它的 flags** 一起写清
+- **现象（两个真实形态，同日发生）**：
+  ① **flags 不一致被误读成口径变化**：`/tmp` 里一份产物记 `gone 1010`，另一份记 `gone 2013`
+  （`goneRight 754 → 1757`），于是得出「`--menus` 改变了汇总表计数口径」。实测两跑才知道：
+  2013 那份（`out-fix-cur.json`）的 `wsLabShown` 恒为 `null` ⇒ 它**漏了 `--wsicon`**；补上该 flag 后
+  `--menus` 的两份产物与基线**逐档逐字段 0 差异**（3857 档）。真正的口径差异在 `--wsicon`，
+  与 `--menus` 无关。
+  ② **统计集合会静默变化**：四项门禁只统计「三列内的 `button` + `.fs-hd-path` + `.fs-dirty`」。
+  探针复刻的菜单面板用 `div.mr-list` / `div.mr-item`，产不出候选，所以打开态的读数不变；
+  而真实 `Menu` 的行是 `<button role="menuitem">` —— 一旦把复刻行也改成真 `button`，
+  面板自身就落进「被裁」计数，**同一份源码的读数会突然翻倍，而那不是回归**。
+- **结论**：一个数字要能复现，必须同时交出三样：**(a) 判据**（怎么算的）、**(b) 统计集合**
+  （哪些元素进计数）、**(c) 产出它的 flags 组合**。缺 (b)/(c) 的数字在换一次调用条件后就不再可比，
+  而错误会以「回归」的样子出现。口径变了旧结论作废，**统计集合或 flags 变了同样作废**。
+- **证据**：`tools/ui-probe/README.md` §1.2（统计集合）、§1.5、§1.6（flags 对照表：1010/754 vs
+  2013/1757，判别特征 `wsLabShown=null`）；实测产物 `/tmp/e-probe/out-e-{base,inline-view-inline,
+  inline-all-inline}.json`（各 3857 档，前后脚同机三跑）与 `/tmp/menu-probe/out-fix-cur.json`
+  vs `out-fix-cur-ws.json`（**都不进仓库**，两行命令可复跑）。
+- **重试**：不适用；这是引用数字前的固定动作（与 C-1「数字必须来自可复跑的产物文件」同一条线，
+  这里补上「同一个文件 + 不同 flags 也等于两个口径」）。
+
+### B-5 primitives 的 `Tooltip` **不能**挂在 primitives 的 `Button` 上（React 18 无 ref）
+- **现象**：想用官方 `Tooltip` 替掉顶栏的原生 `title`，写成 `<Tooltip><Button/></Tooltip>` 时气泡
+  **永不渲染**，控制台同时报 `Function components cannot be given refs`。
+- **结论**：`Tooltip` 靠 `cloneElement(children, {ref})` 取锚点，而本包 `Button` 是**普通函数组件**
+  （无 `forwardRef`，`0.1.5-rc.1` 与 harness 源码一致），React 18 下 `ref` 挂不上 ⇒ `anchor.current`
+  恒 null。**锚点必须是原生元素**：外面加一层 `.fs-tipwrap` span（与 `Menu` 自己的 `.mr` root 同做法，
+  只做收缩包裹）。宿主 4 处 `Tooltip` 也一律包原生 `<button>`/`<span>`，从无包 `Button` 的先例。
+- **证据**：报告 `reports/2026-09-12-collapse-split-edit-merge.md` §D（装置 `/tmp/d-tooltip-ref.mjs`：
+  最小复刻真实 `Tooltip` 的 ref 机制 + 正对照，`Button` 组「气泡不渲染 + ref 警告」、
+  `<span>` 组「气泡渲染」）；`Button.tsx` 与 `lib/index.js:1565` 的实现；宿主 4 处调用点。
+- **重试**：**否**。别去「顺手去掉那层 span」求简洁 —— 去掉就等于气泡消失（回归即此）。
+
+### B-6 加一层包装 span 的几何代价要**实测**，别推断「反正它是 inline-flex」
+- **现象**：为挂 `Tooltip` 给 5 个顶栏按钮各加一层 `.fs-tipwrap`（`display:inline-flex`）。单看是
+  「收缩包裹、与裸按钮等价」，但顶栏是 `@container` 分档 + `minmax(0,1fr)` 分配 + `overflow:hidden`
+  的网格，min-content 贡献稍有变化就会体现在窄档的裁切上。
+- **结论**：实测**逐档逐字段 0 差异**（3857 档 × 全部字段，`--wsicon`）⇒ 这一层是几何中性的。
+  方法：拿探针产出的**自包含** HTML，只改 `const SCEN = [...]` 里的场景 DOM，再用**同一段页面内
+  测量脚本**重跑并逐档 diff —— 只改 DOM、不改判据，两份读数才可比。
+- **证据**：报告 §D 的 A/B/C 三变体对照（基线 / +锚点层 / +锚点层+合并按钮）；产物
+  `/tmp/e2/out-{new-base,dom-d-wrapped,dom-bc-wrapped-merged}.json`（各 3857 档，**不进仓库**）。
+- **重试**：不适用；「加一层 DOM」这类改动一律按此法先量再落。
+
+### B-7 交互姿态的改动会让字典键**失去消费者**，但「删键」要单独裁决
+- **现象**：B 段把「编辑/保存」合并成一个按钮 ⇒ `ZH.btnView`（「查看」）在 `src/` 里再无引用；
+  D 段把两个「悬停即开下拉」的锚点排除在气泡之外 ⇒ `ZH.a11yViewPick` 也不再被消费。
+- **结论**：本段**保留**两个键。理由：① 字典的既定角色是**产品文案注册表**（117 键里本就有只能由
+  直连 API / 失败路径触发的串），「今天没有 UI 路径渲染它」不是成员判据；② 删键必须手改
+  `tests/locale.spec.ts` 的三重硬断言（键序 + `toHaveLength` + 全等表），而那张表存在的意义正是
+  让字典变动变成一次**刻意的、被复审的**动作 —— 为省一个条目去重写它不划算；③ 两个键描述的是
+  **本段刚裁决掉的交互**（B 的合并、D 的悬停豁免），裁决若回摆（加「放弃编辑」入口或给下拉锚点
+  留 `delayMs` 气泡），键还在原处。**代价如实登记**：字典里会有一条不再被消费的键。
+- **证据**：`grep -n btnView src/ tests/`；`src/shared/locale.ts:40`；`PROGRESS.md` §5 #12 的
+  「可访问名缺口」清单；本段报告 §B/§E 的判断段。
+- **重试**：不适用；判别方法是「**产品是否真的去掉了这个交互**」——去掉（如独立的「查看」按钮）
+  才是删键的候选，仅因**设计选择**暂时不用（如气泡豁免）先留。
+
 ---
 
 ## C. 流程与协作
@@ -148,3 +206,42 @@
   指过去（例：`/tmp/stage3/stage2-end.tsx`）。
 - **证据**：`tools/ui-probe/README.md` §4。
 - **重试**：不适用。
+
+### D-5 探针只覆盖它**构造过**的静态场景 —— 交互态缺陷会全绿溜过
+- **现象**：3857 档四项指标**全绿**（跨列 0 / 同列 0 / 右列整块裁下界 357 / 顶栏高集合 `{48}`）的
+  同时，页面上「悬停看不到下拉」—— 静态 DOM 里根本没有菜单面板，探针量不到它。
+- **结论**：几何探针的绿只证明**它构造过的那些场景**没问题。凡属**交互态**的缺陷（浮层、开关、
+  异步、悬停 / 焦点），**发现即固化**成探针的一个新场景 / 新形态，否则同类缺陷下一次仍会全绿。
+- **证据**：`tools/ui-probe/README.md` §1.5（新选项 `--menus` 的口径）与 §4 第 1 条（用法纪律）；
+  实测两组读数：`--menus=inline` 视图面板 **3306/3306 档整块不可见**、`--menus=portal` **0 档被裁**
+  （产物 `/tmp/menu-merge/out-full-*.json`，不进仓库；两行命令可复跑）。
+- **重试**：不适用；这是固定动作。
+
+---
+
+## E. 浮层与裁剪
+
+### E-1 `overflow:hidden` 的兜底裁剪会连浮层一起吃 —— primitive 有 `portal` 就优先用它
+- **现象**：`.fs-hbar` / `.fs-hbar-mid` 为消跨列重叠加了 `overflow:hidden`，同一个顶栏里的三个下拉
+  （`.mr-list`，`position:absolute`）因此成了裁剪链内的后代，被**整块切掉**：视图选择器下拉在
+  全部 3306 档里可见高恒 0，解读选择只剩 0–6px。
+- **结论**：`overflow != visible` 的盒子就是**祖先裁剪盒**，任何绝对定位浮层（下拉 / 气泡 / 卡片）
+  只要落在它的子树里就会被切。**消重叠与浮层不是二选一**：primitive 若带 `portal` 类选项
+  （`Menu` 的 `portal`）就优先用它把面板挂到 `document.body`，裁剪声明**一个都不用撤**。
+- **证据**：`lib/types/Menu.d.ts` 的原文注释「Use when an ancestor's overflow clipping would crop
+  the in-place list」；`src/client/index.tsx` 三处 `Menu` 的 `portal` 与旁边那段注释；
+  `PROGRESS.md` §3「顶栏三个下拉被 `overflow` 裁剪」；
+  `reports/2026-09-11-ui-revamp-menu-clipping.md` §3 与 §5。
+- **重试**：**否**。别为浮层撤裁剪（撤了跨列重叠立刻回来），也别自绘一套带 portal 的下拉。
+
+### E-2 反证：`contain: layout`（含 `container-type:inline-size`）**不**裁 `fixed` 后代
+- **现象**：曾推断 `.fs-hbar{container-type:inline-size}`（＝ `contain: layout style inline-size`）
+  会让该盒成为 `fixed` 后代的包含块，从而影响浮层的定位与裁剪，并据此怀疑「就地渲染被裁」另有其因。
+- **结论**：**实测否证**。同一个盒子里放 `position:fixed;left:100px;top:100px` 的子元素，其 rect 仍是
+  **视口坐标**（没有相对盒子偏移），且 `overflow:hidden` **不裁**这个 fixed 子元素 —— 在**盒外**、
+  子元素内取 `elementFromPoint` 能命中它；有无 `container-type` 的对照盒读数相同。所以就地面板被裁的
+  唯一原因是**面板自己是 `absolute`**。推论：换 `position:fixed` 的浮层（如 primitives 的 `Tooltip`，
+  `Tooltip.module.css` 第 1–3 行）不必担心被裁剪盒吃。
+- **证据**：`reports/2026-09-11-ui-revamp-menu-clipping.md` §1 第 1 条（订正项，逐条给了两盒的 rect 与
+  `elementFromPoint` 结果；原始装置 `/tmp/containment.html` 未归档，机器重启即失——结论已随报告入库）。
+- **重试**：**否**。别再为「`container-type` 会不会改变 fixed 后代的坐标基准 / 裁剪」重做实验。
