@@ -13,6 +13,7 @@
 
 | 项 | 值 |
 |---|---|
+| **入场必读**（新人 / 新子代理开工前） | [docs/agent/README.md](docs/agent/README.md)：三层存储（会话上下文 / 仓库文件 / `dsh知识库`）各放什么、谁写谁读、**入场阅读顺序**；已验证的负结果看 [docs/agent/lessons.md](docs/agent/lessons.md) |
 | 包名 | `dsh-plugin-file-system-zc`（非 scoped，决策 D-1） |
 | 仓库 | `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc` |
 | 迁移源（**只读，全程未改动一字节**） | `../dsh-plugin-file-system` @ `3a3f89e` |

@@ -1,0 +1,6 @@
+{
+  "name": "ui-probe",
+  "private": true,
+  "type": "commonjs",
+  "description": "运行域声明：仓库根 package.json 是 type=module，而探针用 require/__dirname，故在本目录就地声明 CJS。上游 src/ tests/ 的 ESM 不受影响。"
+}
