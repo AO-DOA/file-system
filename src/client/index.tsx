@@ -1505,10 +1505,31 @@ const CSS = [
   '.fs-chev{transition:transform 150ms var(--ds-ease-in-out,ease)}',
   '.fs-chev-open{transform:rotate(90deg)}',
   '.fs-body{display:flex;flex-direction:row;flex:1;min-height:0}',
-  '.fs-side{display:flex;flex-direction:column;min-height:0;max-width:50%;border-right:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.2))}',
+  // 左树的竖线**交给分隔条画**（见下方 `.fs-split`）：这里原来自己带
+  // `border-right:1px solid var(--dsw-alias-border-l2)`，而分隔条现在同样在接缝处画一条 0.5px
+  // 发丝线 —— 两条竖线只差 0.25px，叠起来是 1.5px 的粗线，正是用户说的「不紧凑」。
+  // DSH 本体 `packages/client/ui-dockkit/src/components/dockkit.module.css` 的设计意图是
+  // **接缝只有一条线，且由分隔条画**（`.divider::before`）；窗格自己画的是**横向**的 hairline，
+  // 它的诉求是「能跨过接缝连贯」（两半紧贴才有意义）。所以删掉这里 1px 的竖线，
+  // 让左树侧与分屏窗格之间共用同一条 0.5px 发丝线。
+  '.fs-side{display:flex;flex-direction:column;min-height:0;max-width:50%}',
   '.fs-panel{flex:1;min-height:0;overflow:auto;padding:4px;padding-bottom:var(--fs-bottom-clearance,0px)}',
-  '.fs-split{flex:none;width:5px;cursor:col-resize;background:transparent;transition:background 120ms}',
-  '.fs-split:hover,.fs-split.active{background:rgba(127,127,127,.12)}',
+  // 分隔条：照搬 DSH 本体 `packages/client/ui-dockkit/src/components/dockkit.module.css` 的 `.divider`
+  // 机制 —— **不占任何布局空间**（`width:0`）。dockkit 的原注释写得很直白：divider owns no layout
+  // room, the halves abut, so a rule a pane draws across its own edge runs unbroken past the seam
+  // （分隔条不占位、两半紧贴，窗格横跨自己边缘画的线才能不被接缝打断）。旧样式是
+  // `width:5px` 的实心块 + 悬停整块变灰底，既实打实占 5px、看上去又是一条粗带。
+  '.fs-split{position:relative;z-index:1;flex:none;width:0;cursor:col-resize;touch-action:none}',
+  '.fs-split::before,.fs-split::after{content:"";position:absolute}',
+  // 常态：0.5px 发丝线居中于接缝（分隔条自身宽 0，左移 0.25px 就是「骑在两半的交界上」）
+  '.fs-split::before{top:0;bottom:0;left:-.25px;width:.5px;background:var(--dsw-alias-border-l4,rgba(127,127,127,.2))}',
+  // 命中区 8px（向两侧各伸 4px，比旧的 5px 更好点）：悬停/拖拽中时浮出一条两端渐隐的 1px 线。
+  // 渐隐线画在命中区正中，用 `opacity` 交叉淡入而不是直接换 `background` —— 渐变没法从发丝线的
+  // 实色「过渡」过来（dockkit 同此处理）。`opacity:0` 的伪元素**仍然参与命中测试**，
+  // 这正是「指针一进 8px 带、线就浮出来」得以成立的前提；上面 `z-index:1` 则保证这块外伸
+  // 盖过后面的兄弟窗格，否则命中会被它吃掉。
+  '.fs-split::after{top:0;bottom:0;left:-4px;right:-4px;opacity:0;transition:opacity 120ms ease-out;background:linear-gradient(to bottom,transparent,var(--dsw-alias-label-caption,#adb2b8) 50%,transparent) center/1px 100% no-repeat}',
+  '.fs-split:hover::after,.fs-split.active::after{opacity:1}',
   '.fs-tr{display:flex;align-items:center;gap:6px;height:34px;box-sizing:border-box;padding:0 8px;border-radius:8px;cursor:pointer;user-select:none;white-space:nowrap;color:var(--dsw-alias-label-primary,#0f1115);position:relative}',
   '.fs-tr:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}',
   '.fs-tr.sel{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.18))}',
