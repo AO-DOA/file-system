@@ -3,6 +3,11 @@
 // 迁移自迁移源 tests/client-md-utils.test.js 的「locale 字典契约」段，并把 72 键扩为全量对照；
 // 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键、第 2 批 B 类 10 键、第 3 批 C 类 23 键）
 // 同步登记在此表，键序与 ZH 逐位一致。
+// R1/R3 段（顶栏收编 + 视图选择器）的键变动同样登记在此：新增 a11yViewPick（视图选择器 title）、
+// 删除随独立翻译按钮一并失效的三个 a11yTr* 键（New/Regen/Loading）、改写三个值
+// （btnGen「生成解读」→「解读选择」、a11yGen 补「文章翻译」、folderCardDesc2 跟随按钮改名）。
+// R4 段（分屏）的键变动同样登记在此：新增 btnSplit（「分栏」，与规格 §2 例外里那个字形同源）
+// 与 a11ySplit（说清「再点一次关闭」这个非通用交互），键数由 115 增至 117。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { LANG, ZH, t } from '../src/shared/locale'
@@ -35,15 +40,18 @@ const EXPECTED_ZH: Record<string, string> = {
   a11yExpandTree: '展开文件树',
   a11yCollapseTree: '折叠文件树',
   a11yRefresh: '刷新',
-  a11yGen: '生成/重新生成：目录概览·文件摘要·源码注解',
-  a11yTrLoading: '翻译中…',
-  a11yTrRegen: '重新翻译（覆盖已有译文）',
-  a11yTrNew: '翻译为中文（特殊名词用 ( ) 内解释）',
+  a11yGen: '生成/重新生成：目录概览·文件摘要·源码注解·文章翻译',
+  // 视图选择器（R3）：按钮文字即当前视图名，title 只说明悬停交互。
+  a11yViewPick: '视图选择：悬停展开其它视图',
   // 按钮
-  btnGen: '生成解读',
+  btnGen: '解读选择',
   btnEdit: '编辑',
   btnView: '查看',
   btnSave: '保存',
+  // 分屏（R4）：可见文字沿用宿主 `dock.splitPane` 的「分栏」，a11y 串说明这个非通用交互。
+  btnSplit: '分栏',
+  a11ySplit: '分屏：把当前显示的视图复制一份只读副本到右侧；再点一次关闭',
+  // 翻译（R1：原独立翻译按钮并入「解读选择」菜单，这三项现在由菜单项复用）
   btnTr: '翻译',
   btnTrRegen: '重新翻译',
   btnTrLoading: '翻译中…',
@@ -59,7 +67,7 @@ const EXPECTED_ZH: Record<string, string> = {
   rootDirName: '工作区根目录',
   folderCardTitle: '创建本目录的目录概览',
   folderCardDesc1: '用目录概览技能(folder-doc)生成该目录的概览说明，便于快速了解其结构、边界与上下游（目录层/L1）。',
-  folderCardDesc2: '点击右上角「生成解读」，在下拉中选择「目录概览」。',
+  folderCardDesc2: '点击右上角「解读选择」，在下拉中选择「目录概览」。',
   pathSep: ' · ',
   wsItemSep: '  ·  ',
   // 生成/读取中

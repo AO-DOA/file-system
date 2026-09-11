@@ -11,9 +11,10 @@
 // 的实参顺序对照，props 传递内容与顺序未变。行为等价原则见决策 D-8/D-9。
 import * as React from 'react'
 import {
-  Button, CodeBlock, IconBrowseOutline16, IconChevronRightOutline14, IconEditOutline16,
-  IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16, IconPanelLeftOutline16,
-  IconPlusOutline16, IconRefreshOutline16, MarkdownText, Menu, Pill,
+  Button, CodeBlock, IconBrowseOutline16, IconCheckOutline16, IconChevronRightOutline14,
+  IconEditOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16,
+  IconLoadingOutline16, IconPanelLeftOutline16, IconPlusOutline16, IconRefreshOutline16,
+  MarkdownText, Menu, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
@@ -85,8 +86,17 @@ interface StartTaskResponse {
   taskId: string
 }
 
-/** 生成解读的三种文档类型：folder=目录概览(L1) / file=文件摘要(L2) / src=源码注解(L3)。 */
-type GenKind = 'folder' | 'file' | 'src'
+/** 解读选择菜单的四类入口：folder=目录概览(L1) / file=文件摘要(L2) / src=源码注解(L3)
+ *  / translate=文章翻译（R1 收编：与前三者共用菜单，但走 host 的 `/translate` 路由，
+ *  不写 L2/L3 文档，故 `runGen` 在入口处分派到 `runTranslate`）。 */
+type GenKind = 'folder' | 'file' | 'src' | 'translate'
+
+/** 解读选择菜单的一项；`disabled` 由翻译进行中（trBusy）置位，拒绝重复触发。 */
+interface GenItem {
+  id: GenKind
+  label: string
+  disabled?: boolean
+}
 
 /** 文件夹说明状态：ready(有内容) | missing(未生成→占位卡) | generating(生成中) | idle(未打开)。 */
 type FoldState = 'idle' | 'ready' | 'missing' | 'generating'
@@ -393,7 +403,9 @@ function FsTree(props: FsTreeProps): React.JSX.Element {
       >
         <span className="fs-slot fs-file"><IconBrowseOutline16 /></span>
         <span className="fs-title">{node.name}</span>
-        {extBadge(node.name) ? <span className="fs-badge">{extBadge(node.name)}</span> : null}
+        {/* 扩展名角标改用官方 Tag（tone=quiet：纯文字无底色，最接近原 .fs-badge 的观感）。
+            className 只保留布局用的 flex:none，不再自带字号/底色/圆角（原样式已删除）。 */}
+        {extBadge(node.name) ? <Tag tone="quiet" className="fs-exttag">{extBadge(node.name)}</Tag> : null}
         {hasDoc ? <span className="fs-docmark" title={t('a11yDocFiles')} /> : null}
       </div>
     )
@@ -418,9 +430,9 @@ function FsTree(props: FsTreeProps): React.JSX.Element {
   )
 }
 
-// 查看模式页签（「预览 + 解读」框架）：doc 按对象类型区分——文件夹→目录概览，文件→文件摘要；
-// annot→源码注解；tr→文章翻译（译文，仅项目内 md）；source→源码（预览+编辑）。名称与 GLOSSARY.md 保持一致。
-// label 文案由 t(labLabelKey(mode, isDir)) 取值（字典唯一真相源）。
+// 查看模式（R3 起由「视图选择器」承载，不再是一排胶囊）：doc 按对象类型区分——文件夹→目录概览，
+// 文件→文件摘要；annot→源码注解；tr→文章翻译（译文，仅项目内 md）；source→源码（预览+编辑）。
+// 名称与 GLOSSARY.md 保持一致；label 文案由 t(labLabelKey(mode, isDir)) 取值（字典唯一真相源）。
 
 /** useOpenedViewer 的返回契约（与迁移源 JSDoc `src/client/index.js:169-177` 同形，去掉死字段）。 */
 interface ViewerState {
@@ -485,11 +497,13 @@ function useOpenedViewer(
   // 书库内（.book/）文档不是翻译对象（用户确认：md 对象是项目文件内的，对 book 内的无效）。
   const isBookFile = hasSource && (opened.path === '.book' || String(opened.path || '').startsWith('.book/'))
   const canTranslate = isMdFile && !isBookFile
+  // 视图固定顺序（R3）：源码 → 文件摘要 → 源码注解 → 文章翻译。数组只用于渲染
+  // （视图选择器的下拉按此序排列，当前项除外），不再是默认视图的判据。
   const modes: ViewMode[] = []
+  if (hasSource) modes.push('source')
   if (opened.hasDoc || docData != null) modes.push('doc')
   if (opened.hasDocSrc || annotData != null) modes.push('annot')
   if (canTranslate && (opened.hasDocTr || trData != null)) modes.push('tr')
-  if (hasSource) modes.push('source')
 
   React.useEffect(() => {
     let alive = true
@@ -498,8 +512,11 @@ function useOpenedViewer(
     setEditMode(false); setDirty(false); setStatus('')
     setFold({ state: 'idle', content: '' })
     setGenState('idle'); setTrBusy(false)
-    // 点击文件优先显示顺序：文件摘要 → 原文(源码) → 源码注解。有文件摘要默认进 doc；否则默认原文。
-    setMode(opened.hasDoc ? 'doc' : (hasSource ? 'source' : (opened.hasDocSrc ? 'annot' : 'source')))
+    // 点击文件后的默认视图：源码优先（R3）——有源码可看就进源码（预览/编辑）；
+    // 无源码（目录节点）时沿用原有的「目录概览 → 源码注解」回退顺序，最终兜底落在 `doc`
+    // 而不是 `source`：目录永远没有源码，而占位卡讲的正是「还没生成的目录概览」，
+    // 按钮上写「源码」会与画面分离（R3.2 要求按钮文字恒等于当前显示的视图名）。
+    setMode(hasSource ? 'source' : (opened.hasDoc ? 'doc' : (opened.hasDocSrc ? 'annot' : 'doc')))
     if (hasSource && opened.path) {
       api<ReadResponse>('/read?path=' + encodeURIComponent(opened.path))
         .then((d) => { if (alive) { setSource(d); setEdit(d.content || '') } })
@@ -572,12 +589,16 @@ function useOpenedViewer(
   }
 
   /**
-   * 统一生成入口：kind ∈ folder(目录概览/L1) | file(文件摘要/L2) | src(源码注解/L3)。
-   * POST /gen-doc 触发后台子 agent → 轮询任务 → 成功后按 task.docRel 经 /read 读回文档，
-   * 落到对应查看状态（folder→fold、file→docData+doc 模式、src→annotData+annot 模式）。
-   * @param kind - 要生成的文档类型。
+   * 统一解读入口（R1 收编）：kind ∈ folder(目录概览/L1) | file(文件摘要/L2) | src(源码注解/L3)
+   * | translate(文章翻译)。前三者 POST /gen-doc 触发后台子 agent → 轮询任务 → 成功后按
+   * task.docRel 经 /read 读回文档，落到对应查看状态（folder→fold、file→docData+doc 模式、
+   * src→annotData+annot 模式）；translate 不产出 L2/L3 文档，与前三者不是同一套调度，
+   * 因此在入口处直接分派给 {@link runTranslate}（host 侧独立路由 `/translate`）。
+   * @param kind - 要生成的文档类型，或 `translate`（文章翻译）。
    */
   function runGen(kind: GenKind): void {
+    // 翻译：沿用原独立按钮的调度与状态（trBusy / trData / tr 模式），不写 L2/L3。
+    if (kind === 'translate') { runTranslate(); return }
     if (!opened.path) return
     if (kind !== 'folder' && genState !== 'idle') return
     setStatus('')
@@ -709,6 +730,30 @@ function placeholderCard(opened: OpenedNode): React.JSX.Element {
   )
 }
 
+// ---- 分屏字形（R4，规格 §2 的唯一例外）----
+// 宿主 `packages/client/ui-dockkit/src/components/TabPanel.tsx` 的 `SplitGlyph`：面板外框环
+// （`PANEL_FRAME`）与一条移到中心的竖线，合成一条 even-odd 路径。该组件与常量都未 export，
+// dockkit 也不在插件的 client 外置白名单（`tsdown.config.ts` 的 `CLIENT_EXTERNALS`）里，
+// 插件无法 import ⇒ 经用户裁决把两段路径**原样复制**进来（本文件里的两个常量由脚本从宿主
+// 源码机械取出，未做人工转录）。代价：宿主将来改这个字形时这份副本不会跟随（已知并接受）。
+/** 面板外框环（宿主 `PANEL_FRAME` 逐字副本）。 */
+const SPLIT_PANEL_FRAME = 'M9.67272 0.522841C10.8339 0.522841 11.76 0.522714 12.4963 0.602493C13.2453 0.683657 13.8789 0.854248 14.4264 1.25197C14.7504 1.48739 15.0355 1.77247 15.2709 2.0965C15.6686 2.64394 15.8392 3.27758 15.9204 4.02655C16.0002 4.7629 16 5.68895 16 6.85014V9.14986C16 10.3111 16.0002 11.2371 15.9204 11.9735C15.8392 12.7224 15.6686 13.3561 15.2709 13.9035C15.0355 14.2275 14.7504 14.5126 14.4264 14.748C13.8789 15.1458 13.2453 15.3163 12.4963 15.3975C11.76 15.4773 10.8339 15.4772 9.67272 15.4772H6.3273C5.16611 15.4772 4.24006 15.4773 3.50371 15.3975C2.75474 15.3163 2.1211 15.1458 1.57366 14.748C1.24963 14.5126 0.964549 14.2275 0.729131 13.9035C0.331407 13.3561 0.160817 12.7224 0.0796529 11.9735C-0.000126137 11.2371 1.25338e-09 10.3111 1.25338e-09 9.14986V6.85014C1.25329e-09 5.68895 -0.000126137 4.7629 0.0796529 4.02655C0.160817 3.27758 0.331407 2.64394 0.729131 2.0965C0.964549 1.77247 1.24963 1.48739 1.57366 1.25197C2.1211 0.854248 2.75474 0.683657 3.50371 0.602493C4.24006 0.522714 5.16611 0.522841 6.3273 0.522841H9.67272ZM4.1828 14.0873L5.54303 14.1118C5.78636 14.1128 6.04709 14.1169 6.3273 14.1169H9.67272C10.8639 14.1169 11.7032 14.1164 12.3493 14.0465C12.9824 13.9779 13.3497 13.8494 13.6268 13.6482C13.8354 13.4966 14.0195 13.3125 14.1711 13.1039C14.3723 12.8268 14.5007 12.4595 14.5693 11.8264C14.6393 11.1803 14.6398 10.341 14.6398 9.14986V6.85014C14.6398 5.65896 14.6393 4.81967 14.5693 4.1736C14.5007 3.54048 14.3723 3.17318 14.1711 2.89609C14.0195 2.68747 13.8354 2.50337 13.6268 2.35179C13.3497 2.1506 12.9824 2.02212 12.3493 1.95353C11.7032 1.88358 10.8639 1.88307 9.67272 1.88307H6.3273C6.04709 1.88307 5.78636 1.8862 5.54303 1.88715L4.1828 1.91166C3.99125 1.9216 3.8148 1.93577 3.65076 1.95353C3.01764 2.02212 2.65034 2.1506 2.37325 2.35179C2.16463 2.50337 1.98052 2.68747 1.82895 2.89609C1.62776 3.17318 1.49928 3.54048 1.43069 4.1736C1.36074 4.81967 1.36023 5.65896 1.36023 6.85014V9.14986C1.36023 10.341 1.36074 11.1803 1.43069 11.8264C1.49928 12.4595 1.62776 12.8268 1.82895 13.1039C1.98052 13.3125 2.16463 13.4966 2.37325 13.6482C2.65034 13.8494 3.01764 13.9779 3.65076 14.0465C3.81478 14.0642 3.99127 14.0774 4.1828 14.0873Z'
+/** 移到中心的竖线（宿主 `SplitGlyph` 里的第二段路径逐字副本）。 */
+const SPLIT_DIVIDER = 'M7.31989 1.88307H8.68012V14.1169H7.31989V1.88307Z'
+
+/**
+ * 分屏按钮的图标：16×16 的 DSH 分屏字形。写法与宿主那处一致（`fill="none"`、
+ * `aria-hidden="true"`、`fill="currentColor"`、`fillRule`/`clipRule` 取 evenodd）。
+ * @returns 图标元素。
+ */
+function SplitGlyph(): React.JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d={SPLIT_PANEL_FRAME + SPLIT_DIVIDER} fill="currentColor" />
+    </svg>
+  )
+}
+
 /** FsPane 的 props。 */
 interface FsPaneProps {
   opened: OpenedNode
@@ -759,6 +804,25 @@ function FsPane(props: FsPaneProps): React.JSX.Element {
   )
 }
 
+/**
+ * 分屏记录（R4）：按「打开对象的 path」索引，这就是「按文件各自记忆」——
+ * 切到没开过分屏的文件/目录时查不到记录，自然回到全屏。
+ *
+ * `mode` 是**开启那一刻冻结**的视图类型（左侧之后切视图只影响左侧）；
+ * `ratio` 是右侧窗格在内容区弹性宽度里的占比。关闭只把 `on` 置 false，
+ * 冻结的视图类型与比例都留着，「拖拽比例同样按文件记忆」由此成立。
+ */
+interface SplitState {
+  on: boolean
+  mode: ViewMode
+  ratio: number
+}
+
+/** 分栏比例的初值与上下限。它们是**比例**不是像素阈值——分档阈值全部在样式表的容器查询里。 */
+const SPLIT_RATIO_DEFAULT = 0.5
+const SPLIT_RATIO_MIN = 0.2
+const SPLIT_RATIO_MAX = 0.8
+
 /** FsView 的 props：`workspaces` 由注册处显式注入；槽位透传的其它字段被忽略。 */
 interface FsViewProps {
   workspaces?: WorkspacesSurface | undefined
@@ -780,6 +844,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
   const [cache, setCache] = React.useState<Record<string, TreeNode[]>>({})
   const [dragging, setDragging] = React.useState(false)
+  // 分屏（R4）：按打开对象的 path 记账（开关 / 冻结的视图类型 / 分栏比例），见 {@link SplitState}。
+  const [splits, setSplits] = React.useState<Record<string, SplitState>>({})
+  const [draggingSplit, setDraggingSplit] = React.useState(false)
   const [status, setStatus] = React.useState('')
   const [wsItems, setWsItems] = React.useState<WorkspaceItem[]>([])
   const [curWsId, setCurWsId] = React.useState('')
@@ -927,29 +994,54 @@ function FsView(props: FsViewProps): React.JSX.Element {
   }, [opened && opened.path])
   const viewer = useOpenedViewer(opened || {}, onTrDone)
   const [wsMenuOpen, setWsMenuOpen] = React.useState(false)
-  // 整合生成下拉：当前对象可生成的文档类型（未生成→生成；已生成→重新生成，覆盖重写）。
+  // 解读选择下拉（R1）：当前对象可用的解读入口（未生成→生成；已生成→重新生成，覆盖重写）。
   const [genMenuOpen, setGenMenuOpen] = React.useState(false)
-  const isSelFile = !!(opened && opened.type !== 'directory')
-  const isSelMd = isSelFile && isMd(extOf(opened.path || ''))
-  const genItems = React.useMemo<{ id: GenKind; label: string }[]>(() => {
+  // 视图选择器下拉（R3）：悬停展开，列出其余已具备的视图。
+  const [viewMenuOpen, setViewMenuOpen] = React.useState(false)
+  const genItems = React.useMemo<GenItem[]>(() => {
     if (!opened) return []
+    // 目录节点：只有「目录概览」一种解读产物。
     if (opened.type === 'directory')
       return [{ id: 'folder', label: opened.hasDoc ? t('genFolderRegen') : t('genFolder') }]
-    if (isSelMd) return []
-    const items: { id: GenKind; label: string }[] = [
+    // markdown 本身即文档：不生成 L2/L3（host 侧直接拒绝）。只有项目内非书库的 md 可翻译，
+    // 书库内（.book/）md 没有任何解读入口 —— 菜单项为空，按钮与现状一样不弹菜单。
+    if (isMd(extOf(opened.path || ''))) {
+      if (!viewer.canTranslate) return []
+      // 翻译进行中改读「翻译中…」并禁用，等价于原独立按钮的 disabled 态。
+      return [{
+        id: 'translate',
+        label: viewer.trBusy ? t('btnTrLoading') : (opened.hasDocTr ? t('btnTrRegen') : t('btnTr')),
+        disabled: viewer.trBusy,
+      }]
+    }
+    const items: GenItem[] = [
       { id: 'file', label: opened.hasDoc ? t('genFileRegen') : t('genFile') },
     ]
     items.push({ id: 'src', label: opened.hasDocSrc ? t('genSrcRegen') : t('genSrc') })
     return items
-  }, [opened, isSelMd])
+  }, [opened, viewer.canTranslate, viewer.trBusy])
+  // 菜单项随当前对象自动适配（R1）：切到「没有解读入口」的对象时收起残留的下拉，
+  // 否则上一份文件留下的空菜单会挂在新文件上（md 与 .book/ 内的 md 都会走到这里）。
+  React.useEffect(() => {
+    if (!genItems.length) setGenMenuOpen(false)
+  }, [genItems])
+  // 翻译进行中（R1 收编后的常驻可见性）：独立翻译按钮删掉后，「翻译中」原本只在菜单项里可见，
+  // 菜单关着就看不出来。这里让按钮自身进入忙碌态 —— 换成 IconLoadingOutline16、文案改「翻译中…」
+  // 并禁用，菜单开着或关着都能一眼看到（菜单项仍是同一份 disabled 事实）。
+  const genBusy = !!(viewer.canTranslate && viewer.trBusy)
+  const genLabel = genBusy ? t('btnTrLoading') : t('btnGen')
+  // 窄档（R2）：三个按钮的可见文字收进 `.fs-btnlabel`，由样式表按容器实测宽度隐藏；
+  // 文字节点仍在 DOM 里，纯图标时的可访问名由 aria-label 保证（Button 透传原生属性）。
   const genAnchor = (
     <Button
       size="sm"
-      icon={<IconPlusOutline16 />}
+      icon={genBusy ? <IconLoadingOutline16 /> : <IconPlusOutline16 />}
       onClick={() => { if (genItems.length) setGenMenuOpen(true) }}
-      title={t('a11yGen')}
+      disabled={genBusy}
+      aria-label={genLabel}
+      title={genBusy ? t('btnTrLoading') : t('a11yGen')}
     >
-      {t('btnGen')}
+      <span className="fs-btnlabel">{genLabel}</span>
     </Button>
   )
   const genMenu = (
@@ -965,7 +1057,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
       onClose={() => setGenMenuOpen(false)}
     />
   )
-  // hover 展开：鼠标放到「生成解读」自动弹出选项框，移开自动收起（关闭交给 closeOnPointerLeave）。
+  // hover 展开：鼠标放到「解读选择」自动弹出选项框，移开自动收起（关闭交给 closeOnPointerLeave）。
   const genWrap = (
     <div
       className="fs-genwrap"
@@ -984,13 +1076,19 @@ function FsView(props: FsViewProps): React.JSX.Element {
       title={collapsed ? t('a11yExpandTree') : t('a11yCollapseTree')}
     />
   )
+  // 工作区名也收进 label 层（本段第三档）：它比右列三个按钮更晚才让位，因为它是「当前在
+  // 看哪个工作区」的标识，容器还放得下就用文字（见样式表里那条更窄的档）。
+  // 文字被藏起来时，可访问名与悬停名由恒定的 aria-label / title 给出；长名本来就被
+  // `.fs-wsbtn{max-width:220px}` 截断，title 顺带补全完整名。
   const wsAnchor = (
     <Button
       className="fs-wsbtn"
       icon={<IconFolderOpenOutline16 />}
       onClick={() => setWsMenuOpen(true)}
+      aria-label={curWsName}
+      title={curWsName}
     >
-      {curWsName}
+      <span className="fs-btnlabel fs-wslabel">{curWsName}</span>
     </Button>
   )
   const wsMenu = (
@@ -1010,18 +1108,37 @@ function FsView(props: FsViewProps): React.JSX.Element {
       title={t('a11yRefresh')}
     />
   )
-  const tabs = opened
+  // 视图选择器（R3）：单个按钮 + 悬停下拉，取代原来一排 Pill。
+  // 按钮文字恒等于当前视图名（`labLabelKey(viewer.mode)`），与所显示内容不分离；点击按钮主体
+  // 即确认按钮所示视图 —— `setMode` 传同一个 mode，React 同值 bail out，是真正的 no-op
+  // （用户明确要求：不伴随 `setEditMode(false)`，否则「点击」就成了会改变显示的操作）。
+  // 下拉只列「其余已具备」的视图，顺序沿用 viewer.modes 的固定顺序：
+  // 源码 → 文件摘要 → 源码注解 → 文章翻译。
+  const viewIsDir = !!(opened && opened.type === 'directory')
+  const viewItems = viewer.modes
+    .filter(m => m !== viewer.mode)
+    .map(m => ({ id: m, label: t(labLabelKey(m, viewIsDir)) }))
+  const viewWrap = opened
     ? (
-      <div className="fs-tabs">
-        {viewer.modes.map(m => (
-          <Pill
-            key={m}
-            active={viewer.mode === m}
-            onClick={() => { viewer.setMode(m); viewer.setEditMode(false) }}
-          >
-            {t(labLabelKey(m, opened.type === 'directory'))}
-          </Pill>
-        ))}
+      <div className="fs-viewwrap" onMouseEnter={() => { if (viewItems.length) setViewMenuOpen(true) }}>
+        <Menu
+          open={viewMenuOpen}
+          anchor={(
+            <Button
+              className="fs-viewbtn"
+              size="sm"
+              onClick={() => viewer.setMode(viewer.mode)}
+              title={t('a11yViewPick')}
+            >
+              {t(labLabelKey(viewer.mode, viewIsDir))}
+            </Button>
+          )}
+          items={viewItems}
+          closeOnPointerLeave
+          // 选下拉项：切换视图并退出编辑态（沿用原 Pill 的行为）。
+          onSelect={(m) => { viewer.setMode(m as ViewMode); viewer.setEditMode(false); setViewMenuOpen(false) }}
+          onClose={() => setViewMenuOpen(false)}
+        />
       </div>
     )
     : null
@@ -1035,21 +1152,115 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const editActions = (opened && viewer.hasSource && viewer.mode === 'source')
     ? [
       viewer.dirty ? <span key="dirty" className="fs-dirty">{t('a11yDirty')}</span> : null,
-      <Button key="edit" icon={<IconEditOutline16 />} onClick={viewer.toggleEdit}>{viewer.editMode ? t('btnView') : t('btnEdit')}</Button>,
-      <Button key="save" onClick={viewer.save}>{t('btnSave')}</Button>,
+      // 编辑/保存同走 `.fs-btnlabel`：窄档只留图标，此时 aria-label 就是它们的可访问名。
+      // 保存按钮原先没有图标（R2 让它与 DSH 的保存惯例一致：GoalBar 与 QueueDock 都用 ✓）。
+      <Button key="edit" icon={<IconEditOutline16 />} onClick={viewer.toggleEdit} aria-label={viewer.editMode ? t('btnView') : t('btnEdit')}>
+        <span className="fs-btnlabel">{viewer.editMode ? t('btnView') : t('btnEdit')}</span>
+      </Button>,
+      <Button key="save" icon={<IconCheckOutline16 />} onClick={viewer.save} aria-label={t('btnSave')}>
+        <span className="fs-btnlabel">{t('btnSave')}</span>
+      </Button>,
     ]
     : null
-  // 翻译按钮：仅项目内 md 文档（书库内 .book/ 文档不翻译，用户确认）。已译 → 重新翻译。
-  const trBtn = (opened && viewer.canTranslate)
+
+  // ---- 分屏（R4）----
+  // 语义（上游裁决，照此实现）：右侧副本 = **视图类型冻结、内容数据实时、强制只读**。
+  //   冻结：视图类型在开启那一刻记进该 path 的 `SplitState.mode`，左侧之后切视图只影响左侧；
+  //   实时：数据字段（source / docData / annotData / trData / fold）共用同一个 viewer，
+  //         左侧编辑保存后右侧内容跟着刷新；
+  //   只读：`editMode` 恒为 false ⇒ `FsPane` 天然只走查看分支，没有编辑区、没有保存/生成入口
+  //         （本段不为右侧新写任何渲染分支，右侧就是同一个 FsPane）。
+  // 它不是「历史快照」：右侧没有自己的一份数据副本。
+  const splitState = openedPath ? splits[openedPath] : undefined
+  const splitOn = !!(splitState && splitState.on)
+  const splitViewer: ViewerState | null = (splitState && splitState.on)
+    ? { ...viewer, mode: splitState.mode, editMode: false }
+    : null
+  // 右侧窗格只改 flex-grow：它与 `.fs-main{flex:1}` 同为 `flex-basis:0`，故两侧宽度比 = grow 比，
+  // 占比 p 对应 grow = p / (1 − p)（p ∈ [0.2, 0.8]，分母恒不为 0）。
+  const splitGrow = splitState ? splitState.ratio / (1 - splitState.ratio) : 1
+
+  /**
+   * 分屏开关：同一个按钮再点一次即关闭（R4）。开启时把当前视图类型冻结进该 path 的记录
+   * ——「把当前显示的视图复制一份只读副本到右侧」；关闭只把 `on` 置 false，比例与冻结的
+   * 视图类型都留着，再开时沿用（「拖拽比例同样按文件记忆」）。
+   */
+  function toggleSplit(): void {
+    if (!openedPath) return
+    setSplits((s) => {
+      const current = s[openedPath]
+      const on = !(current && current.on)
+      return {
+        ...s,
+        [openedPath]: {
+          on,
+          // 开启时冻结当前视图类型；关闭时 `current` 必然存在，保留原来那一份。
+          mode: current && !on ? current.mode : viewer.mode,
+          ratio: current ? current.ratio : SPLIT_RATIO_DEFAULT,
+        },
+      }
+    })
+  }
+
+  /**
+   * 右侧分栏的拖拽（R4）：与左侧树宽同一套做法（document 级监听、按 G-7 既有行为不做卸载
+   * 清理），差别只在记的是**占比**而不是像素宽度 —— 窗口缩放后仍按比例复原。
+   * @param e - 右侧分隔条上的 mousedown 事件。
+   */
+  function startSplitDrag(e: React.MouseEvent<HTMLDivElement>): void {
+    if (!openedPath) return
+    e.preventDefault()
+    const startX = e.clientX
+    const pane = e.currentTarget.nextElementSibling
+    const leftPane = e.currentTarget.previousElementSibling
+    if (!(pane instanceof HTMLElement) || !(leftPane instanceof HTMLElement)) return
+    const startRight = pane.getBoundingClientRect().width
+    const startLeft = leftPane.getBoundingClientRect().width
+    // 两侧同为 `flex:1 1 0`，拖拽期间弹性宽之和不变 ⇒ 占比的分母就是这个和，而不是「新右宽 + 左宽」。
+    const total = startRight + startLeft
+    if (!(total > 0)) return
+    setDraggingSplit(true)
+    function onMove(ev: MouseEvent): void {
+      const right = startRight - (ev.clientX - startX)
+      const ratio = Math.max(SPLIT_RATIO_MIN, Math.min(SPLIT_RATIO_MAX, right / total))
+      setSplits((s) => {
+        const current = s[openedPath]
+        if (!current) return s
+        return { ...s, [openedPath]: { ...current, ratio } }
+      })
+    }
+    function onUp(): void {
+      setDraggingSplit(false)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  // 分屏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝状态、右＝操作」。它与右列三个按钮
+  // 共用同一套窄档收纳（文字进 `.fs-btnlabel`，≤672px 的档只留图标），可访问名由恒定的
+  // aria-label 给出；没有打开对象时不可用（没有可复制的视图）。
+  const splitBtn = (
+    <Button
+      size="sm"
+      icon={<SplitGlyph />}
+      onClick={toggleSplit}
+      disabled={!opened}
+      aria-label={t('btnSplit')}
+      title={t('a11ySplit')}
+    >
+      <span className="fs-btnlabel">{t('btnSplit')}</span>
+    </Button>
+  )
+  const splitBar = splitOn
+    ? <div className={'fs-split' + (draggingSplit ? ' active' : '')} onMouseDown={startSplitDrag} />
+    : null
+  const splitPane = (opened && splitOn && splitViewer)
     ? (
-      <Button
-        size="sm"
-        onClick={() => viewer.runTranslate()}
-        disabled={viewer.trBusy}
-        title={viewer.trBusy ? t('a11yTrLoading') : (opened.hasDocTr ? t('a11yTrRegen') : t('a11yTrNew'))}
-      >
-        {viewer.trBusy ? t('btnTrLoading') : (opened.hasDocTr ? t('btnTrRegen') : t('btnTr'))}
-      </Button>
+      <div className="fs-splitpane" style={{ flexGrow: splitGrow }}>
+        <FsPane opened={opened} viewer={splitViewer} key={'split-' + openedPath} />
+      </div>
     )
     : null
 
@@ -1076,7 +1287,8 @@ function FsView(props: FsViewProps): React.JSX.Element {
       </div>
     )
     const split = <div className={'fs-split' + (dragging ? ' active' : '')} onMouseDown={startDrag} />
-    body = <div className="fs-body">{side}{split}{editor}</div>
+    // 右侧分屏（R4）：分隔条与窗格都复用左侧树宽那套类与交互（`.fs-split` + startSplitDrag）。
+    body = <div className="fs-body">{side}{split}{editor}{splitBar}{splitPane}</div>
   } else {
     body = <div className="fs-body">{editor}</div>
   }
@@ -1088,10 +1300,11 @@ function FsView(props: FsViewProps): React.JSX.Element {
         <div className="fs-hd-actions">{refreshBtn}{foldBtn}</div>
       </div>
       <div className="fs-hbar-mid">
-        <div className="fs-tabs">{tabs}</div>
+        {viewWrap}
         <div className="fs-hbar-path">{pathLabel}</div>
       </div>
-      <div className="fs-hbar-right">{trBtn}{genWrap}{editActions}</div>
+      {/* 翻译入口（R1）已并入「解读选择」菜单：这里原来是独立翻译按钮 trBtn 的位置。 */}
+      <div className="fs-hbar-right">{splitBtn}{genWrap}{editActions}</div>
     </div>
   )
 
@@ -1106,21 +1319,55 @@ function FsView(props: FsViewProps): React.JSX.Element {
 // ---- 样式 ----
 // 迁移源 `src/client/index.js:695-753` 逐字保留；按决策 D-8 例外 a 删除 4 个
 // 无任何 JS 引用的死类（`.fs-folder-gen` / `.fs-card-actions` / `.fs-card-src` / `.fs-card-err`）。
+// R1/R3 段另删两处随 JSX 改动失效的类：`.fs-tabs`（胶囊组被视图选择器取代）与
+// `.fs-badge`（扩展名角标改用 primitives 的 Tag）；同时新增 `.fs-viewwrap` 与 `.fs-exttag`，
+// 两者只承担布局（flex 项定位），字号底色等观感一律交给 primitives。
 // 上述删除之外，顶栏与左侧树为修窄宽度重叠另有偏差：`.fs-hbar` 改 auto/minmax(0,1fr)/auto
 // 分列并加裁剪兜底，左右列去掉 `min-width:0`（保留 min-content 下限），`.fs-hbar-mid` 加
-// `overflow:hidden`（防 tab 组画到右列），`.fs-side` 加 `max-width:50%`。
+// `overflow:hidden`（防视图选择器画到右列），`.fs-side` 加 `max-width:50%`。
 const CSS = [
   '.fs-wrap{display:flex;flex-direction:column;height:100%;font-size:13px;color:var(--dsw-alias-label-primary,#0f1115);overflow:hidden;min-height:0;box-sizing:border-box;padding:2px 14px 8px;--fs-bottom-clearance:calc(var(--dsh-composer-height,152px) + 16px)}',
-  '.fs-hbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 10px;flex:none;min-width:0;padding:6px 0;overflow:hidden}',
+  '.fs-hbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 10px;flex:none;min-width:0;padding:6px 0;overflow:hidden;container-type:inline-size}',
   '.fs-hbar-left{justify-self:start;display:flex;align-items:center;gap:8px}',
   '.fs-hd-actions{flex:none;display:flex;align-items:center;gap:2px;min-width:0}',
   '.fs-wsbtn{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
   '.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}',
-  '.fs-tabs{flex:none;display:flex;align-items:center;gap:4px}',
   '.fs-hbar-path{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}',
   '.fs-hd-path{display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.85));font-size:12px;line-height:20px}',
   '.fs-hbar-right{justify-self:end;display:flex;align-items:center;gap:6px}',
-  '.fs-genwrap{display:inline-flex;align-items:center;min-width:0}',
+  // `.fs-genwrap` 刻意**不给** `min-width:0`：给了它，flex 会把包装压到近 0 宽，而里面 36px 的
+  // 「解读选择」按钮会溢出盖住同列的「● 未保存」标记（实测相交 411px²，即 `PROGRESS.md` §5 #9）；
+  // 不给它，包装保住按钮的 min-content，代价是右列整体更早触底（实测下界由面板 284px 升到 314px，
+  // 仍在门禁的 360px 以内），换来同列重叠从 153 档/场景降到 0。
+  '.fs-genwrap{display:inline-flex;align-items:center}',
+  '.fs-viewwrap{display:inline-flex;align-items:center;min-width:0;flex:none}',
+  // 窄档（R2）：按钮的可见文字统一收进 `.fs-btnlabel`，由容器查询隐藏 —— 文字节点留在 DOM 里，
+  // 纯图标态的可访问名交给各按钮的 aria-label。`.fs-btnlabel` 只做不换行（宽度随文字自然）。
+  '.fs-btnlabel{white-space:nowrap}',
+  // 分档阈值就写在这里，是唯一的真相源；JS 不持有任何像素常量。
+  // 第一档（右列四个按钮图标化，含 R4 的分屏）：这一档要解决的不再是「右列被整块裁掉」，
+  // 而是四段文字一起把中列挤到 0 —— 实测最坏场景（长工作区名 + 长路径 + 四字视图名 +
+  // 五字菜单项）在面板 701–720 这 20 档里中列视图名被 `.fs-hbar-mid{overflow:hidden}` 裁掉，
+  // 右列同时出现部分裁切；收掉这四个按钮的文字后该窗口整段消失（S2/S6 的中列被裁区间
+  // 由面板 200–720 收到 200–400）。
+  // 阈值 760 的标定：窗口上界是面板 720 ⇒ 阈值不得低于 hbar 692px（= 720 − `.fs-wrap`
+  // 左右内边距 28px）；按同样的约 8% 字体余量取整为 760。逐档 diff 实测过：760 相对 672
+  // **没有任何一档变差**（变差 0 档），只有 701–720 变好。
+  // 用容器查询而不是「测出溢出再打标记」是刻意的：阈值只随容器宽度单调变化，
+  // 不会因为图标化让内容变窄而反复撤销标记（滞回振荡）。
+  // 这里排除 `.fs-wslabel`：工作区名不属于本档，它比这四个按钮晚一档才让位。
+  '@container (max-width:760px){.fs-btnlabel:not(.fs-wslabel){display:none}}',
+  // 第二档（工作区名让位）：四个按钮图标化后，左列工作区按钮所在的 `Menu` 根 `span`
+  // 成了唯一的 min-content 大头 —— 它把左列顶到 284.8px，中列被 `minmax(0,1fr)` 让到 0、
+  // 右列被挤出容器整块裁掉。收掉它的文字后左列降到 126px，最坏场景的右列下界由面板 459px 压到 314px。
+  // 阈值 550 的标定（第三段 b 由 470 上调，上游裁决）：470 时工作区名在面板 499px 就恢复可见，
+  // 而右列元素要到面板 535px 才完全不被裁 ⇒ 499–534 这 36 档里保存按钮右边缘缺 17px
+  // （可点，属视觉级残缺；基线 S1 19 档 / S2 36 档，合计 110 档）。阈值提到 550（面板 578px）后，
+  // 工作区名可见区间整段落在「右列完整」的区间里：499–534 的残缺全部消失（0 档），中列被裁
+  // 区间同时由面板 200–517 收窄到 200–358（只上调阈值、不含分屏按钮时的隔离实测）。
+  // 两档之间不许留缝：实测阈值取 428px 时，缝里的面板 457–459px 会重新出现右列被裁；
+  // 550 远在其上，缝的条件（工作区名可见区间跨过右列完整下界）不成立。
+  '@container (max-width:550px){.fs-wslabel{display:none}}',
   '.fs-chev{transition:transform 150ms var(--ds-ease-in-out,ease)}',
   '.fs-chev-open{transform:rotate(90deg)}',
   '.fs-body{display:flex;flex-direction:row;flex:1;min-height:0}',
@@ -1140,9 +1387,14 @@ const CSS = [
   '.fs-chev{transition:transform 150ms var(--ds-ease-in-out,ease)}',
   '.fs-chev-open{transform:rotate(90deg)}',
   '.fs-title{min-width:0;overflow:hidden;text-overflow:ellipsis;flex:1;font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary,#0f1115)}',
-  '.fs-badge{flex:none;font-size:10px;line-height:16px;background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.16));border-radius:4px;padding:0 5px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}',
+  // 扩展名角标改用官方 Tag（tone=quiet：纯文字无底色）；这里只留布局用的 flex:none，
+  // 字号/行高/底色/圆角一律交给 primitives（原 .fs-badge 全部样式已删除）。
+  '.fs-exttag{flex:none}',
   '.fs-empty{padding:16px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}',
   '.fs-main{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;padding-bottom:var(--fs-bottom-clearance,0px)}',
+  // 右侧分屏窗格（R4）：只是 `.fs-main` 的外壳，用它给右侧单独分宽度。它与 `.fs-main` 同为
+  // `flex:1 1 0`（宽度比 = flex-grow 比），占比由 JSX 的 inline `flexGrow` 给（p ⇒ p/(1−p)）。
+  '.fs-splitpane{flex:1 1 0;min-width:0;display:flex;flex-direction:column}',
   '.fs-bscroll{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}',
   '.fs-fmcard{margin:0 0 12px;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.2));border-radius:10px;background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.06));padding:10px 14px}',
   '.fs-fmhead{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8));font-weight:600;margin-bottom:6px}',

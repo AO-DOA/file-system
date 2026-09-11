@@ -8,10 +8,10 @@
  * mount these light components instead, through `vi.mock`.
  *
  * The stand-ins keep exactly the surface `src/client/index.tsx` consumes —
- * label text, click handlers, `active`/`disabled` state, `open` menus and the
- * rendered children — so a spec can drive the plugin's own logic (tree expand,
- * open, edit, tabs, menus) without asserting anything about the real
- * primitives' markup.
+ * label text, click handlers, `disabled` state, `open` menus, a tag's tone and
+ * the rendered children — so a spec can drive the plugin's own logic (tree
+ * expand, open, edit, view switching, menus) without asserting anything about
+ * the real primitives' markup.
  */
 import { createElement } from 'react'
 import type { ReactNode } from 'react'
@@ -24,11 +24,13 @@ interface StubButtonProps {
   title?: string
   disabled?: boolean
   className?: string
+  /** Narrow-band icon buttons carry their accessible name here (R2). */
+  'aria-label'?: string
 }
 
 /**
- * Stand-in `<button>`; `title` and `disabled` pass through so specs can select
- * and assert on them.
+ * Stand-in `<button>`; `title`, `disabled` and `aria-label` pass through so
+ * specs can select and assert on them.
  * @param props - see {@link StubButtonProps}.
  * @returns the button element.
  */
@@ -37,34 +39,36 @@ export function Button(props: StubButtonProps): ReactNode {
     className: props.className,
     title: props.title,
     disabled: props.disabled,
+    'aria-label': props['aria-label'],
     onClick: props.onClick,
   }, props.icon, props.children)
 }
 
-/** Props of the stand-in pill (view-mode tab). */
-interface StubPillProps {
+/** Props of the stand-in tag (the extension badge on a tree row). */
+interface StubTagProps {
+  tone?: string
+  className?: string | undefined
   children?: ReactNode
-  active?: boolean
-  onClick?: () => void
 }
 
 /**
- * Stand-in view-mode tab; the active state lands in `data-active`.
- * @param props - see {@link StubPillProps}.
- * @returns the tab element.
+ * Stand-in read-only tag: the label stays as text and the tone lands in
+ * `data-tone`, so a spec can assert which palette the call site picked without
+ * asserting the real primitives' markup. `stub-tag` leads the class list so the
+ * element stays selectable, with any layout class the caller passed appended.
+ * @param props - see {@link StubTagProps}.
+ * @returns the tag element.
  */
-export function Pill(props: StubPillProps): ReactNode {
-  return createElement('button', {
-    className: 'stub-pill',
-    'data-active': String(!!props.active),
-    onClick: props.onClick,
-  }, props.children)
+export function Tag(props: StubTagProps): ReactNode {
+  const className = props.className ? 'stub-tag ' + props.className : 'stub-tag'
+  return createElement('span', { className, 'data-tone': props.tone || '' }, props.children)
 }
 
 /** One stand-in menu row. */
 interface StubMenuItem {
   id: string
   label: ReactNode
+  disabled?: boolean
 }
 
 /** Props of the stand-in menu. */
@@ -87,7 +91,10 @@ export function Menu(props: StubMenuProps): ReactNode {
   const rows = props.items.map(item => createElement('button', {
     key: item.id,
     className: 'stub-menu-item',
-    onClick: () => { if (props.onSelect) props.onSelect(item.id) },
+    disabled: !!item.disabled,
+    // The real menu never calls `onSelect` for a disabled row; refusing here
+    // keeps the stand-in's observable behaviour identical.
+    onClick: () => { if (!item.disabled && props.onSelect) props.onSelect(item.id) },
   }, item.label))
   const list = props.open
     ? createElement('div', { className: 'stub-menu' }, [
@@ -153,11 +160,13 @@ function stubIcon(name: string): (props: StubIconProps) => ReactNode {
 }
 
 export const IconBrowseOutline16 = stubIcon('IconBrowseOutline16')
+export const IconCheckOutline16 = stubIcon('IconCheckOutline16')
 export const IconChevronRightOutline14 = stubIcon('IconChevronRightOutline14')
 export const IconEditOutline16 = stubIcon('IconEditOutline16')
 export const IconFolderClose16 = stubIcon('IconFolderClose16')
 export const IconFolderOpen16 = stubIcon('IconFolderOpen16')
 export const IconFolderOpenOutline16 = stubIcon('IconFolderOpenOutline16')
+export const IconLoadingOutline16 = stubIcon('IconLoadingOutline16')
 export const IconPanelLeftOutline16 = stubIcon('IconPanelLeftOutline16')
 export const IconPlusOutline16 = stubIcon('IconPlusOutline16')
 export const IconRefreshOutline16 = stubIcon('IconRefreshOutline16')

@@ -340,6 +340,102 @@ function hits(url: string): number {
   return urls().filter(candidate => candidate === url).length
 }
 
+/**
+ * The view-selector button. Its label IS the current view name (R3), so a spec
+ * reads the displayed view off this text rather than off an `active` flag.
+ * @returns the `.fs-viewbtn` element.
+ */
+function viewBtn(): HTMLElement {
+  const node = document.querySelector('.fs-viewbtn')
+  if (node === null) throw new Error('no view selector button')
+  return node as HTMLElement
+}
+
+/**
+ * Whether the view-selector button currently reads the given view name.
+ * @param key - locale key of the expected view label (`labSrc`, `labDocFile`, …).
+ * @returns whether the button shows that label.
+ */
+function viewIs(key: string): boolean {
+  return (viewBtn().textContent || '').trim() === L(key)
+}
+
+/**
+ * Open the view dropdown the way a pointer does — through the wrapper's
+ * `onMouseEnter`, which React synthesizes from the bubbling `mouseover`.
+ */
+async function openViewMenu(): Promise<void> {
+  const wrap = document.querySelector('.fs-viewwrap')
+  if (wrap === null) throw new Error('no view selector wrapper')
+  await act(async () => {
+    wrap.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
+  })
+  await flush()
+}
+
+/**
+ * Open the interpretation menu the way a pointer does — through the wrapper's
+ * `onMouseEnter` (the same route {@link openViewMenu} takes). Needed once the
+ * button itself is disabled: a disabled button swallows clicks, so hovering is
+ * the only way in while a translation runs.
+ */
+async function openGenMenu(): Promise<void> {
+  const wrap = document.querySelector('.fs-genwrap')
+  if (wrap === null) throw new Error('no interpretation wrapper')
+  await act(async () => {
+    wrap.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
+  })
+  await flush()
+}
+
+/**
+ * The labels of the currently open menu, in DOM order.
+ * @returns menu item labels.
+ */
+function menuLabels(): string[] {
+  return Array.from(document.querySelectorAll('.stub-menu-item'))
+    .map(node => (node.textContent || '').trim())
+}
+
+/**
+ * The view names the view dropdown offers, in DOM order (the current view is
+ * deliberately absent).
+ * @returns view labels.
+ */
+async function viewItems(): Promise<string[]> {
+  await openViewMenu()
+  return menuLabels()
+}
+
+/**
+ * Switch views through the dropdown (R3): hover to open, then click the entry.
+ * @param key - locale key of the view label to pick.
+ */
+async function pickView(key: string): Promise<void> {
+  await openViewMenu()
+  await click(byText('.stub-menu-item', L(key)))
+}
+
+/**
+ * Run a translation through the interpretation menu. R1 deleted the standalone
+ * translate button, so every translation now goes through 「解读选择」.
+ * @param key - locale key of the entry (`btnTr` | `btnTrRegen`).
+ */
+async function translateVia(key: string): Promise<void> {
+  await click(button(L('btnGen')))
+  await click(byText('.stub-menu-item', L(key)))
+}
+
+/**
+ * Open the interpretation menu and read whether the given entry is disabled.
+ * @param key - locale key of the entry.
+ * @returns the entry's `disabled` state.
+ */
+async function entryDisabled(key: string): Promise<boolean> {
+  await click(button(L('btnGen')))
+  return (byText('.stub-menu-item', L(key)) as HTMLButtonElement).disabled
+}
+
 beforeEach(() => {
   captured = []
   disposers = []
@@ -441,10 +537,11 @@ describe('empty state and tree (B)', () => {
     await flush()
     expect(urls()).toEqual(['/api/fs/root', '/api/fs/tree?path=.'])
     expect(byText('.fs-empty', L('emptyDir'))).toBeTruthy()
-    // No node open yet: the status line and the tab strip are both empty. The
-    // strip element itself is always in the tree (source behaviour).
+    // No node open yet: the status line is empty and there is no view selector
+    // either (R3 renders it only with an open object; source behaviour kept the
+    // strip element in the tree, this incarnation does not).
     expect(document.querySelector('.fs-load')).toBeNull()
-    expect(document.querySelector('.fs-tabs')?.children).toHaveLength(0)
+    expect(document.querySelector('.fs-viewwrap')).toBeNull()
   })
 
   it('paints the root-load failure in the empty-state status line', async () => {
@@ -482,16 +579,19 @@ describe('empty state and tree (B)', () => {
     expect(byTextIncluding('.fs-load', L('errLoadFail') + 'denied')).toBeTruthy()
   })
 
-  it('renders directory and file rows with badges and doc markers', async () => {
+  it('renders directory and file rows with tags and doc markers', async () => {
     mount()
     await flush()
     expect(row('src').querySelector('.fs-docmark')).not.toBeNull()
     expect(row('plain').querySelector('.fs-docmark')).toBeNull()
     const readme = row('README.md')
     expect(readme.querySelector('.fs-docmark')).not.toBeNull()
-    expect(readme.querySelector('.fs-badge')?.textContent).toBe('MD')
-    expect(row('app.ts').querySelector('.fs-badge')?.textContent).toBe('TS')
-    expect(row('plain.py').querySelector('.fs-badge')?.textContent).toBe('PY')
+    // The extension badge is the primitives' `Tag` now (tone `quiet`, i.e. text
+    // only, no fill) instead of the plugin's own `.fs-badge` span.
+    expect(readme.querySelector('.stub-tag')?.textContent).toBe('MD')
+    expect(readme.querySelector('.stub-tag')?.getAttribute('data-tone')).toBe('quiet')
+    expect(row('app.ts').querySelector('.stub-tag')?.textContent).toBe('TS')
+    expect(row('plain.py').querySelector('.stub-tag')?.textContent).toBe('PY')
   })
 
   it('expands a directory lazily, caches children and keeps them on collapse', async () => {
@@ -544,19 +644,19 @@ describe('empty state and tree (B)', () => {
 })
 
 describe('viewer: opening files and markdown branches (C)', () => {
-  it('opens a markdown file in doc mode and reads all three documents', async () => {
+  it('opens a markdown file in source mode and reads all three documents', async () => {
     mount()
     await flush()
     await click(row('README.md'))
     expect(urls()).toContain('/api/fs/read?path=README.md')
     expect(urls()).toContain('/api/fs/read?path=bk%2Ffile%2FREADME.md')
     expect(urls()).toContain('/api/fs/read?path=bk%2Ftr%2FREADME.md')
-    expect(byText('.stub-pill', L('labDocFile')).getAttribute('data-active')).toBe('true')
+    // R3: source first — a file that HAS a summary still opens on its source.
+    expect(viewIs('labSrc')).toBe(true)
     // This node has a summary and a translation but no source annotation, so the
-    // annot tab is absent (tab list is derived per node, baseline §C-10).
-    expect(Array.from(document.querySelectorAll('.stub-pill')).map(n => n.textContent)).toEqual([
-      L('labDocFile'), L('labTr'), L('labSrc'),
-    ])
+    // annot view is absent (the mode list is derived per node, baseline §C-10) and
+    // the dropdown lists exactly the other two, in the pinned order.
+    expect(await viewItems()).toEqual([L('labDocFile'), L('labTr')])
     expect(document.querySelector('.stub-md')?.textContent).toContain('# Title')
   })
 
@@ -570,6 +670,9 @@ describe('viewer: opening files and markdown branches (C)', () => {
     mount()
     await flush()
     await click(row('README.md'))
+    // R3: frontmatter belongs to the document view, which is no longer the
+    // default one — the pane opens on the source.
+    await pickView('labDocFile')
     expect(byText('.fs-fmhead', L('frontmatter'))).toBeTruthy()
     expect(byText('.fs-fmkey', 'title')).toBeTruthy()
     expect(byText('.fs-fmval', 'Hi')).toBeTruthy()
@@ -582,7 +685,9 @@ describe('viewer: opening files and markdown branches (C)', () => {
     mount()
     await flush()
     await click(row('plain.py'))
-    expect(byText('.stub-pill', L('labSrc')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labSrc')).toBe(true)
+    // Only source exists, so the dropdown offers nothing.
+    expect(await viewItems()).toEqual([])
     // py maps to a shiki grammar, so this arm is the highlighted code block.
     expect(document.querySelector('.stub-code')?.textContent).toBe('')
   })
@@ -685,9 +790,9 @@ describe('viewer: tabs and editing (C)', () => {
     expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
     // Leaving source mode hides the marker (it is part of the edit toolbar),
     // but the dirty STATE survives; coming back proves it was never cleared.
-    await click(byText('.stub-pill', L('labAnnot')))
+    await pickView('labAnnot')
     expect(document.querySelector('.fs-dirty')).toBeNull()
-    await click(byText('.stub-pill', L('labSrc')))
+    await pickView('labSrc')
     expect(byText('.fs-dirty', L('a11yDirty'))).toBeTruthy()
     // Saving clears it and leaves edit mode; the write carries the edited text.
     await click(button(L('btnSave')))
@@ -732,12 +837,15 @@ describe('viewer: tabs and editing (C)', () => {
     expect(document.querySelector('.fs-dirty')).toBeNull()
   })
 
-  it('hides the translate button for markdown inside the book bucket', async () => {
+  it('offers no interpretation entry for markdown inside the book bucket', async () => {
     mount()
     await flush()
     await click(row('note.md'))
     expect(row('note.md').className).toContain('sel')
-    expect(Array.from(document.querySelectorAll('button')).filter(node => (node.textContent || '') === L('btnTr'))).toHaveLength(0)
+    // R1: translation lives in the 「解读选择」 menu now, and a `.book/` markdown
+    // is not a translation target — the menu stays empty and never opens.
+    await click(button(L('btnGen')))
+    expect(document.querySelector('.stub-menu')).toBeNull()
   })
 
   it('runs a translation and refreshes the parent directory', async () => {
@@ -754,12 +862,12 @@ describe('viewer: tabs and editing (C)', () => {
     await flush()
     await click(row('README.md'))
     const before = hits('/api/fs/tree?path=.')
-    // The node already carries hasDocTr, so the button reads 「重新翻译」.
-    await click(button(L('btnTrRegen')))
+    // The node already carries hasDocTr, so the entry reads 「重新翻译」.
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
     expect(calls.find(call => call.url === '/api/fs/translate')?.init?.body).toBe(JSON.stringify({ path: 'README.md' }))
-    expect(byText('.stub-pill', L('labTr')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labTr')).toBe(true)
     expect(document.querySelector('.stub-md')?.textContent).toBe('translated')
     // onTrDone refreshes the parent directory ('.' for a top-level file).
     expect(hits('/api/fs/tree?path=.')).toBe(before + 1)
@@ -781,7 +889,7 @@ describe('viewer: tabs and editing (C)', () => {
     await flush()
     await click(row('src'))
     await click(row('child.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
     expect(hits('/api/fs/tree?path=src')).toBe(2)
@@ -799,12 +907,12 @@ describe('viewer: tabs and editing (C)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    // The status only paints while the doc tab has no data, so assert the task
-    // outcome through the button leaving its busy state instead.
-    expect(button(L('btnTrRegen'))).toBeTruthy()
+    // The status only paints while the source is empty, so assert the task outcome
+    // through the menu entry leaving its busy state instead.
+    expect(await entryDisabled('btnTrRegen')).toBe(false)
   })
 })
 
@@ -973,12 +1081,14 @@ describe('worktree switching, persistence and drag (D)', () => {
 })
 
 describe('generation menu (C)', () => {
-  it('offers no generation entry for a markdown file', async () => {
+  it('offers only the translation entry for a project markdown file', async () => {
     mount()
     await flush()
     await click(row('README.md'))
     await click(button(L('btnGen')))
-    expect(document.querySelector('.stub-menu')).toBeNull()
+    // R1: markdown gets no L2/L3 entry (the host refuses it), only translation —
+    // and this node already has a translation, so the label is 「重新翻译」.
+    expect(menuLabels()).toEqual([L('btnTrRegen')])
   })
 
   it('runs a source-annotation generation and switches to the annot tab', async () => {
@@ -999,7 +1109,7 @@ describe('generation menu (C)', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
     expect(calls.find(call => call.url === '/api/fs/gen-doc')?.init?.body).toBe(JSON.stringify({ kind: 'src', path: 'app.ts' }))
-    expect(byText('.stub-pill', L('labAnnot')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labAnnot')).toBe(true)
   })
 
   it('runs a file-summary generation and switches to the doc tab', async () => {
@@ -1018,7 +1128,7 @@ describe('generation menu (C)', () => {
     await click(byText('.stub-menu-item', L('genFile')))
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('.stub-pill', L('labDocFile')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labDocFile')).toBe(true)
   })
 
   it('reports a folder generation failure', async () => {
@@ -1411,11 +1521,17 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
-    // While busy the button is disabled and re-entry is refused.
-    const disabled = Array.from(document.querySelectorAll('button')).filter(node => (node.textContent || '') === L('btnTrLoading'))
-    expect(disabled).toHaveLength(1)
-    await click(disabled[0] as HTMLElement)
+    await translateVia('btnTrRegen')
+    // Busy is readable with the menu shut (the gap R1 left): the button itself
+    // turns into 「翻译中…」 and goes disabled, so re-entry is refused outright.
+    const busyButton = byText('.fs-hbar-right button', L('btnTrLoading'))
+    expect((busyButton as HTMLButtonElement).disabled).toBe(true)
+    // The menu entry carries the same fact — and, the button being disabled,
+    // hovering is now the only way to open it.
+    await openGenMenu()
+    const disabled = byText('.stub-menu-item', L('btnTrLoading'))
+    expect((disabled as HTMLButtonElement).disabled).toBe(true)
+    await click(disabled)
     expect(calls.filter(call => call.url === '/api/fs/translate')).toHaveLength(1)
     parked.control.release()
     await settle()
@@ -1429,10 +1545,10 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await flush()
     // The failure clears the busy flag, so the button returns to its idle label.
-    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+    expect(await entryDisabled('btnTrRegen')).toBe(false)
     expect(calls.filter(call => call.url === '/api/fs/translate')).toHaveLength(1)
   })
 
@@ -1444,9 +1560,9 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await flush()
-    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+    expect(await entryDisabled('btnTrRegen')).toBe(false)
   })
 
   it('reports a translation result without a document path', async () => {
@@ -1459,10 +1575,10 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+    expect(await entryDisabled('btnTrRegen')).toBe(false)
   })
 
   it('reports a failed read of the freshly translated document', async () => {
@@ -1478,10 +1594,10 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('button', L('btnTrRegen'))).toBeTruthy()
+    expect(await entryDisabled('btnTrRegen')).toBe(false)
   })
 
   it('drops a translation reply that lands after the pane is gone', async () => {
@@ -1494,7 +1610,7 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     const current = root
     await unmountAndRelease(current, () => { parked.control.release() })
@@ -1615,7 +1731,7 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
     expect(urls()).toContain('/api/fs/read?path=tr%2Fout.md')
@@ -1637,7 +1753,7 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
     const current = root
@@ -1651,7 +1767,7 @@ describe('client entry: error paths, guards and teardown (C/F)', () => {
     mount()
     await flush()
     await click(row('README.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     const current = root
     await unmountAndRelease(current, () => { parked.control.release() })
     expect(document.querySelector('.stub-md')).toBeNull()
@@ -1701,6 +1817,8 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
+    // R3: the pane opens on source, so the empty DOCUMENT is reached explicitly.
+    await pickView('labDocFile')
     expect(document.querySelector('.stub-md')?.textContent).toBe('')
   })
 
@@ -1714,6 +1832,8 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
+    // R3: the pane opens on source, so the document view is reached explicitly.
+    await pickView('labDocFile')
     expect(byText('.fs-fmval', 'T')).toBeTruthy()
     expect(document.querySelector('.stub-md')?.textContent).toBe('')
   })
@@ -1721,7 +1841,7 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
   it('omits the badge for a file without an extension', async () => {
     mount()
     await flush()
-    expect(row('Makefile').querySelector('.fs-badge')).toBeNull()
+    expect(row('Makefile').querySelector('.stub-tag')).toBeNull()
     await click(row('Makefile'))
     expect(urls()).toContain('/api/fs/read?path=Makefile')
     expect(document.querySelector('.fs-code')?.textContent).toBe('all:')
@@ -1742,12 +1862,13 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     mount()
     await flush()
     await click(row('anno'))
-    // Without source content the only tab is the annotation one.
-    expect(Array.from(document.querySelectorAll('.stub-pill')).map(n => n.textContent)).toEqual([L('labAnnot')])
-    expect(byText('.stub-pill', L('labAnnot')).getAttribute('data-active')).toBe('true')
+    // Without source content the only view is the annotation one, so the
+    // dropdown has nothing else to offer.
+    expect(viewIs('labAnnot')).toBe(true)
+    expect(await viewItems()).toEqual([])
   })
 
-  it('keeps the translation tab once translation data has landed', async () => {
+  it('keeps the translation view once translation data has landed', async () => {
     handler = (url) => {
       if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't2' } }
       if (url.startsWith('/api/fs/gen-status')) {
@@ -1759,19 +1880,18 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     vi.useFakeTimers()
     mount()
     await flush()
-    // full.md has no translation yet, so the button reads 「翻译」.
+    // full.md already has a translation, so the entry reads 「重新翻译」.
     await click(row('full.md'))
-    // full.md already has a translation, so the label is 「重新翻译」.
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('.stub-pill', L('labTr')).getAttribute('data-active')).toBe('true')
-    // Switching away and back keeps the tab: modes now includes tr via trData.
-    await click(byText('.stub-pill', L('labSrc')))
-    expect(byText('.stub-pill', L('labTr'))).toBeTruthy()
+    expect(viewIs('labTr')).toBe(true)
+    // Switching away and back keeps the view: modes now includes tr via trData.
+    await pickView('labSrc')
+    expect(await viewItems()).toContain(L('labTr'))
   })
 
-  it('shows the loading line for an annot tab with no data yet', async () => {
+  it('shows the loading line for an annot view with no data yet', async () => {
     handler = (url) => {
       if (url.startsWith('/api/fs/read?path=bk%2Fs%2Ffull.md')) return { status: 500, body: {} }
       return defaultHandler(url)
@@ -1779,11 +1899,11 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
-    await click(byText('.stub-pill', L('labAnnot')))
+    await pickView('labAnnot')
     expect(byText('.fs-load', L('loading'))).toBeTruthy()
   })
 
-  it('shows the loading line for a tr tab with no data yet', async () => {
+  it('shows the loading line for a tr view with no data yet', async () => {
     handler = (url) => {
       if (url.startsWith('/api/fs/read?path=bk%2Ft%2Ffull.md')) return { status: 500, body: {} }
       return defaultHandler(url)
@@ -1791,11 +1911,11 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
-    await click(byText('.stub-pill', L('labTr')))
+    await pickView('labTr')
     expect(byText('.fs-load', L('loading'))).toBeTruthy()
   })
 
-  it('shows the loading line for a doc tab with no data yet', async () => {
+  it('shows the loading line for a doc view with no data yet', async () => {
     handler = (url) => {
       if (url.startsWith('/api/fs/read?path=bk%2Fd%2Ffull.md')) return { status: 500, body: {} }
       return defaultHandler(url)
@@ -1803,7 +1923,7 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
-    await click(byText('.stub-pill', L('labDocFile')))
+    await pickView('labDocFile')
     expect(byText('.fs-load', L('loading'))).toBeTruthy()
   })
 
@@ -1857,7 +1977,7 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     await flush()
     await click(row('src'))
     await click(row('child.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
     // The empty translation still switches the pane to the tr tab.
@@ -1884,10 +2004,12 @@ describe('client entry: ternary and fallback arms (B/C)', () => {
     expect(byText('.stub-menu-item', L('genSrc'))).toBeTruthy()
   })
 
-  it('does not open the generation menu on hover when nothing can be generated', async () => {
+  it('does not open the interpretation menu on hover when nothing is offered', async () => {
     mount()
     await flush()
-    await click(row('README.md'))
+    // A `.book/` markdown has no entry at all (no L2/L3, and it is not a
+    // translation target), which is the only remaining empty-menu case.
+    await click(row('note.md'))
     const wrap = document.querySelector('.fs-genwrap') as HTMLElement
     await act(async () => {
       wrap.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true }))
@@ -1996,12 +2118,13 @@ describe('client entry: unmount during a document read (C)', () => {
 })
 
 describe('client entry: optional-prop and empty-payload arms (C)', () => {
-  it('offers the fresh translation label for a markdown file with no translation', async () => {
+  it('offers the fresh translation entry for a markdown file with no translation', async () => {
     mount()
     await flush()
     await click(row('plain.md'))
-    const label = byText('button', L('btnTr'))
-    expect(label.getAttribute('title')).toBe(L('a11yTrNew'))
+    // No docTr marker on the node → the entry reads 「翻译」.
+    await click(button(L('btnGen')))
+    expect(menuLabels()).toEqual([L('btnTr')])
   })
 
   it('renders a folder overview whose content is empty', async () => {
@@ -2024,7 +2147,7 @@ describe('client entry: optional-prop and empty-payload arms (C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
-    await click(byText('.stub-pill', L('labAnnot')))
+    await pickView('labAnnot')
     expect(document.querySelector('.stub-md')?.textContent).toBe('')
   })
 
@@ -2066,7 +2189,7 @@ describe('client entry: optional-prop and empty-payload arms (C)', () => {
     await click(byText('.stub-menu-item', L('genFile')))
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('.stub-pill', L('labDocFile')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labDocFile')).toBe(true)
     expect(document.querySelector('.stub-md')?.textContent).toBe('')
   })
 
@@ -2087,7 +2210,7 @@ describe('client entry: optional-prop and empty-payload arms (C)', () => {
     await click(byText('.stub-menu-item', L('genSrc')))
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('.stub-pill', L('labAnnot')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labAnnot')).toBe(true)
     expect(document.querySelector('.stub-md')?.textContent).toBe('')
   })
 
@@ -2121,10 +2244,10 @@ describe('client entry: optional-prop and empty-payload arms (C)', () => {
     mount()
     await flush()
     await click(row('full.md'))
-    await click(button(L('btnTrRegen')))
+    await translateVia('btnTrRegen')
     await act(async () => { await vi.advanceTimersByTimeAsync(800) })
     await flush()
-    expect(byText('.stub-pill', L('labTr')).getAttribute('data-active')).toBe('true')
+    expect(viewIs('labTr')).toBe(true)
   })
 })
 
@@ -2150,5 +2273,338 @@ describe('client entry: regeneration labels and late gen-doc failures (C)', () =
     const current = root
     await unmountAndRelease(current, () => { parked.control.release() })
     expect(document.querySelector('.fs-load')).toBeNull()
+  })
+})
+
+describe('view selector and interpretation menu (R1/R3)', () => {
+  it('pins the interpretation menu to the four object kinds', async () => {
+    mount()
+    await flush()
+    // A directory gets the folder overview and nothing else.
+    await click(row('plain'))
+    await click(button(L('btnGen')))
+    expect(menuLabels()).toEqual([L('genFolder')])
+    // A plain file gets both document levels.
+    await click(row('plain.py'))
+    expect(menuLabels()).toEqual([L('genFile'), L('genSrc')])
+    // A project markdown gets translation only — no L2/L3, which the host refuses.
+    await click(row('plain.md'))
+    expect(menuLabels()).toEqual([L('btnTr')])
+    // A `.book/` markdown is not a translation target either: the menu collapses.
+    await click(row('note.md'))
+    expect(document.querySelector('.stub-menu')).toBeNull()
+  })
+
+  it('opens a file on its source and mirrors the view name on the button', async () => {
+    mount()
+    await flush()
+    // full.md carries a summary, an annotation AND a translation, yet R3 still
+    // puts the source first.
+    await click(row('full.md'))
+    expect(viewIs('labSrc')).toBe(true)
+    // The dropdown lists the remaining three in the pinned order: source →
+    // summary → annotation → translation (the current view is omitted).
+    expect(await viewItems()).toEqual([L('labDocFile'), L('labAnnot'), L('labTr')])
+    // Picking one moves the button label with the pane, and the dropdown then
+    // offers the source back in first position.
+    await pickView('labAnnot')
+    expect(viewIs('labAnnot')).toBe(true)
+    expect(await viewItems()).toEqual([L('labSrc'), L('labDocFile'), L('labTr')])
+  })
+
+  it('keeps the summary-first fallback for a node that has no source', async () => {
+    mount()
+    await flush()
+    await click(row('src'))
+    // A directory always has `hasSource === false`, so the old fallback stands.
+    expect(viewIs('labDocDir')).toBe(true)
+    expect(await viewItems()).toEqual([])
+  })
+
+  it('names the placeholder card 「目录概览」 for a directory with nothing generated', async () => {
+    mount()
+    await flush()
+    await click(row('plain'))
+    // The card says the folder overview has not been generated yet, so the
+    // button must not read 「源码」: a directory never has a source view.
+    expect(byText('.fs-folder-card-ti', L('folderCardTitle'))).toBeTruthy()
+    expect(viewIs('labDocDir')).toBe(true)
+    expect(await viewItems()).toEqual([])
+  })
+
+  it('treats a click on the selector body as a no-op', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    // Edit mode makes "nothing changed" observable: the old Pill left it behind
+    // (`setMode` + `setEditMode(false)`), R3's click must not.
+    await click(button(L('btnEdit')))
+    expect(document.querySelector('.fs-area')).not.toBeNull()
+    const before = urls().length
+    await click(viewBtn())
+    expect(viewIs('labSrc')).toBe(true)
+    expect(document.querySelector('.fs-area')).not.toBeNull()
+    expect(document.querySelector('.fs-dirty')).toBeNull()
+    expect(urls()).toHaveLength(before)
+  })
+
+  it('leaves edit mode when a view is picked from the dropdown', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(button(L('btnEdit')))
+    expect(document.querySelector('.fs-area')).not.toBeNull()
+    await pickView('labTr')
+    expect(viewIs('labTr')).toBe(true)
+    expect(document.querySelector('.fs-area')).toBeNull()
+  })
+
+  it('offers the view dropdown on hover and keeps it to the ready views', async () => {
+    mount()
+    await flush()
+    // app.ts has only a source annotation: nothing else is ready, so the
+    // dropdown opens empty.
+    await click(row('app.ts'))
+    expect(await viewItems()).toEqual([L('labAnnot')])
+    // README.md has a summary and a translation but no annotation.
+    await click(row('README.md'))
+    expect(await viewItems()).toEqual([L('labDocFile'), L('labTr')])
+  })
+})
+
+describe('narrow toolbar: icon bands (R2)', () => {
+  /** The toolbar button carrying the given visible label. */
+  function rightButton(label: string): HTMLElement {
+    return byText('.fs-hbar-right button', label)
+  }
+
+  it('wraps each collapsible label so the narrow band can hide it, keeping the aria name', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    // 四个按钮的可见文字都在 `.fs-btnlabel` 里 —— 窄档样式表隐藏的正是这一层；
+    // 文字节点留在 DOM 里，纯图标态的可访问名由常驻的 aria-label 给出。
+    // （分屏按钮 R4 与它们同组，所以在最前。）
+    expect(Array.from(document.querySelectorAll('.fs-hbar-right .fs-btnlabel'))
+      .map(node => (node.textContent || '').trim()))
+      .toEqual([L('btnSplit'), L('btnGen'), L('btnEdit'), L('btnSave')])
+    expect(rightButton(L('btnSplit')).getAttribute('aria-label')).toBe(L('btnSplit'))
+    expect(rightButton(L('btnGen')).getAttribute('aria-label')).toBe(L('btnGen'))
+    expect(rightButton(L('btnEdit')).getAttribute('aria-label')).toBe(L('btnEdit'))
+    expect(rightButton(L('btnSave')).getAttribute('aria-label')).toBe(L('btnSave'))
+    // 视图选择器的文字**就是**当前视图名（R3.2），因此不参与图标化：它没有 label 层。
+    expect(viewBtn().querySelector('.fs-btnlabel')).toBeNull()
+  })
+
+  it('gives the save button the DSH check glyph and the edit button its pencil', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    // `icon` 在宽档也渲染：窄档只是把文字藏起来，图标本来就是常驻的。
+    expect(rightButton(L('btnSave')).querySelector('[data-icon="IconCheckOutline16"]')).not.toBeNull()
+    expect(rightButton(L('btnEdit')).querySelector('[data-icon="IconEditOutline16"]')).not.toBeNull()
+    expect(rightButton(L('btnGen')).querySelector('[data-icon="IconPlusOutline16"]')).not.toBeNull()
+  })
+
+  it('keeps 「翻译中…」 on the button itself and swaps in the loading glyph', async () => {
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't9', kind: 'translate', status: 'success', docRel: 'bk/tr/README.md' } } }
+      }
+      if (url.startsWith('/api/fs/translate')) return { body: { ok: true, started: true, taskId: 't9' } }
+      if (url.startsWith('/api/fs/read?path=bk%2Ftr%2FREADME.md')) return { body: { content: 'translated', ext: 'md', size: 10 } }
+      return defaultHandler(url)
+    }
+    vi.useFakeTimers()
+    mount()
+    await flush()
+    // README.md 已带译文，所以菜单项读「重新翻译」；轮询没走完之前，按钮自己就是那盏灯。
+    await click(row('README.md'))
+    await translateVia('btnTrRegen')
+    const busy = rightButton(L('btnTrLoading'))
+    expect((busy as HTMLButtonElement).disabled).toBe(true)
+    expect(busy.querySelector('[data-icon="IconLoadingOutline16"]')).not.toBeNull()
+    expect(busy.getAttribute('aria-label')).toBe(L('btnTrLoading'))
+    // 轮询落地后整组复位：文案、图标、可用性都回到常态。
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    const idle = rightButton(L('btnGen'))
+    expect((idle as HTMLButtonElement).disabled).toBe(false)
+    expect(idle.querySelector('[data-icon="IconPlusOutline16"]')).not.toBeNull()
+  })
+
+  it('collects the workspace name into the same label layer, one band behind the buttons', async () => {
+    mount()
+    await flush()
+    const ws = document.querySelector('.fs-wsbtn') as HTMLElement
+    const name = (ws.textContent || '').trim()
+    expect(name.length).toBeGreaterThan(0)
+    // 工作区名复用右列那套 label 机制，但归在 `.fs-wslabel` 上：第一档不收它，
+    // 因为它同时是「当前在看哪个工作区」的标识，容器还放得下就用文字。
+    const label = ws.querySelector('.fs-wslabel')
+    expect(label).not.toBeNull()
+    expect(label?.className).toContain('fs-btnlabel')
+    expect((label?.textContent || '').trim()).toBe(name)
+    // 文字被藏起来之后，当前工作区的标识只剩恒定的 aria-label / 悬停 title。
+    expect(ws.getAttribute('aria-label')).toBe(name)
+    expect(ws.getAttribute('title')).toBe(name)
+  })
+
+  it('routes the bands through container queries instead of JS thresholds', () => {
+    apply(makeCtx())
+    const css = document.head.querySelector('style[data-plugin="fs"]')?.textContent ?? ''
+    // 分档交给样式表：容器查询是唯一持有像素阈值的地方（`.fs-hbar` 自己是查询容器）。
+    expect(css).toContain('container-type:inline-size')
+    // 第一档收右列四个按钮（含 R4 的分屏），第二档（更窄）才收工作区名 —— 两档都不许缺，缺了就留缝。
+    // 第一档 760（第三段 b 由 672 上调）：四段文字一起会在面板 701–720 把中列挤到 0
+    // （中列视图名被裁 + 右列部分裁切），收文字后该窗口整段消失。
+    // 第二档的阈值是 550（第三段 b 由 470 上调）：470 时工作区名在面板 499px 就恢复可见，
+    // 而右列要到 535px 才完全不被裁，499–534 那一段于是留下「保存按钮右边缘缺 17px」。
+    expect(css).toContain('@container (max-width:760px){.fs-btnlabel:not(.fs-wslabel){display:none}}')
+    expect(css).toContain('@container (max-width:550px){.fs-wslabel{display:none}}')
+    // 「解读选择」的包装不给 `min-width:0`：给了它，里面的按钮会溢出压住「● 未保存」。
+    expect(css).toContain('.fs-genwrap{display:inline-flex;align-items:center}')
+  })
+})
+
+describe('split view (R4)', () => {
+  afterEach(() => { vi.restoreAllMocks() })
+
+  /** 顶栏的分屏按钮（可见文字「分栏」，窄档收进 `.fs-btnlabel`）。 */
+  function splitBtn(): HTMLElement {
+    return byText('.fs-hbar-right button', L('btnSplit'))
+  }
+
+  /** 右侧那份只读副本的窗格；未分屏时为 null。 */
+  function splitPane(): HTMLElement | null {
+    return document.querySelector('.fs-splitpane') as HTMLElement | null
+  }
+
+  /** 左侧窗格（`.fs-body` 的直接子元素；右侧那份在 `.fs-splitpane` 里面，不会撞上）。 */
+  function leftPane(): HTMLElement {
+    const node = document.querySelector('.fs-body > .fs-main')
+    if (node === null) throw new Error('no left pane')
+    return node as HTMLElement
+  }
+
+  /** 右侧窗格里的 `.fs-main`（未分屏时为 null）。 */
+  function rightPane(): HTMLElement | null {
+    return document.querySelector('.fs-splitpane .fs-main') as HTMLElement | null
+  }
+
+  it('keeps the entry disabled until something is open', async () => {
+    mount()
+    await flush()
+    expect((splitBtn() as HTMLButtonElement).disabled).toBe(true)
+    await click(row('full.md'))
+    expect((splitBtn() as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('copies the open view to the right, and the second click closes it', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    expect(viewIs('labSrc')).toBe(true)
+    expect(splitPane()).toBeNull()
+    await click(splitBtn())
+    // 右侧是完整的一份窗格，但里面没有任何控件：无编辑、无保存、无生成入口。
+    expect(rightPane()).not.toBeNull()
+    expect(rightPane()?.querySelectorAll('button')).toHaveLength(0)
+    expect(splitPane()?.querySelectorAll('.fs-area')).toHaveLength(0)
+    // 再点同一个按钮即关闭。
+    await click(splitBtn())
+    expect(splitPane()).toBeNull()
+    expect(document.querySelectorAll('.fs-main')).toHaveLength(1)
+  })
+
+  it('freezes the right pane view while the left keeps switching, and stays read-only', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(splitBtn())
+    // 左侧进编辑态：右侧那份副本仍走查看分支（textarea 只有左侧一个）。
+    await click(button(L('btnEdit')))
+    expect(document.querySelectorAll('.fs-area')).toHaveLength(1)
+    expect(leftPane().querySelector('.fs-area')).not.toBeNull()
+    expect(rightPane()?.querySelector('.fs-area')).toBeNull()
+    // 左侧切到「源码注解」：右侧仍是开启那一刻冻结的「源码」正文 —— 视图类型冻结、数据实时。
+    await pickView('labAnnot')
+    expect(viewIs('labAnnot')).toBe(true)
+    expect((rightPane()?.querySelector('.stub-md')?.textContent) || '').toContain('# Full')
+    expect((leftPane().querySelector('.stub-md')?.textContent) || '').toContain('# Title')
+  })
+
+  it('remembers the split per file and restores the full width elsewhere', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(splitBtn())
+    expect(splitPane()).not.toBeNull()
+    // 切到没开过分屏的文件 ⇒ 恢复全屏。
+    await click(row('app.ts'))
+    expect(splitPane()).toBeNull()
+    // 切回来 ⇒ 又分屏，且冻结的还是当时那一份视图。
+    await click(row('full.md'))
+    expect(splitPane()).not.toBeNull()
+    expect((rightPane()?.querySelector('.stub-md')?.textContent) || '').toContain('# Full')
+  })
+
+  it('drags the divider, clamps the ratio and remembers it per file', async () => {
+    // jsdom 没有布局：给两侧窗格注入宽度，让「占比 = 右 / 两侧之和」这一步可测。
+    const PANE_W = 500
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement): DOMRect {
+      const width = this.classList.contains('fs-splitpane') || this.classList.contains('fs-main') ? PANE_W : 0
+      return { width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }
+    })
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(splitBtn())
+    const grow = (): number => Number((splitPane() as HTMLElement).style.flexGrow)
+    // 初始占比 0.5 ⇒ grow = p/(1−p) = 1。
+    expect(grow()).toBeCloseTo(1, 10)
+    const bars = Array.from(document.querySelectorAll('.fs-split'))
+    const bar = bars[1]
+    if (bar === undefined) throw new Error('no divider for the right pane')
+    await act(async () => {
+      bar.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, clientX: 500 }))
+    })
+    expect(bar.className).toContain('active')
+    // 往右拖 400px：右侧只剩 100/1000 ⇒ 占比 0.1 被夹到下限 0.2。
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 900 }))
+    })
+    expect(grow()).toBeCloseTo(0.25, 10)
+    // 反方向拖到底：占比 0.9 被夹到上限 0.8。
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 100 }))
+    })
+    expect(grow()).toBeCloseTo(4, 10)
+    await act(async () => {
+      document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }))
+    })
+    expect(Array.from(document.querySelectorAll('.fs-split'))[1]?.className).not.toContain('active')
+    // 比例按文件记忆：切走再切回来，分栏比例仍是 0.8。
+    await click(row('app.ts'))
+    await click(row('full.md'))
+    expect(grow()).toBeCloseTo(4, 10)
+  })
+
+  it('draws the copied DSH split glyph and keeps its accessible name', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    const svg = splitBtn().querySelector('svg')
+    expect(svg?.getAttribute('viewBox')).toBe('0 0 16 16')
+    expect(svg?.getAttribute('aria-hidden')).toBe('true')
+    // 一条 even-odd 路径 = 宿主的面板外框环 + 移到中心的竖线（逐字复制，规格 §2 的唯一例外）。
+    const path = svg?.querySelector('path')
+    expect(path?.getAttribute('fill-rule')).toBe('evenodd')
+    expect(path?.getAttribute('clip-rule')).toBe('evenodd')
+    expect(path?.getAttribute('d') || '').toContain('M7.31989 1.88307H8.68012V14.1169H7.31989V1.88307Z')
+    // 参与同一套窄档收纳：文字在 `.fs-btnlabel` 层里，可访问名恒定。
+    expect(splitBtn().querySelector('.fs-btnlabel')?.textContent).toBe(L('btnSplit'))
+    expect(splitBtn().getAttribute('aria-label')).toBe(L('btnSplit'))
+    expect(splitBtn().getAttribute('title')).toBe(L('a11ySplit'))
   })
 })

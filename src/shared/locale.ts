@@ -31,15 +31,20 @@ export const ZH = {
   a11yExpandTree: '展开文件树',
   a11yCollapseTree: '折叠文件树',
   a11yRefresh: '刷新',
-  a11yGen: '生成/重新生成：目录概览·文件摘要·源码注解',
-  a11yTrLoading: '翻译中…',
-  a11yTrRegen: '重新翻译（覆盖已有译文）',
-  a11yTrNew: '翻译为中文（特殊名词用 ( ) 内解释）',
+  a11yGen: '生成/重新生成：目录概览·文件摘要·源码注解·文章翻译',
+  // 视图选择器（R3）：按钮文字即当前视图名，title 只说明悬停交互。
+  a11yViewPick: '视图选择：悬停展开其它视图',
   // 按钮
-  btnGen: '生成解读',
+  btnGen: '解读选择',
   btnEdit: '编辑',
   btnView: '查看',
   btnSave: '保存',
+  // 分屏（R4）。可见文字沿用宿主 `dock.splitPane` 的「分栏」（与 §2 例外里那个字形同源，
+  // 不自造术语）；a11y 串要说清「再点一次关闭」这个非通用交互 —— 窄档只剩图标时，
+  // 按钮上没有可见文字，标识与用法全靠它。
+  btnSplit: '分栏',
+  a11ySplit: '分屏：把当前显示的视图复制一份只读副本到右侧；再点一次关闭',
+  // 翻译（R1：原独立翻译按钮并入「解读选择」菜单，这三项现在由菜单项复用）
   btnTr: '翻译',
   btnTrRegen: '重新翻译',
   btnTrLoading: '翻译中…',
@@ -55,7 +60,7 @@ export const ZH = {
   rootDirName: '工作区根目录',
   folderCardTitle: '创建本目录的目录概览',
   folderCardDesc1: '用目录概览技能(folder-doc)生成该目录的概览说明，便于快速了解其结构、边界与上下游（目录层/L1）。',
-  folderCardDesc2: '点击右上角「生成解读」，在下拉中选择「目录概览」。',
+  folderCardDesc2: '点击右上角「解读选择」，在下拉中选择「目录概览」。',
   pathSep: ' · ',
   wsItemSep: '  ·  ',
   // 生成/读取中
