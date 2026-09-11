@@ -1106,22 +1106,25 @@ function FsView(props: FsViewProps): React.JSX.Element {
 // ---- 样式 ----
 // 迁移源 `src/client/index.js:695-753` 逐字保留；按决策 D-8 例外 a 删除 4 个
 // 无任何 JS 引用的死类（`.fs-folder-gen` / `.fs-card-actions` / `.fs-card-src` / `.fs-card-err`）。
+// 上述删除之外，顶栏与左侧树为修窄宽度重叠另有偏差：`.fs-hbar` 改 auto/minmax(0,1fr)/auto
+// 分列并加裁剪兜底，左右列去掉 `min-width:0`（保留 min-content 下限），`.fs-hbar-mid` 加
+// `overflow:hidden`（防 tab 组画到右列），`.fs-side` 加 `max-width:50%`。
 const CSS = [
   '.fs-wrap{display:flex;flex-direction:column;height:100%;font-size:13px;color:var(--dsw-alias-label-primary,#0f1115);overflow:hidden;min-height:0;box-sizing:border-box;padding:2px 14px 8px;--fs-bottom-clearance:calc(var(--dsh-composer-height,152px) + 16px)}',
-  '.fs-hbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:0 10px;flex:none;min-width:0;padding:6px 0}',
-  '.fs-hbar-left{justify-self:start;display:flex;align-items:center;gap:8px;min-width:0}',
+  '.fs-hbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 10px;flex:none;min-width:0;padding:6px 0;overflow:hidden}',
+  '.fs-hbar-left{justify-self:start;display:flex;align-items:center;gap:8px}',
   '.fs-hd-actions{flex:none;display:flex;align-items:center;gap:2px;min-width:0}',
   '.fs-wsbtn{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-  '.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0}',
+  '.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}',
   '.fs-tabs{flex:none;display:flex;align-items:center;gap:4px}',
   '.fs-hbar-path{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}',
   '.fs-hd-path{display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.85));font-size:12px;line-height:20px}',
-  '.fs-hbar-right{justify-self:end;display:flex;align-items:center;gap:6px;min-width:0}',
+  '.fs-hbar-right{justify-self:end;display:flex;align-items:center;gap:6px}',
   '.fs-genwrap{display:inline-flex;align-items:center;min-width:0}',
   '.fs-chev{transition:transform 150ms var(--ds-ease-in-out,ease)}',
   '.fs-chev-open{transform:rotate(90deg)}',
   '.fs-body{display:flex;flex-direction:row;flex:1;min-height:0}',
-  '.fs-side{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.2))}',
+  '.fs-side{display:flex;flex-direction:column;min-height:0;max-width:50%;border-right:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.2))}',
   '.fs-panel{flex:1;min-height:0;overflow:auto;padding:4px;padding-bottom:var(--fs-bottom-clearance,0px)}',
   '.fs-split{flex:none;width:5px;cursor:col-resize;background:transparent;transition:background 120ms}',
   '.fs-split:hover,.fs-split.active{background:rgba(127,127,127,.12)}',
