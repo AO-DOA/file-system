@@ -1044,11 +1044,22 @@ function FsView(props: FsViewProps): React.JSX.Element {
       <span className="fs-btnlabel">{genLabel}</span>
     </Button>
   )
+  // 浮层一律 portal 到 body：`.fs-hbar` 与 `.fs-hbar-mid` 都带 `overflow:hidden`（第一段为
+  // 消跨列重叠加的兜底裁剪），而 `Menu` 默认是**内联**渲染（`portal = false`，见 primitives
+  // `lib/types/Menu.d.ts` 与 `lib/index.js` 的 `portal ? createPortal(list, document.body) : list`）
+  // ⇒ `.mr-list` 是这两条裁剪声明的后代，绝对定位在锚点下方 4px 的面板会被裁剪盒切掉大半
+  //（实测可见高只剩 0–6px，视图选择器那一份在全部 3306 档里**整块不可见**），
+  // 用户看到的就是「鼠标放上去看不到下拉」。
+  // portal **不改变** hover 收起语义：React 的 enter/leave 按 fiber 树判定（不是几何），portal
+  // 出去的面板在 React 树里仍是锚点的后代，指针移进面板不会触发锚点的 `pointerleave`
+  //（用真实 react-dom 18 复现过：移到面板 0 次 leave，移到 React 树外的裸元素则必然 leave）。
+  // 所以 `closeOnPointerLeave` 照旧保留。
   const genMenu = (
     <Menu
       open={genMenuOpen}
       anchor={genAnchor}
       items={genItems}
+      portal
       closeOnPointerLeave
       onSelect={(id) => {
         viewer.runGen(id as GenKind)
@@ -1096,6 +1107,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
       open={wsMenuOpen}
       anchor={wsAnchor}
       items={wsItems.map(w => ({ id: w.workspaceId, label: (w.title || basename(w.path)) + t('wsItemSep') + w.path }))}
+      // 与「解读选择」同一个理由：内联面板会被 `.fs-hbar{overflow:hidden}` 裁掉（它本来就是
+      // 点击式菜单，没有 hover 收起，所以 portal 不带任何交互代价）。
+      portal
       onSelect={(id) => { selectWs(id); setWsMenuOpen(false) }}
       onClose={() => setWsMenuOpen(false)}
     />
@@ -1134,6 +1148,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
             </Button>
           )}
           items={viewItems}
+          // 同「解读选择」：视图中列也带 `overflow:hidden`（第一段为防视图选择器画到右列加的），
+          // 内联面板会被整块裁掉，故一并 portal —— hover 收起语义不受影响（理由同上）。
+          portal
           closeOnPointerLeave
           // 选下拉项：切换视图并退出编辑态（沿用原 Pill 的行为）。
           onSelect={(m) => { viewer.setMode(m as ViewMode); viewer.setEditMode(false); setViewMenuOpen(false) }}
@@ -1328,6 +1345,10 @@ function FsView(props: FsViewProps): React.JSX.Element {
 const CSS = [
   '.fs-wrap{display:flex;flex-direction:column;height:100%;font-size:13px;color:var(--dsw-alias-label-primary,#0f1115);overflow:hidden;min-height:0;box-sizing:border-box;padding:2px 14px 8px;--fs-bottom-clearance:calc(var(--dsh-composer-height,152px) + 16px)}',
   '.fs-hbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 10px;flex:none;min-width:0;padding:6px 0;overflow:hidden;container-type:inline-size}',
+  // 上面这条 `overflow:hidden` 是跨列重叠归零的兜底裁剪，但它同时是**祖先裁剪盒**：任何从顶栏
+  // 溢出的浮层都会被切掉（`Menu` 的下拉是绝对定位在锚点下方 4px 的 `.mr-list`，首当其冲）。
+  // 因此顶栏三处 `Menu` 一律走 `portal`（挂到 `document.body`、fixed 定位、z-index 1100），
+  // 别改回内联渲染 —— 内联就是「鼠标放上去看不到下拉」的成因；`.fs-hbar-mid` 那条同理。
   '.fs-hbar-left{justify-self:start;display:flex;align-items:center;gap:8px}',
   '.fs-hd-actions{flex:none;display:flex;align-items:center;gap:2px;min-width:0}',
   '.fs-wsbtn{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',

@@ -2372,6 +2372,69 @@ describe('view selector and interpretation menu (R1/R3)', () => {
   })
 })
 
+describe('dropdown layering: the toolbar clip box must not crop the panels (R1/R3)', () => {
+  /**
+   * The one open dropdown panel.
+   * @returns the panel element.
+   */
+  function panel(): HTMLElement {
+    const node = document.querySelector('.stub-menu')
+    if (node === null) throw new Error('no open dropdown panel')
+    return node as HTMLElement
+  }
+
+  /**
+   * Assert the open panel escaped the toolbar's clip box: it is mounted on
+   * `document.body`, so no `overflow:hidden` ancestor of the toolbar can crop it.
+   * @param where - label naming the dropdown under test.
+   * @param hoverClose - whether this menu still carries the hover-to-close grace.
+   */
+  function expectOutsideToolbar(where: string, hoverClose: boolean): void {
+    expect(`${where}:${panel().parentElement === document.body}`).toBe(`${where}:true`)
+    // The real `.mr-list` is absolutely positioned 4px below its anchor, so inside a
+    // 48px-high toolbar it always overflows vertically; as a descendant of either clip
+    // box it is cropped to a sliver — that is the reported 「下拉看不到」.
+    expect(panel().closest('.fs-hbar')).toBeNull()
+    expect(panel().closest('.fs-hbar-mid')).toBeNull()
+    // 悬停收起语义在 portal 化之后**一个字都没改**：解读选择与视图选择器仍传
+    // `closeOnPointerLeave`（React 的 enter/leave 按 fiber 树判定，portal 出去的面板在 React
+    // 树里仍是锚点的后代，指针移进面板不会触发锚点的 pointerleave），工作区菜单本来就没有。
+    expect(panel().getAttribute('data-close-on-pointer-leave')).toBe(hoverClose ? '1' : '')
+  }
+
+  it('mounts the interpretation dropdown outside the toolbar clip box', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await openGenMenu()
+    expectOutsideToolbar('gen', true)
+  })
+
+  it('mounts the view dropdown outside the toolbar clip box', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await openViewMenu()
+    expectOutsideToolbar('view', true)
+  })
+
+  it('mounts the workspace dropdown outside the toolbar clip box', async () => {
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(byText('.fs-wsbtn', 'proj'))
+    expectOutsideToolbar('ws', false)
+  })
+
+  it('keeps the toolbar clip declarations the cross-column fix depends on', () => {
+    apply(makeCtx())
+    const css = document.head.querySelector('style[data-plugin="fs"]')?.textContent ?? ''
+    // 修法靠 portal，**不是**撤销第一段的兜底裁剪：这两条一旦被删，跨列可见重叠会回到基线的
+    // 544 档（见 PROGRESS.md §3 的消融实验）。留着它们、把浮层搬出裁剪盒，两条要求才同时成立。
+    expect(css).toContain('padding:6px 0;overflow:hidden;container-type:inline-size}')
+    expect(css).toContain('.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}')
+  })
+})
+
 describe('narrow toolbar: icon bands (R2)', () => {
   /** The toolbar button carrying the given visible label. */
   function rightButton(label: string): HTMLElement {

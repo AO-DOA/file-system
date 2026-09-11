@@ -14,6 +14,7 @@
  * the real primitives' markup.
  */
 import { createElement } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 
 /** Props of the stand-in button. */
@@ -79,11 +80,19 @@ interface StubMenuProps {
   onSelect?: ((id: string) => void) | undefined
   onClose?: (() => void) | undefined
   closeOnPointerLeave?: boolean | undefined
+  /** Real-menu `portal`: mount the panel on `document.body` instead of beside the anchor. */
+  portal?: boolean | undefined
 }
 
 /**
  * Stand-in anchored menu: always renders the anchor, and renders one clickable
  * row per item while `open`.
+ *
+ * `portal` reproduces the real menu's mount point rather than ignoring it: the
+ * real in-place panel (`.mr-list`) is an absolutely positioned descendant of the
+ * toolbar, so the toolbar's own `overflow:hidden` clips it — the defect this
+ * fixture has to keep observable. Specs therefore assert on the panel's ancestor
+ * chain, which is only meaningful if the stand-in moves the panel for real.
  * @param props - see {@link StubMenuProps}.
  * @returns the anchor wrapper with the conditional list.
  */
@@ -97,7 +106,12 @@ export function Menu(props: StubMenuProps): ReactNode {
     onClick: () => { if (!item.disabled && props.onSelect) props.onSelect(item.id) },
   }, item.label))
   const list = props.open
-    ? createElement('div', { className: 'stub-menu' }, [
+    ? createElement('div', {
+      className: 'stub-menu',
+      // 悬停收起语义的观测点：真实 Menu 只在 `closeOnPointerLeave` 时把指针 grace 挂在锚点上。
+      // 本轮把三个菜单改成 portal，但这条语义必须保持不变，所以桩把标记渲染出来供断言。
+      'data-close-on-pointer-leave': props.closeOnPointerLeave ? '1' : '',
+    }, [
       // The real menu closes itself on outside click / Escape; this button gives
       // specs a way to drive the owner's `onClose` handler.
       createElement('button', {
@@ -108,7 +122,8 @@ export function Menu(props: StubMenuProps): ReactNode {
       ...rows,
     ])
     : null
-  return createElement('div', { className: 'stub-menu-wrap' }, props.anchor, list)
+  const placed = props.portal && list !== null ? createPortal(list, document.body) : list
+  return createElement('div', { className: 'stub-menu-wrap' }, props.anchor, placed)
 }
 
 /** Props of the stand-in markdown renderer. */
