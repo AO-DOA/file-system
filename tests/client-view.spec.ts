@@ -2963,4 +2963,18 @@ describe('split view (R4)', () => {
     expect(splitBtn().getAttribute('title')).toBeNull()
     expect(splitBtn().closest('.fs-tipwrap')?.parentElement?.getAttribute('data-label')).toBe(L('a11ySplit'))
   })
+
+  it('leaves the seam bare until hovered: the idle divider rule is gone, the hover one stays', () => {
+    apply(makeCtx())
+    const css = document.head.querySelector('style[data-plugin="fs"]')?.textContent ?? ''
+    // 常态那条 0.5px 发丝线（旧 `::before`）**整条规则都不该在**：用户当场要求「竖线消失」，
+    // 两个窗格视觉上完全紧贴。这条断言就是它的回归钉子 —— 线一旦被加回来，这里先红。
+    expect(css).not.toContain('.fs-split::before')
+    // 提示线与它赖以成立的 8px 命中区（`left/right:-4px`）必须原样保留：线只在悬停/拖拽中浮出，
+    // 而指针能进到这条 8px 带里（`opacity:0` 的伪元素仍参与命中测试）正是拖拽可点性的前提。
+    expect(css).toContain('.fs-split::after{top:0;bottom:0;left:-4px;right:-4px;opacity:0')
+    expect(css).toContain('.fs-split:hover::after,.fs-split.active::after{opacity:1}')
+    // 分隔条本身仍是「不占位 + 拖拽光标」的那块 0 宽命中缝。
+    expect(css).toContain('.fs-split{position:relative;z-index:1;flex:none;width:0;cursor:col-resize;touch-action:none}')
+  })
 })
