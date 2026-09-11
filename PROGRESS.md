@@ -36,7 +36,9 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 ```
 
 **注意事项**
-- `lib/`、`client/` **不入库**（决策 D-7）；改代码后必须 `build` 再重启才生效。
+- `lib/`、`client/` **不入库**（决策 D-7）；改代码后必须 `build` 才生效——**是否还要重启，看改的是哪一半**：
+  **client 免重启**（产物由 HMR watch 热更，`build` + 刷新页面即可），**host 必须重启**
+  （产物是进程内 `require` 的模块）。2026-09-12 实测订正，判据与证据见本文件「改动的生效条件」一节。
 - 验收 build 前先 `rm -rf lib client`——`tsc` 不清理 outDir，会留下陈旧产物。
 - **并行跑 coverage 必须隔离**：`--coverage.reportsDirectory=/tmp/...`。共用 `coverage/.tmp` 会让生成崩溃（实测 4 次跑崩 3 次）。
 - `dsh plugin` **现在可用**（2026-09-11 修复；已非「本机必失败」）：前提是 profile 的 `package.json` 声明了 `packageManager` —— `~/.dsh/profiles/web/package.json:4` 为 `"packageManager": "pnpm@11.7.0"`（本次新增）。改 profile 直接 `dsh plugin --profile web <pnpm 参数>` 即可：它**没有子命令**，参数原样转发给 pnpm（`apps/cli/src/plugin.ts:120,134`；`--profile <name>` 必填，至少给一个 pnpm 参数），**不再需要**手工改 `dependencies` + `dsh.profile.bundles` + 补 node_modules 软链。
@@ -183,7 +185,7 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 
 **本轮数字复核（2026-09-11 22:10:01，探针复跑）**：探针与 dump 仍在 `/tmp/verify-lian/`（脚本 `gen3.js` / `gen7.js`，产物 `probe-*.html` / `dump7-*.html`），`node` + `/usr/bin/google-chrome --headless=new --dump-dom` 可直接复跑（全跑不到 5 秒）。用同脚本重跑后，`dump7-base.html` / `dump7-cur.html` 与上游产物 **md5 逐字节一致**；口径 A 的 544/4758、231/797、183/652 + 183 列盒，口径 B 的 1002/383、S2 398–582（185）/ S3 415–612（198）、最大相交 411px²、`genwrapW`=20.3px / 按钮宽 52px，**全部复现**。**唯一未能复现的上游说法**是「基线 S2 在 w≤480 的 281 档中 0 档元素被裁」（实测右列 6/281、任意元素 63/281，见上表脚注），已按实测订正。
 
-**生效条件与后果**：改后必须 `npm run build` 再重启 dsh web 才生效（依据 `README.md` 内关于构建生效的说明——按本文件规范不写死行号；本节纪律为「只记账不改代码」，**未跑 build、未重启**）。
+**生效条件与后果（2026-09-12 订正）**：本节改的是 `src/`（两侧都动过，其中 client 侧为主）。**当时**照的是 `README.md`/本文件「改代码后 `build` 再重启才生效」的旧说法——那时尚未区分两半；该说法已于 2026-09-12 作废（见本文件「改动的生效条件」一节）。按**现行判据**：client 侧改动 `npm run build` + 刷新页面即生效、**不需要重启**。本节纪律为「只记账不改代码」，**未跑 build、未重启**——所以**当时确实**没有把改动推上运行态（这是历史事实，不作订正）。
 
 ### 三段（a / b）末态复测（2026-09-11 23:29:46，工作树，未提交）
 
@@ -248,7 +250,7 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
   （**运行产物不进仓库**，跑法见 `tools/ui-probe/README.md` §1.5，两行命令即可复跑）。
 - 诊断报告（含订正项与诚实清单）已归档：`docs/agent/reports/2026-09-11-ui-revamp-menu-clipping.md`。
 
-**生效条件**：改的是 `src/`，运行中的页面要看到修复须 `npm run build` + 重启 dsh web（**未核实是否已做**）。
+**生效条件（2026-09-12 订正）**：改的是 `src/` 的 **client 侧**。旧记录写「须 `npm run build` + 重启 dsh web」，前半对、后半错——按 2026-09-12 实测的判据，client 产物是 HMR watch 热更的静态资源，**`npm run build` + 刷新页面即生效，不需要重启**（重启多余且会中断对话）。见本文件「改动的生效条件」一节。**本轮是否已 `build`：未核实。**
 
 **订正（本段记录，与 `docs/spec-ui-revamp.md` 有关，影响 §5 #12 的措辞）**：`Tooltip` 那条要求写在
 规格 **§1 R2**（「三个按钮收成纯图标，且全部保留 `Tooltip` + `aria-label`」），而**§2 第 87 行已明文
@@ -333,6 +335,62 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
 `client/client.js` 仍是旧产物）—— 气泡高 26px，`top` 成立需要锚点上方 ≥ **46px**＝26+8+12；
 若不足，`Tooltip` 会翻成 `bottom`（落在按钮下方、压正文），那时应改 `TIP_SIDE` 这一个常量；
 ② 悬停延迟只钉住「传给 `Tooltip` 的 props = 1000」，没跑真实计时器（jsdom 无布局、无指针）。
+
+### 改动的生效条件：client 免重启、host 必须重启（2026-09-12 01:12:33 实测订正）
+
+**这是一条规则性/因果性错误的订正**（不是「当时做错了」的订正）。被订正的旧说法原文（本轮逐处核过）：
+
+- `README.md` 构建产物段：「改 host 或 client 后需重跑 `npm run build` 并重启 dsh web 才生效」
+- 本文件 §2 注意事项：「改代码后必须 `build` 再重启才生效」
+- 本文件 §3 顶栏/侧栏窄宽度重叠修复段与 §3 三段末态复测段：「改后必须 `npm run build` 再重启 dsh web 才生效」
+- 本文件 §3 探针复刻 DOM 同步段：「改的是 `src/`，运行中的页面要看到修复须 `npm run build` + 重启 dsh web」
+- `docs/spec-ui-revamp.md` §4 验收段：「改动后需 `npm run build` 并**重启 dsh web** 才生效」
+
+**病根**：这句话把**两半性质完全不同的产物**当成一回事说了。谁都没验过机制，只是照抄。
+后果是主代理在 2026-09-12 为**纯 client** 改动连着重启了好几次 `dsh web`，每次中断一次用户对话——
+**那些重启不是「失效」，是「多余 + 有代价」**（历史那里确实重启过，不改成「没重启」）。
+
+**新结论（两半分开说）**：
+
+| 半边 | 源码 → 产物 | 产物性质 | 生效方式 |
+|---|---|---|---|
+| **client** | `src/client/**` → `client/client.js` | 被 HTTP 分发的**静态资源**（本机 profile 挂着 HMR bundle watch） | `npm run build` + **刷新页面**，**不需要重启** |
+| **host** | `src/host/**` → `lib/host/index.js` | Node 进程 `require` 进内存的**模块** | `npm run build` + **必须重启** dsh web |
+
+**为什么 client 免重启（机理）**：build 一落盘，HMR 的 stat 轮询发现 mtime/size 变化 → 按内容重哈希 →
+调 `clientModules.rebuilt(id)` → host **内存里的 `responses` Map 与 rev 当场更新**。旧的
+`cache-control: immutable` 之所以不挡事，正是因为 rev 换了 ⇒ URL 换了 ⇒ 不吃旧缓存。
+
+**决定性证据（2026-09-12 01:12:33 实取，只读操作）**：
+
+- 时间线先立住：运行中的 web 进程（`pgrep -f 'dsh web'`，PID 1030993）**启动于 00:55:03**；
+  而 `client/client.js` 的 mtime 是 **01:10:18**（对应提交 `d99eae4`「分栏分隔条改紧凑细线」），
+  **比进程启动晚 15 分钟**、期间**没有任何重启**。
+- 带 cookie 请求页面 → 取插件自身 bundle URL：
+  `/plugins/??dsh-plugin-file-system-zc/client.js&rev=df24c8832f06`
+- 请求该 URL：HTTP **200**、**70251** 字节、`cache-control: public, max-age=31536000, immutable`；
+  内容含**新**样式标记 `dsw-alias-border-l4` **1 处**、旧标记 `width:5px;cursor:col-resize` **0 处**。
+- 与本地 `client/client.js`（70160 字节）`cmp`：**前 70160 字节逐字节相同**（对 `head -c 70160` 的切片
+  `cmp` 退出码 **0**）；响应只多 **91** 字节，即 combo 追加的
+  `;\n//# sourceMappingURL=/plugins/??dsh-plugin-file-system-zc/client.js.map&rev=df24c8832f06`。
+- **rev 就是内容哈希**（可独立复算）：按 `artifactRevision` 的 `framedHash('plugin-artifact', [bundle])`
+  = `sha1("plugin-artifact\0" + "70160:" + bundle)` 取前 12 位 hex，得 **`df24c8832f06`**，
+  与页面分发 URL 的 rev **完全相同** ⇒ 内存里的 bundle 字节**就是**那份 01:10 落盘的产物。
+
+**源码依据**（复核时读这几处，不写死行号）：
+
+- `packages/client/modules/src/index.ts`：`responses` 内存 Map、`IMMUTABLE_CACHE`、
+  `artifactRevision` / `shortHash`（sha1 内容哈希取前 12 位）、`rebuilt(id)` 的注释
+  「the HMR watch's registration hook — the only entry point through which bundle content changes reach the graph」。
+- `packages/client/hmr/src/index.ts`：`bundleStat`（`statSync` 取 mtime/size）、`pollWatches`（默认 500ms）、
+  `syncWatches`（遍历 `clientModules.graph().entries` 逐个装 watch）、`rehash`。
+
+**一条伴生坑**：HMR **成功**重哈希与热更时**不写任何日志**（只有出错走 `ctx.logger.warn`）。
+所以「`web.log` 里没有 HMR 记录」**不能**当成「没生效」——那正是这条错记录能被照抄很久的掩护。
+
+**下次换环境怎么重验**（别照抄结论）：取分发 URL（页面 HTML 里的 `/plugins/??<包名>/client.js&rev=…`）→
+带 cookie 请求 → 比对**新内容独有的标记串**是否出现、旧标记是否消失 → 与本地产物 `cmp` 前 N 字节。
+三步任一不符，就说明那个环境的 watch 没在跑，**那时才需要重启**。
 
 ## 4. 回滚
 

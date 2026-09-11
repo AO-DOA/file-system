@@ -144,7 +144,15 @@ npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归
 - 手写源码一律在 `src/`：host 入口 `src/host/index.ts`、client `src/client/index.tsx`、
   共享文案字典 `src/shared/locale.ts`。
 - 构建产物为 `lib/host/index.js`（host）与 `client/client.js`（client），两者都在 `.gitignore` 中，
-  不手写、不提交；**改 host 或 client 后需重跑 `npm run build` 并重启 dsh web 才生效**。
+  不手写、不提交。
+- **改动如何生效：两半不同，别再一起说**（2026-09-12 实测订正；旧说法「改 host 或 client 后都要
+  `build` + 重启」已作废，订正记录见 `PROGRESS.md`「改动的生效条件」一节）：
+  - **client**（`src/client/**` → `client/client.js`）：产物是被 HTTP 分发的**静态资源**，本机 profile 挂着
+    HMR bundle watch。`npm run build` 一落盘，watch 按 stat（mtime/size）变化重哈希并调
+    `clientModules.rebuilt(id)`，host **内存里的 bundle 与 rev 立即更新**
+    ⇒ **`npm run build` + 刷新页面即可，不需要重启**（重启多余，还会中断用户对话）。
+  - **host**（`src/host/**` → `lib/host/index.js`）：产物是 Node 进程 `require` 进内存的**模块**
+    ⇒ **`npm run build` + 必须重启 dsh web**。
 
 ## 相关文档
 
