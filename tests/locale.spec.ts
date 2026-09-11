@@ -6,8 +6,10 @@
 // R1/R3 段（顶栏收编 + 视图选择器）的键变动同样登记在此：新增 a11yViewPick（视图选择器 title）、
 // 删除随独立翻译按钮一并失效的三个 a11yTr* 键（New/Regen/Loading）、改写三个值
 // （btnGen「生成解读」→「解读选择」、a11yGen 补「文章翻译」、folderCardDesc2 跟随按钮改名）。
-// R4 段（分屏）的键变动同样登记在此：新增 btnSplit（「分栏」，与规格 §2 例外里那个字形同源）
-// 与 a11ySplit（说清「再点一次关闭」这个非通用交互），键数由 115 增至 117。
+// R4 段（分栏）的键变动同样登记在此：新增 btnSplit（「分栏」，与规格 §2 例外里那个字形同源）
+// 与 a11ySplit（气泡文案），键数由 115 增至 117。
+// 2026-09-12 术语裁决：全产品中文表述统一为「分栏」（原「分屏」废止），本表只跟值
+// —— `a11ySplit` 由 30 字的整句说明收成「分栏：右侧只读副本」；键名是英文中性词，不动。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { LANG, ZH, t } from '../src/shared/locale'
@@ -48,9 +50,10 @@ const EXPECTED_ZH: Record<string, string> = {
   btnEdit: '编辑',
   btnView: '查看',
   btnSave: '保存',
-  // 分屏（R4）：可见文字沿用宿主 `dock.splitPane` 的「分栏」，a11y 串说明这个非通用交互。
+  // 分栏（R4）：可见文字沿用宿主 `dock.splitPane` 的「分栏」；气泡文案只有「功能名 + 一句极短限定」
+  // （原先那句 30 字的整句说明会把气泡撑成一条横在按钮下方、压住正文，用户截图反馈）。
   btnSplit: '分栏',
-  a11ySplit: '分屏：把当前显示的视图复制一份只读副本到右侧；再点一次关闭',
+  a11ySplit: '分栏：右侧只读副本',
   // 翻译（R1：原独立翻译按钮并入「解读选择」菜单，这三项现在由菜单项复用）
   btnTr: '翻译',
   btnTrRegen: '重新翻译',

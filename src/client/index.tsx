@@ -16,7 +16,7 @@ import {
   IconLoadingOutline16, IconPanelLeftOutline16, IconPlusOutline16, IconRefreshOutline16,
   MarkdownText, Menu, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownLabels, TooltipSide } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   basename, extBadge, extOf, isMd, labLabelKey, langFor, parseFmRows, splitFrontmatter,
@@ -730,7 +730,7 @@ function placeholderCard(opened: OpenedNode): React.JSX.Element {
   )
 }
 
-// ---- 分屏字形（R4，规格 §2 的唯一例外）----
+// ---- 分栏字形（R4，规格 §2 的唯一例外）----
 // 宿主 `packages/client/ui-dockkit/src/components/TabPanel.tsx` 的 `SplitGlyph`：面板外框环
 // （`PANEL_FRAME`）与一条移到中心的竖线，合成一条 even-odd 路径。该组件与常量都未 export，
 // dockkit 也不在插件的 client 外置白名单（`tsdown.config.ts` 的 `CLIENT_EXTERNALS`）里，
@@ -742,7 +742,7 @@ const SPLIT_PANEL_FRAME = 'M9.67272 0.522841C10.8339 0.522841 11.76 0.522714 12.
 const SPLIT_DIVIDER = 'M7.31989 1.88307H8.68012V14.1169H7.31989V1.88307Z'
 
 /**
- * 分屏按钮的图标：16×16 的 DSH 分屏字形。写法与宿主那处一致（`fill="none"`、
+ * 分栏按钮的图标：16×16 的 DSH 分栏字形。写法与宿主那处一致（`fill="none"`、
  * `aria-hidden="true"`、`fill="currentColor"`、`fillRule`/`clipRule` 取 evenodd）。
  * @returns 图标元素。
  */
@@ -805,8 +805,8 @@ function FsPane(props: FsPaneProps): React.JSX.Element {
 }
 
 /**
- * 分屏记录（R4）：按「打开对象的 path」索引，这就是「按文件各自记忆」——
- * 切到没开过分屏的文件/目录时查不到记录，自然回到全屏。
+ * 分栏记录（R4）：按「打开对象的 path」索引，这就是「按文件各自记忆」——
+ * 切到没开过分栏的文件/目录时查不到记录，自然回到全屏。
  *
  * `mode` 是**开启那一刻冻结**的视图类型（左侧之后切视图只影响左侧）；
  * `ratio` 是右侧窗格在内容区弹性宽度里的占比。关闭只把 `on` 置 false，
@@ -828,6 +828,29 @@ interface FsViewProps {
   workspaces?: WorkspacesSurface | undefined
 }
 
+/** 顶栏气泡的悬停延迟（毫秒），全插件一个值 —— 调节点只有这一处。
+ *
+ * 为什么必须给延迟：primitives 的 `Tooltip` 把 `delayMs` 的默认值取成 **0**（`Tooltip.tsx` 的
+ * `delayMs = 0` 形参默认），所以不传它就是「hover 即弹」。顶栏按钮排成一行，指针扫过去会一路
+ * 弹气泡，用户反馈「很烦」。取 1000ms ≈ 1 秒：宿主测试里的惯例值是 500ms（`<Tooltip delayMs={500}>`），
+ * 这里比它更「沉」一档，才符合用户原话「等几秒再显示，不要直接显示」；再长（如 2s）会让真有心看
+ * 提示的人等得不耐烦，故折中在 1s。
+ * **只延迟 hover**：`Tooltip` 的 focus 分支走的是 `cancelShow(); show()`，绕过计时器 ⇒
+ * 键盘 Tab 到按钮时气泡立即出现，无障碍语义未被这一延迟动到。
+ * 用户嫌快/慢时只改这一个数字，不必碰任何调用点。 */
+const TIP_DELAY_MS = 1000
+
+/** 顶栏气泡的默认方向：往上弹。
+ *
+ * 为什么是 `top` 而不是 primitives 的默认 `'right'`（`Tooltip.tsx` 的 `side = 'right'`）：
+ * 顶栏下面紧挨着的就是用户正在读的正文/内容区，气泡一旦出现在下方就把它压住（用户截图反馈）；
+ * 顶栏上方只有 DSH 自己的页签栏，被短暂遮住的代价小得多。
+ * 另外 `Tooltip` 的视口自适应会在「请求的方向放不下」时**垂直翻面**（`fitsBelow` / `fitsAbove`）：
+ * 默认的 `right` 一旦被右边界拒绝就会翻到 `bottom`，即翻到正文那一侧；而从 `top` 出发，
+ * 只有当顶栏贴着视口顶端、上方放不下时才会翻成 `bottom`。
+ * 仍是**参数**不是写死的：`tip()` 的 `side` 可按调用点覆盖，个别位置需要别的方向时不必改这里。 */
+const TIP_SIDE: TooltipSide = 'top'
+
 /**
  * 给一个顶栏按钮挂上 primitives 的 `Tooltip`（悬停/聚焦气泡）。
  *
@@ -842,14 +865,17 @@ interface FsViewProps {
  *
  * 气泡替代的是原生 `title`：原生气泡的宽度/底色/位置/层级全不受页面控制，会在正文上压一条
  * 又宽又扁的深色长条（用户截图的那条就是它），换成 `Tooltip` 才是受控浮层。
+ * 延迟与方向也在这里统一：`TIP_DELAY_MS`（悬停不立即弹）与 `TIP_SIDE`（往上弹，避开正文），
+ * 调用点只传文案，不必各写一遍。
  * @param btn - 要挂气泡的按钮元素。
  * @param label - 气泡文案（纯图标态下它也是可读的那一份提示；可访问名另由 `aria-label` 给出）。
  * @param key - 用在数组子节点里时的 React key（`tip()` 自己生成元素，没处传 key）。
+ * @param side - 气泡方向；缺省 {@link TIP_SIDE}（`top`），个别调用点可覆盖。
  * @returns 包好气泡的锚点元素。
  */
-function tip(btn: React.JSX.Element, label: string, key?: string): React.JSX.Element {
+function tip(btn: React.JSX.Element, label: string, key?: string, side: TooltipSide = TIP_SIDE): React.JSX.Element {
   return (
-    <Tooltip key={key} label={label}>
+    <Tooltip key={key} label={label} side={side} delayMs={TIP_DELAY_MS}>
       <span className="fs-tipwrap">{btn}</span>
     </Tooltip>
   )
@@ -871,7 +897,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
   const [cache, setCache] = React.useState<Record<string, TreeNode[]>>({})
   const [dragging, setDragging] = React.useState(false)
-  // 分屏（R4）：按打开对象的 path 记账（开关 / 冻结的视图类型 / 分栏比例），见 {@link SplitState}。
+  // 分栏（R4）：按打开对象的 path 记账（开关 / 冻结的视图类型 / 分栏比例），见 {@link SplitState}。
   const [splits, setSplits] = React.useState<Record<string, SplitState>>({})
   const [draggingSplit, setDraggingSplit] = React.useState(false)
   const [status, setStatus] = React.useState('')
@@ -1253,7 +1279,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
     ]
     : null
 
-  // ---- 分屏（R4）----
+  // ---- 分栏（R4）----
   // 语义（上游裁决，照此实现）：右侧副本 = **视图类型冻结、内容数据实时、强制只读**。
   //   冻结：视图类型在开启那一刻记进该 path 的 `SplitState.mode`，左侧之后切视图只影响左侧；
   //   实时：数据字段（source / docData / annotData / trData / fold）共用同一个 viewer，
@@ -1271,7 +1297,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const splitGrow = splitState ? splitState.ratio / (1 - splitState.ratio) : 1
 
   /**
-   * 分屏开关：同一个按钮再点一次即关闭（R4）。开启时把当前视图类型冻结进该 path 的记录
+   * 分栏开关：同一个按钮再点一次即关闭（R4）。开启时把当前视图类型冻结进该 path 的记录
    * ——「把当前显示的视图复制一份只读副本到右侧」；关闭只把 `on` 置 false，比例与冻结的
    * 视图类型都留着，再开时沿用（「拖拽比例同样按文件记忆」）。
    */
@@ -1328,10 +1354,10 @@ function FsView(props: FsViewProps): React.JSX.Element {
     document.addEventListener('mouseup', onUp)
   }
 
-  // 分屏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝状态、右＝操作」。它与右列三个按钮
+  // 分栏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝状态、右＝操作」。它与右列三个按钮
   // 共用同一套窄档收纳（文字进 `.fs-btnlabel`，≤672px 的档只留图标），可访问名由恒定的
   // aria-label 给出；没有打开对象时不可用（没有可复制的视图）。
-  // 分屏按钮：气泡文案是 `a11ySplit`（说清「再点一次关闭」这个非通用交互），而按钮自己的
+  // 分栏按钮：气泡文案是 `a11ySplit`（说清「再点一次关闭」这个非通用交互），而按钮自己的
   // 可访问名仍是恒定的 `btnSplit`（与它可见的「分栏」二字一致）。
   const splitBtn = tip((
     <Button
@@ -1363,7 +1389,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
       </div>
     )
 
-  // 右侧分屏（R4）的两件套：分隔条 + 只读副本窗格。它们与「文件树折叠」是两个互不相干的开关，
+  // 右侧分栏（R4）的两件套：分隔条 + 只读副本窗格。它们与「文件树折叠」是两个互不相干的开关，
   // 所以**两个分支都必须渲染**——先前只把它们写进「未折叠」分支，于是折叠文件树之后再点「分栏」，
   // 开关状态翻转了、右侧窗格却不出现（`splitOn` 为真而 `.fs-splitpane` 不在 DOM 里）。
   // 三者的兄弟顺序在两处必须一致（editor → splitBar → splitPane）：拖拽回调正是靠
@@ -1453,7 +1479,7 @@ const CSS = [
   // 纯图标态的可访问名交给各按钮的 aria-label。`.fs-btnlabel` 只做不换行（宽度随文字自然）。
   '.fs-btnlabel{white-space:nowrap}',
   // 分档阈值就写在这里，是唯一的真相源；JS 不持有任何像素常量。
-  // 第一档（右列四个按钮图标化，含 R4 的分屏）：这一档要解决的不再是「右列被整块裁掉」，
+  // 第一档（右列四个按钮图标化，含 R4 的分栏）：这一档要解决的不再是「右列被整块裁掉」，
   // 而是四段文字一起把中列挤到 0 —— 实测最坏场景（长工作区名 + 长路径 + 四字视图名 +
   // 五字菜单项）在面板 701–720 这 20 档里中列视图名被 `.fs-hbar-mid{overflow:hidden}` 裁掉，
   // 右列同时出现部分裁切；收掉这四个按钮的文字后该窗口整段消失（S2/S6 的中列被裁区间
@@ -1472,7 +1498,7 @@ const CSS = [
   // 而右列元素要到面板 535px 才完全不被裁 ⇒ 499–534 这 36 档里保存按钮右边缘缺 17px
   // （可点，属视觉级残缺；基线 S1 19 档 / S2 36 档，合计 110 档）。阈值提到 550（面板 578px）后，
   // 工作区名可见区间整段落在「右列完整」的区间里：499–534 的残缺全部消失（0 档），中列被裁
-  // 区间同时由面板 200–517 收窄到 200–358（只上调阈值、不含分屏按钮时的隔离实测）。
+  // 区间同时由面板 200–517 收窄到 200–358（只上调阈值、不含分栏按钮时的隔离实测）。
   // 两档之间不许留缝：实测阈值取 428px 时，缝里的面板 457–459px 会重新出现右列被裁；
   // 550 远在其上，缝的条件（工作区名可见区间跨过右列完整下界）不成立。
   '@container (max-width:550px){.fs-wslabel{display:none}}',
@@ -1500,7 +1526,7 @@ const CSS = [
   '.fs-exttag{flex:none}',
   '.fs-empty{padding:16px;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.8))}',
   '.fs-main{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;padding-bottom:var(--fs-bottom-clearance,0px)}',
-  // 右侧分屏窗格（R4）：只是 `.fs-main` 的外壳，用它给右侧单独分宽度。它与 `.fs-main` 同为
+  // 右侧分栏窗格（R4）：只是 `.fs-main` 的外壳，用它给右侧单独分宽度。它与 `.fs-main` 同为
   // `flex:1 1 0`（宽度比 = flex-grow 比），占比由 JSX 的 inline `flexGrow` 给（p ⇒ p/(1−p)）。
   '.fs-splitpane{flex:1 1 0;min-width:0;display:flex;flex-direction:column}',
   '.fs-bscroll{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}',

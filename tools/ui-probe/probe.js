@@ -52,7 +52,7 @@ const sn = Number(args.sn || 1)
 const sw = Number(args.sw || 10)
 const dumpW = Number(args.dumpW || 0)
 const extra = args.extra ? '\n' + fs.readFileSync(args.extra, 'utf8') : ''
-// 分屏开启态：body 里多一条分隔条 + 一份只读副本窗格（顶栏几何不随它变，用于验证这一点）。
+// 分栏开启态：body 里多一条分隔条 + 一份只读副本窗格（顶栏几何不随它变，用于验证这一点）。
 const splitPaneOn = args.splitpane === '1'
 /**
  * 菜单打开态（交互态场景）：不带该选项时**一个面板都不注入**，既有四项门禁的读数口径不变。

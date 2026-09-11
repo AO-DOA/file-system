@@ -42,7 +42,34 @@ function L(key: string): string {
   return value
 }
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => import('./fixtures/primitives-stub'))
+/**
+ * Every rendered `Tooltip`'s props — the one thing the stand-in cannot publish.
+ *
+ * The fixture turns `label` / `side` / `disabled` into DOM attributes but drops
+ * `delayMs`, and the hover delay is precisely what this round changes: it decides
+ * whether sweeping the pointer across the toolbar pops bubbles. Recording the
+ * props turns that wiring into an assertable fact.
+ *
+ * What it does NOT verify: the real primitives' timing. The real `Tooltip` runs
+ * `setTimeout(show, delayMs)` for hover and `cancelShow(); show()` for focus
+ * (`Tooltip.tsx`), and jsdom has neither layout nor a real pointer — the report
+ * quotes that source instead of claiming a run.
+ */
+const tooltipProps = vi.hoisted(() => [] as Array<Record<string, unknown>>)
+
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
+  const stub = await import('./fixtures/primitives-stub')
+  return {
+    ...stub,
+    // Wrapping (rather than extending) the fixture keeps it untouched: the
+    // stand-in still owns every other export, and `Tooltip` stays the same
+    // component instance across renders, so no anchor remounts mid-test.
+    Tooltip: (props: Parameters<typeof stub.Tooltip>[0]) => {
+      tooltipProps.push(props as unknown as Record<string, unknown>)
+      return stub.Tooltip(props)
+    },
+  }
+})
 
 /** One reply the stubbed `fetch` answers with. */
 interface Reply {
@@ -1108,14 +1135,14 @@ describe('worktree switching, persistence and drag (D)', () => {
   })
 
   it('keeps the split pane rendered while the tree is collapsed', async () => {
-    // 折叠文件树与分屏是两个独立开关：折叠态下点「分栏」，右侧窗格与它的分隔条都必须出现
+    // 折叠文件树与分栏是两个独立开关：折叠态下点「分栏」，右侧窗格与它的分隔条都必须出现
     //（缺陷：`fs-body` 只在「未折叠」分支里渲染这两件，折叠后开关翻转却什么都不发生）。
     mount()
     await flush()
     await click(row('app.ts'))
     await click(splitButton())
     expect(document.querySelectorAll('.fs-splitpane')).toHaveLength(1)
-    // 折叠：树没了，分屏照旧 —— 分隔条仍在，顺序仍是 editor → splitBar → splitPane
+    // 折叠：树没了，分栏照旧 —— 分隔条仍在，顺序仍是 editor → splitBar → splitPane
     //（拖拽回调靠 previousElementSibling / nextElementSibling 取两侧窗格）。
     await click(foldButton())
     expect(document.querySelector('.fs-side')).toBeNull()
@@ -1124,7 +1151,7 @@ describe('worktree switching, persistence and drag (D)', () => {
     expect(body.children[1]?.className).toContain('fs-split')
     expect(body.children[2]?.className).toContain('fs-splitpane')
     expect(document.querySelector('.fs-splitpane .fs-main')).not.toBeNull()
-    // 折叠态下关掉分屏：只剩左侧窗格。
+    // 折叠态下关掉分栏：只剩左侧窗格。
     await click(splitButton())
     expect(document.querySelectorAll('.fs-splitpane')).toHaveLength(0)
     expect((document.querySelector('.fs-body') as HTMLElement).children).toHaveLength(1)
@@ -2541,7 +2568,7 @@ describe('narrow toolbar: icon bands (R2)', () => {
     await click(row('full.md'))
     // 三个按钮的可见文字在 `.fs-btnlabel` 里 —— 窄档样式表隐藏的正是这一层；
     // 文字节点留在 DOM 里，纯图标态的可访问名由常驻的 aria-label 给出。
-    // （分屏按钮 R4 与它们同组，所以在最前；编辑/保存已合并成一个按钮，故只剩一个「编辑」。）
+    // （分栏按钮 R4 与它们同组，所以在最前；编辑/保存已合并成一个按钮，故只剩一个「编辑」。）
     expect(Array.from(document.querySelectorAll('.fs-hbar-right .fs-btnlabel'))
       .map(node => (node.textContent || '').trim()))
       .toEqual([L('btnSplit'), L('btnGen'), L('btnEdit')])
@@ -2637,7 +2664,7 @@ describe('narrow toolbar: icon bands (R2)', () => {
     const css = document.head.querySelector('style[data-plugin="fs"]')?.textContent ?? ''
     // 分档交给样式表：容器查询是唯一持有像素阈值的地方（`.fs-hbar` 自己是查询容器）。
     expect(css).toContain('container-type:inline-size')
-    // 第一档收右列四个按钮（含 R4 的分屏），第二档（更窄）才收工作区名 —— 两档都不许缺，缺了就留缝。
+    // 第一档收右列四个按钮（含 R4 的分栏），第二档（更窄）才收工作区名 —— 两档都不许缺，缺了就留缝。
     // 第一档 760（第三段 b 由 672 上调）：四段文字一起会在面板 701–720 把中列挤到 0
     // （中列视图名被裁 + 右列部分裁切），收文字后该窗口整段消失。
     // 第二档的阈值是 550（第三段 b 由 470 上调）：470 时工作区名在面板 499px 就恢复可见，
@@ -2650,7 +2677,25 @@ describe('narrow toolbar: icon bands (R2)', () => {
 })
 
 describe('toolbar tooltips: primitives Tooltip instead of native title (D)', () => {
+  beforeEach(() => { tooltipProps.length = 0 })
   afterEach(() => { vi.restoreAllMocks() })
+
+  it('puts every toolbar bubble above its button and holds the hover delay', async () => {
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    await click(row('full.md'))
+    // 顶栏下面紧接着就是用户正在读的正文/内容区 —— 气泡一律往上弹（`TIP_SIDE`）。
+    // primitives 的默认是 `'right'`，而它的视口自适应会在右侧放不下时**垂直翻面到下方**，
+    // 也就是正好翻到正文那一侧（用户截图反馈的「解释挡住按钮」就是这么来的）。
+    expect(tooltipProps.length).toBeGreaterThan(0)
+    for (const props of tooltipProps) {
+      expect(props.side).toBe('top')
+      // 悬停延迟（`TIP_DELAY_MS`）：primitives 的 `delayMs` 默认是 0，即指针一扫到就弹。
+      // 这里的 1000 与 `src/client/index.tsx` 的常量是同一个数：改那个常量必须**故意**改这一行
+      // —— 气泡节奏是用户直接感知的行为，改动应当被复审，而不是悄悄漂移。
+      expect(props.delayMs).toBe(1000)
+    }
+  })
 
   /**
    * The tooltip attached to a toolbar button, read off the stand-in's wrapper.
@@ -2682,7 +2727,7 @@ describe('toolbar tooltips: primitives Tooltip instead of native title (D)', () 
     await flush()
     await click(row('full.md'))
     const buttons = Array.from(document.querySelectorAll<HTMLElement>('.fs-hbar button'))
-    // 顶栏按钮的覆盖面：工作区 / 刷新 / 折叠 / 视图选择器 / 解读选择 / 分屏 / 编辑。
+    // 顶栏按钮的覆盖面：工作区 / 刷新 / 折叠 / 视图选择器 / 解读选择 / 分栏 / 编辑。
     expect(buttons).toHaveLength(7)
     for (const el of buttons) {
       // ① 原生气泡的载体必须一个不剩 —— 它不受页面控制、会压住正文。
@@ -2779,12 +2824,12 @@ describe('unsaved-changes guard on page leave (C)', () => {
 describe('split view (R4)', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
-  /** 顶栏的分屏按钮（可见文字「分栏」，窄档收进 `.fs-btnlabel`）。 */
+  /** 顶栏的分栏按钮（可见文字「分栏」，窄档收进 `.fs-btnlabel`）。 */
   function splitBtn(): HTMLElement {
     return byText('.fs-hbar-right button', L('btnSplit'))
   }
 
-  /** 右侧那份只读副本的窗格；未分屏时为 null。 */
+  /** 右侧那份只读副本的窗格；未分栏时为 null。 */
   function splitPane(): HTMLElement | null {
     return document.querySelector('.fs-splitpane') as HTMLElement | null
   }
@@ -2796,7 +2841,7 @@ describe('split view (R4)', () => {
     return node as HTMLElement
   }
 
-  /** 右侧窗格里的 `.fs-main`（未分屏时为 null）。 */
+  /** 右侧窗格里的 `.fs-main`（未分栏时为 null）。 */
   function rightPane(): HTMLElement | null {
     return document.querySelector('.fs-splitpane .fs-main') as HTMLElement | null
   }
@@ -2849,10 +2894,10 @@ describe('split view (R4)', () => {
     await click(row('full.md'))
     await click(splitBtn())
     expect(splitPane()).not.toBeNull()
-    // 切到没开过分屏的文件 ⇒ 恢复全屏。
+    // 切到没开过分栏的文件 ⇒ 恢复全屏。
     await click(row('app.ts'))
     expect(splitPane()).toBeNull()
-    // 切回来 ⇒ 又分屏，且冻结的还是当时那一份视图。
+    // 切回来 ⇒ 又分栏，且冻结的还是当时那一份视图。
     await click(row('full.md'))
     expect(splitPane()).not.toBeNull()
     expect((rightPane()?.querySelector('.stub-md')?.textContent) || '').toContain('# Full')
