@@ -1,5 +1,4 @@
 // dsh-plugin-fs — src/host/book-store.ts 单元测试。
-// 迁移自迁移源 src/host/book-store.js（该文件原先只被 src/host/index.js 的闭包消费，无单测），
 // 用例按「可观察行为」设计：桶定位、index.json 合并式补字段、已知根注册表与 TTL 缓存、
 // 最近根定向、四层 stem 集合双位置只读回退、/tree 视图缓存。
 // 覆盖口径：本文件按 file 级 行/函数/分支 100% 设计，边缘分支用例集中在各 describe 末尾。

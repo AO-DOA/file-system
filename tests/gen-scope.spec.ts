@@ -1,9 +1,8 @@
 // @vitest-environment node
 /**
- * 后台生成/翻译子 agent 的**作用域契约** spec —— 迁移自迁移源 `tests/gen-scope.test.js`
- * （703 行 / 24 例，node:test，冻结于 3a3f89e）的业务行为部分。
+ * 后台生成/翻译子 agent 的**作用域契约** spec（业务行为部分）。
  *
- * 源文件头写明的四条契约，逐条对应本文件的断言组：
+ * 四条契约逐条对应本文件的断言组：
  *   ① 统一工作目录：cwd 固定 $DSH_HOME/books/session，不随 GUI 工作区漂移；
  *   ② 不打 subagent 标：meta.origin 缺省（该标记会被 GUI 导航过滤、普通会话 API 拒绝访问）；
  *   ③ 作用域增量：setup 内只做 tools.restrict 收敛工具面；任务提示词只注入 user message，
@@ -12,22 +11,22 @@
  * 纯逻辑（genScopeAllow / renderPromptTemplate / formatStamp）与装配（createAgent 收到的
  * options 与 setup 行为）分别断言。
  *
- * ---- 装置与隔离（源仓的已知污染源，逐条加强）----
+ * ---- 装置与隔离（已知污染源，逐条加强）----
  *
- * 1. **进程级 env 改成 beforeAll 赋值 + afterAll 还原**。源在**模块顶层**改
+ * 1. **进程级 env 改成 beforeAll 赋值 + afterAll 还原**。在**模块顶层**改
  *    `DSH_HOME` / `DSH_FS_ISSUES_DIR` 且从不还原；vitest 的 `pool: 'forks'` + `isolate: true`
  *    只隔离进程，worker 复用属实现细节，不构成契约。`FS_GEN_PRESET` 一旦泄漏到别的文件，
  *    表现是「生成任务静默换预设」，且换个 maxWorkers 就消失 —— 故一律「保存原值 → 还原」，
  *    区分「原本不存在」与「原本有值」。
- * 2. **临时根一律 mkdtemp**。源有 `join(tmpdir(), '...-' + Date.now())` 这类可预测路径且不创建
- *    就使用；碰撞时不是「写坏文件」而是两个 ctx 指向同一 root、断言假通过。
+ * 2. **临时根一律 mkdtemp**。`join(tmpdir(), '...-' + Date.now())` 这类可预测路径若
+ *    不创建就直接使用，碰撞时不是「写坏文件」而是两个 ctx 指向同一 root、断言假通过。
  * 3. **时序只等可观测信号**，见 `waitSettled` 的注释。
  *
- * ---- 与源仓的两处必要差异（都不是行为放宽）----
+ * ---- 两处必要差异（都不是行为放宽）----
  *
  * · `@deepseek-ai/dsh-llm` 是 peer 依赖，本仓 node_modules 里没有（与 `tests/gen-executor.spec.ts`
  *   同一实测结论）。执行器成功路径 `await import('@deepseek-ai/dsh-llm')` 必须能解析，故桩掉
- *   `createUserMessage`（原样返回入参，与源仓测试里 `followup(msg)` 直接记录入参等价）。
+ *   `createUserMessage`（原样返回入参，与 `followup(msg)` 直接记录入参等价）。
  * · `ctx.__fsTest`（观察窗口）只在 `NODE_ENV === 'test'` 时挂载。用 `??=` 兜底而非强制覆盖，
  *   并在 afterAll 还原：vitest 自身把 NODE_ENV 置为 test 时本行是 no-op。
  */
@@ -45,7 +44,7 @@ import {
 import { FILE_DOC_PLACEHOLDERS } from '../src/host/abilities/file-doc/skeleton.ts'
 
 // peer 依赖桩：执行器成功路径要 `await import('@deepseek-ai/dsh-llm')` 取 createUserMessage。
-// 原样返回入参 —— 与源仓测试断言 `captured.followup.content[0].text` 的取法逐字对应。
+// 原样返回入参 —— 与断言 `captured.followup.content[0].text` 的取法逐字对应。
 vi.mock('@deepseek-ai/dsh-llm', () => ({
   createUserMessage: (message: unknown): unknown => message,
 }))
@@ -984,11 +983,11 @@ it('gen-doc（L2）：产物被清空（0 字节）→ 置 error，不写索引'
   expect(idx['文件层']).toEqual([])
 })
 
-// ---- P5 覆盖率补齐（**新增**，非源用例迁移）----
-// `src/host/translate-executor.ts` 在本仓没有任何专属 spec；源 gen-scope 的 translate 用例
-// （源 :453）只断言装配与提示词、**不断言任务状态**，子 agent 在该用例里什么都没写 → 宿主收尾
-// 走 verify 的失败分支。于是执行器的成功收尾（verify 通过 → upsertBookIndex → success → dispose）
-// 在全部 spec 里都不被覆盖。这里用同一套装置补一条真实集成路径，断言不弱于源用例的粒度。
+// ---- P5 覆盖率补齐（**新增**）----
+// `src/host/translate-executor.ts` 此前没有任何专属 spec：既有 translate 用例只断言装配与提示词、
+// **不断言任务状态**，子 agent 什么译文都没写 → 宿主收尾走 verify 的失败分支。于是执行器的成功
+// 收尾（verify 通过 → upsertBookIndex → success → dispose）在全部 spec 里都不被覆盖。这里用
+// 同一套装置补一条真实集成路径，断言粒度不弱于既有用例。
 
 /** 从该会话的提示词里取宿主算好的**译文**绝对路径（翻译层变量名为「译文文档 DOC」）。 */
 function trDocAbsFrom(rec: { followup?: FollowupMessage }): string {
@@ -1017,7 +1016,7 @@ async function runTranslateTask(ctx: HostCtx, captured: Captured, docContent: st
   return await waitSettled(handle, out.json.taskId as string)
 }
 
-it('translate：子 agent 写出译文 → 置 success，宿主写「文章翻译」索引条目（P5 覆盖率补齐，非源用例）', async () => {
+it('translate：子 agent 写出译文 → 置 success，宿主写「文章翻译」索引条目（P5 覆盖率补齐）', async () => {
   const root = await newRoot('fs-tr-success-root-')
   await writeFile(join(root, 'doc.md'), '# t\n', 'utf8')
   const captured: Captured = {}

@@ -15,7 +15,7 @@ import { ZH } from '../shared/locale.ts'
 
 // ---- 注入面（类型层，运行时无对应物）----
 // 与 src/host/index.ts 同一策略：只声明真正触达的成员，不 import 具体服务包，
-// 也不对 cordis `Context` 做声明合并（见 PROGRESS.md D-6）。
+// 也不对 cordis `Context` 做声明合并。
 
 /** 宿主上下文最小面：执行器只用 ctx.get(name) 取服务。 */
 interface HostContextSurface {
@@ -31,7 +31,7 @@ interface GenAgentHandle {
   dispose(): Promise<void>
 }
 
-/** agentLoop 服务：创建免 parent 的后台子 agent（选项形状与源逐字一致）。 */
+/** agentLoop 服务：创建免 parent 的后台子 agent（选项形状逐字一致）。 */
 interface AgentLoopSurface {
   createAgent(ctx: unknown, options: GenAgentCreateOptions): Promise<GenAgentHandle>
 }
@@ -85,7 +85,7 @@ interface GenAbility {
   skeletonFile?: boolean
   hostBuild?: boolean
   // 去技能化后各能力描述符都不再有该字段（模板亦不再引用）；变量仍渲染，值为 undefined 时
-  // renderPromptTemplate 原样保留占位符——与源 `ability.skill` 的取值逐字一致。
+  // renderPromptTemplate 原样保留占位符——与 `ability.skill` 的取值逐字一致。
   skill?: string
   docStem(target: { key: string; abs: string }): string
   skeleton?(ctx: SkeletonInput): string | Promise<string>
@@ -176,7 +176,7 @@ export function createGenExecutor(deps: GenExecutorDeps): RunGenDoc {
     return dir
   }
 
-  // 未迁移提示词时的内联回退：四层均已去技能化，均不含技能/shell 调用（与各自工具面一致）。
+  // 提示词缺失时的内联回退：四层均已去技能化，均不含技能/shell 调用（与各自工具面一致）。
   function fallbackPrompt(ability: GenAbility, v: FallbackVars): string {
     if (ability.kind === 'folder') {
       return [

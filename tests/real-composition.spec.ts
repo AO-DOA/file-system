@@ -199,23 +199,23 @@ describe('REAL composition: the plugin mounts through a real Loader', () => {
   })
 })
 
-// ---- 静态装配声明核对（迁移自源 tests/real-composition.test.js 的 5 条缺口）----
+// ---- 静态装配声明核对（覆盖包自引用条目之外的 5 条缺口）----
 //
-// 源 `:43`（`exports['.']` 包自引用 + `t.skip`）**不迁**：主仓 `docs/testing.zh.md:45` 明确
+// 不在本文件覆盖的一条：`exports['.']` 包自引用 + `t.skip`。主仓 `docs/testing.zh.md:45` 明确
 // 「工作区包的裸导入解析到 `src`，**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，
-// 因为其中的陈旧产物会加载第二份模块单例」。本仓同理，且 `lib/` 按 D-7 不入库，
-// 该用例在 zc 没有可靠的断言面。
+// 因为其中的陈旧产物会加载第二份模块单例」。本仓同理，且 `lib/` 不入库，
+// 该用例在本仓没有可靠的断言面。
 
 describe('装配契约：package.json / 入口导出面 / 装载三件套', () => {
-  it('package.json 声明 loader 契约：main 与 exports 指向构建产物（源 real-composition.test.js:24）', () => {
+  it('package.json 声明 loader 契约：main 与 exports 指向构建产物', () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
       main?: string
       types?: string
       exports?: Record<string, string>
       dsh?: { bundle?: { patch?: string } }
     }
-    // 与源不同：zc 的 host leaf 把 rootDir 上提到 src（为了 host 面能 import
-    // src/shared/locale.ts 这张唯一文案真源），产物因此是 lib/host/index.js 而不是 dsh/index.js。
+    // host leaf 把 rootDir 上提到 src（为了 host 面能 import
+    // src/shared/locale.ts 这张唯一文案真源），产物因此是 lib/host/index.js。
     expect(pkg.main).toBe('lib/host/index.js')
     expect(pkg.types).toBe('lib/types/host/index.d.ts')
     expect(pkg.exports?.['.']).toBe('./lib/host/index.js')
@@ -223,7 +223,7 @@ describe('装配契约：package.json / 入口导出面 / 装载三件套', () =
     expect(pkg.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
   })
 
-  it('host 入口真实导出面：无 default、name=fs、inject 齐备、apply 是函数（源 :33）', async () => {
+  it('host 入口真实导出面：无 default、name=fs、inject 齐备、apply 是函数', async () => {
     const mod = await import('../src/host/index.ts')
     expect(mod).toBeTruthy()
     // 仅具名导出：default 必须是「不存在」，不是「值为 undefined 的导出」
@@ -233,7 +233,7 @@ describe('装配契约：package.json / 入口导出面 / 装载三件套', () =
     expect(typeof mod.apply).toBe('function')
   })
 
-  it('NODE_ENV !== test 时生产 ctx 不挂 __fsTest，路由注册照常（源 :116）', async () => {
+  it('NODE_ENV !== test 时生产 ctx 不挂 __fsTest，路由注册照常', async () => {
     const previous = process.env.NODE_ENV
     try {
       process.env.NODE_ENV = 'production'

@@ -1,6 +1,5 @@
 // dsh-plugin-fs — src/client/md-utils.ts 单元测试。
-// 迁移自迁移源 tests/client-md-utils.test.js（node:test → vitest）中 md-utils 的那部分；
-// 该文件里的 locale 字典/t() 契约断言由 tests/locale.spec.ts 承接，此处只保留
+// locale 字典/t() 契约断言由 tests/locale.spec.ts 承接，此处只保留
 // labLabelKey → 字典文案的闭环（键必须能在 ZH 中取到）。
 // 只断言外部可观察行为（返回值），不与实现绑定；无 DOM / 无 React。
 // 覆盖口径：本文件按「file 级 行/函数/分支 100%」设计，边缘分支用例集中在各 describe 末尾。

@@ -82,12 +82,11 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 
 **影响面**：`/mkdir`、`/delete` 没有任何前端调用；`/write` 有一处（源码保存），其 `path` 恒非空 ⇒ **页签界面行为零变化**。改动只影响直接向这三条路由发请求的脚本与集成。
 
-> 这是本项目**唯一**有意的行为差异。决策、运行时证据与逐条差异见 [`PROGRESS.md`](PROGRESS.md) 与 [`docs/feature-baseline.md`](docs/feature-baseline.md) 的 G-1 登记。
+> 这是本项目**唯一**有意的行为差异。决策与运行时证据见 [`PROGRESS.md`](PROGRESS.md) 的 G-1 登记。
 
 ## 已知行为
 
-以下条目为已知缺陷登记，本轮不修；逐条出处见
-[`docs/feature-baseline.md`](docs/feature-baseline.md) §4「已知行为与缺陷登记」（编号 G-1~G-12，G-1 见上节）。
+以下条目为已知缺陷登记，本轮不修（编号 G-1~G-12，G-1 见上节）。
 
 - **`gen-doc` 的 kind 白名单过宽**（G-2）：`{kind:'translate', path:'<非 md>'}` 会被接受。
 - **目录重复请求**（G-3）：打开目录节点时对同一 `/read` URL 重复发请求，产生冗余请求。
@@ -99,9 +98,9 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 - **任务表是进程内 Map**（G-9）：宿主重启即丢，前端随后收到 `task not found`。
 - **未消费 View 焦点协议**（G-10）：`conversation.view` 的 owner props（`viewRequest`/`openView`/`completeViewRequest`）未被使用。
 - **「悬停可打开」无对应实现**（G-11）：蓝点与树节点实为**点击**打开（`onOpen` 挂在节点行与蓝点的 `onClick` 上），文档原写的「悬停可直接打开」与实际不符——按既定决策订正文档表述为「点击」，而非为它造一个实现。
-- **`CodeBlock` 的 `copyLabel`/`copiedLabel` 未传**（G-12）：这两字段自上游 primitives 0.1.5 起为必填，而原实现只传 `{code, lang}`（纯 JS 无类型检查，故从未暴露）；按 D-8/D-9 逐字保留——**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到原实现真正传递的两个字段，运行时调用与之一致。
+- **`CodeBlock` 的 `copyLabel`/`copiedLabel` 未传**（G-12）：这两字段自上游 primitives 0.1.5 起为必填，而原实现只传 `{code, lang}`（纯 JS 无类型检查，故从未暴露）；逐字保留——**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到原实现真正传递的两个字段，运行时调用与之一致。
 
-其中 G-6、G-7 属资源泄漏：按 D-8 例外 b，它们是「可经例外修正、但**本轮决定不修**」的泄漏，逐字保留——`pollTask` 无 `clearTimeout`、拖拽 `document` 监听无 cleanup，仅靠 `aliveRef` 短路达到可观察等价（`src/client/index.tsx:538-539` 注释明写「不新增清理」；该口径登记于 `docs/feature-baseline.md` §4）。其余条目保持原样。
+其中 G-6、G-7 属资源泄漏：按例外 b，它们是「可经例外修正、但**本轮决定不修**」的泄漏，逐字保留——`pollTask` 无 `clearTimeout`、拖拽 `document` 监听无 cleanup，仅靠 `aliveRef` 短路达到可观察等价（`src/client/index.tsx:538-539` 注释明写「不新增清理」）。其余条目保持原样。
 
 ## 模型可见面
 
@@ -131,7 +130,7 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 npm run typecheck      # tsc -b tsconfig.json（strict）
 npm run lint           # oxlint . --config .oxlintrc.json
 npm test               # vitest run（jsdom 环境）
-npm run test:coverage  # vitest run --coverage（per-file 语句/分支/函数/行 100%；两个入口文件 src/host/index.ts、src/client/index.tsx 按决策 D-13 列入 coverage.exclude，不在门槛内）+ 覆盖率分母守卫
+npm run test:coverage  # vitest run --coverage（per-file 语句/分支/函数/行 100%；两个入口文件 src/host/index.ts、src/client/index.tsx 列入 coverage.exclude，不在门槛内）+ 覆盖率分母守卫
 npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归一化与校验
 ```
 
@@ -151,6 +150,4 @@ npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归
 ## 相关文档
 
 - [`PROGRESS.md`](PROGRESS.md)：项目台账与决策记录的唯一权威。
-- [`docs/feature-baseline.md`](docs/feature-baseline.md)：功能基线、逐字保留清单、已知行为登记（G-1~G-12）。
-- [`docs/spec-p1-skeleton.md`](docs/spec-p1-skeleton.md)、[`docs/spec-p5-tests-detail.md`](docs/spec-p5-tests-detail.md)、
-  [`docs/spec-ui-revamp.md`](docs/spec-ui-revamp.md)：阶段执行规格与验收标准。
+- [`docs/agent/README.md`](docs/agent/README.md)：子智能体协作体系（三层存储约定、入场阅读顺序、历史报告索引）。

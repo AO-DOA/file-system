@@ -1,6 +1,5 @@
 // dsh-plugin-fs — 产品文案字典（src/shared/locale.ts）单元测试。
 // 只断言外部行为：字典内容（键与文案逐字）、LANG 注册表、t() 的取值/回退/缺键语义。
-// 迁移自迁移源 tests/client-md-utils.test.js 的「locale 字典契约」段，并把 72 键扩为全量对照；
 // 后续按批次新增的 host 错误串键（第 1 批 A 类 12 键、第 2 批 B 类 10 键、第 3 批 C 类 23 键）
 // 同步登记在此表，键序与 ZH 逐位一致。
 // R1/R3 段（顶栏收编 + 视图选择器）的键变动同样登记在此：新增 a11yViewPick（视图选择器 title）、
@@ -14,8 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { LANG, ZH, t } from '../src/shared/locale'
 
-// 迁移源 src/shared/locale.js:5-90 的全量键值对照表（迁移源 72 键逐字抄录 + 第 1 批 A 类 12 键
-// + 第 2 批 B 类 10 键 + 第 3 批 C 类 23 键）。
+// 全量键值对照表（72 键 + 第 1 批 A 类 12 键 + 第 2 批 B 类 10 键 + 第 3 批 C 类 23 键）。
 // 任何键名/文案漂移都会让 toEqual 失败——这是「文案字典不可擅改」的机器护栏。
 const EXPECTED_ZH: Record<string, string> = {
   // 槽位/页签

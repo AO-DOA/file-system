@@ -1,7 +1,6 @@
 // 提示词加载（src/host/prompt-loader.ts）单元测试。
 //
-// 迁移源没有对应 spec（源里由 real-composition / abilities 测试间接覆盖），这里按
-// 「file 级 行/函数/分支 100%」为本模块单独补齐：
+// 本模块按「file 级 行/函数/分支 100%」单独补齐：
 //   · 双候选探测的两条路径（源码直载 <HERE>/abilities/<dir>、产物回退 <HERE>/../../src/host/abilities/<dir>）；
 //   · 候选判据是「目标 promptFile 存在」而非「目录存在」——产物形态下 lib/host/abilities/<dir>/
 //     只有 index.js、没有 prompt.md，按目录判定会误命中并静默回退内联文本；

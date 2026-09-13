@@ -3,8 +3,7 @@
  *
  * gen-executor（src/host/gen-executor.ts）单元测试。
  *
- * 迁移自迁移源的同名执行器（`src/host/gen-executor.js`，冻结于 3a3f89e），并按 PROGRESS.md D-2
- * 把分支口径补到 100%：执行器的每条早退、每个可选钩子与每个三元分支都必须有一个真实用例。
+ * 分支口径要求 100%：执行器的每条早退、每个可选钩子与每个三元分支都必须有一个真实用例。
  *
  * 装置说明（三处客观约束决定写法）：
  *   1. `@deepseek-ai/dsh-llm` 是 peerDependency，本仓 node_modules 里没有——用 vi.mock 提供
@@ -22,7 +21,7 @@
  * 书库与工作目录全部落在 mkdtemp 临时目录（DSH_HOME 被 stub），真实 upsertBookIndex 因此
  * 写的是临时 index.json，不碰工作树。
  *
- * 注意：runGenDoc 的失败路径**不 rethrow**（源在 catch 里置任务 error 并释放句柄后静默返回），
+ * 注意：runGenDoc 的失败路径**不 rethrow**（在 catch 里置任务 error 并释放句柄后静默返回），
  * 故失败断言一律读 setGenTaskStatus 的记录，而不是 rejects。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -324,7 +323,7 @@ describe('L1（folder）成功路径', () => {
     expect(text).toContain('projectRoot=' + join(h.tmpRoot, 'proj'))
     expect(text).toContain('issueNo=07')
     expect(text).toContain('issueDir=' + join(h.tmpRoot, 'issues'))
-    // 描述符里没有 skill 字段（去技能化后不再有），渲染时未知值原样保留——与源取值逐字一致。
+    // 描述符里没有 skill 字段（去技能化后不再有），渲染时未知值原样保留——取值逐字一致。
     expect(text).toContain('skill=${skill}')
     // 骨架整篇注入（L1 骨架不落盘，由模型整篇写回）。
     expect(text).toContain('生成时间')

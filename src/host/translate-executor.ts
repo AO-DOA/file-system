@@ -1,6 +1,6 @@
 // 翻译执行器：runTranslate —— 项目内 md 文档 → 简体中文译文。
-// 2026-09-10 能力目录化重构时从 src/host/index.js 抽出；能力专属的前置校验（源文存在/大小/
-// 语种）与收尾校验（译文落盘/未更新）在 abilities/translate-doc/index.js，执行器只编排。
+// 能力专属的前置校验（源文存在/大小/语种）与收尾校验（译文落盘/未更新）在
+// abilities/translate-doc/index.ts，执行器只编排。
 import { promises as fsp } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, join } from 'node:path'
@@ -28,7 +28,7 @@ interface TranslateAgentHandle {
   dispose(): Promise<void>
 }
 
-/** agentLoop 服务：创建免 parent 的后台子 agent（选项形状与源逐字一致）。 */
+/** agentLoop 服务：创建免 parent 的后台子 agent（选项形状逐字一致）。 */
 interface AgentLoopSurface {
   createAgent(ctx: unknown, options: TranslateAgentCreateOptions): Promise<TranslateAgentHandle>
 }
@@ -79,7 +79,7 @@ interface TranslateAbility {
   promptFile: string
   docStem(target: { key: string; abs: string }): string
   precheck?(ctx: PrecheckInput): void | Promise<void>
-  // 收尾校验是翻译能力的必需钩子（源为无条件 `await ability.verify(...)`）：
+  // 收尾校验是翻译能力的必需钩子（无条件 `await ability.verify(...)`）：
   // registry.ts 把 verify 记成可选（L1/L2/L3 各有各的校验），此处按翻译能力的实际契约收紧。
   verify(ctx: VerifyInput): void | Promise<void>
 }
@@ -128,7 +128,7 @@ export function createTranslateExecutor(deps: TranslateExecutorDeps): RunTransla
   const { loadAbilityPrompt } = promptLoader
   const { issuesDir, nextIssueNoFromDisk, syncIssueIndex } = issues
   // 断言而非标注：registry 把 verify 记成可选（L1/L2/L3 各有各的校验），翻译能力的契约是必需，
-  // 源实现同样是无条件 `await ability.verify(...)`——这里只收紧类型、不改运行时。
+  // 本实现同样是无条件 `await ability.verify(...)`——这里只收紧类型、不改运行时。
   const ability = TRANSLATE_ABILITY as TranslateAbility
 
   // 统一工作目录 $DSH_HOME/books/session（与生成任务同一 cwd，理由见 gen-executor.js）。

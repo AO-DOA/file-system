@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-file-system",
   "version": "0.1.0",
-  "description": "文件系统文件查看器（TypeScript 重构版）：在 DSH 对话页签行新增「文件系统」页签，左侧宿主文件树 + 右侧查看/编辑器",
+  "description": "文件系统文件查看器：在 DSH 对话页签行新增「文件系统」页签，左侧宿主文件树 + 右侧查看/编辑器",
   "type": "module",
   "license": "MIT",
   "main": "lib/host/index.js",

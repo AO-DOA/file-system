@@ -2,8 +2,8 @@
 // 覆盖口径：本文件按「file 级 行/函数/分支 100%」设计。
 // 断言导出面（四个导出的名字与所指数值）与四个能力的 kind/scope 取值——
 // `scope` 与 `kind` 改名即破坏工具面收敛（GEN_SCOPE_TOOLS 按 kind 取白名单）。
-// 注：任务书里的 id 前缀 `fsgen-` / `fstr-` 由 `src/host/index.js`（P3 路由层，taskId 生成处）产生，
-// 不在 registry 职责内，故此处只锁 registry 的导出面与描述符字段值；P3 迁移须在路由测试里断言那两个前缀。
+// 注：任务书里的 id 前缀 `fsgen-` / `fstr-` 由 `src/host/index.ts`（路由层，taskId 生成处）产生，
+// 不在 registry 职责内，故此处只锁 registry 的导出面与描述符字段值；两个前缀由路由测试断言。
 import { describe, expect, it } from 'vitest'
 import { ABILITIES, GEN_ABILITIES, TRANSLATE_ABILITY, abilityOf } from '../src/host/abilities/registry'
 import folderDoc from '../src/host/abilities/folder-doc/index'
@@ -46,8 +46,8 @@ describe('abilityOf', () => {
     expect(abilityOf('FOLDER')).toBeUndefined()
   })
 
-  it('原型链键（如 constructor）落在 Object.prototype 上——源既有行为，逐字保留', () => {
-    // ABILITIES 是普通对象字面量，源实现同样直接索引；迁移不修（PROGRESS.md D-9）。
+  it('原型链键（如 constructor）落在 Object.prototype 上——既有行为，逐字保留', () => {
+    // ABILITIES 是普通对象字面量，直接索引即可；既有行为不修。
     expect(abilityOf('constructor')).toBe(Object.prototype.constructor)
   })
 })

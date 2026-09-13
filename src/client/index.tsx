@@ -6,9 +6,6 @@
 // 二者来自 @deepseek-ai/dsh-client-ui-primitives，运行时由 web shell 的 seed 表解析。
 // 纯逻辑（路径/frontmatter/映射）在 md-utils.ts；产品文案唯一真相源在 ../shared/locale.ts。
 //
-// 迁移说明（P4，决策 D-11）：本文件由迁移源 `src/client/index.js`（771 行，revision 3a3f89e）
-// 逐段改写为 `.tsx` + JSX；每处 JSX 均按原 `React.createElement(type, props, ...children)`
-// 的实参顺序对照，props 传递内容与顺序未变。行为等价原则见决策 D-8/D-9。
 import * as React from 'react'
 import {
   Button, CodeBlock, IconBrowseOutline16, IconCheckOutline16, IconChevronRightOutline14,
@@ -28,7 +25,7 @@ import { t } from '../shared/locale.ts'
 export const name = 'fs'
 export const inject = ['slots']
 
-// ---- wire 数据形状（host 侧 /api/fs/* 的下发契约，见 docs/baseline/contracts.md）----
+// ---- wire 数据形状（host 侧 /api/fs/* 的下发契约）----
 
 /** `/tree` 下发的一个节点；`hasDoc*` 为文档存在标记，`doc*Rel` 为书库逻辑路径。 */
 interface TreeNode {
@@ -43,7 +40,7 @@ interface TreeNode {
   docTrRel?: string | undefined
 }
 
-/** 当前打开对象：`/tree` 节点，或 `opened || {}` 产生的空占位（源实现同此）。 */
+/** 当前打开对象：`/tree` 节点，或 `opened || {}` 产生的空占位。 */
 type OpenedNode = Partial<TreeNode>
 
 /** `GET /read` 成功响应（`content` 为原文/文档全文，`ext` 为小写扩展名）。 */
@@ -101,7 +98,7 @@ interface GenItem {
 /** 文件夹说明状态：ready(有内容) | missing(未生成→占位卡) | generating(生成中) | idle(未打开)。 */
 type FoldState = 'idle' | 'ready' | 'missing' | 'generating'
 
-/** 文件文档生成状态（源实现的 `genState`）：idle | file(生成 L2 中) | src(生成 L3 中)。 */
+/** 文件文档生成状态（本实现的 `genState`）：idle | file(生成 L2 中) | src(生成 L3 中)。 */
 type GenState = 'idle' | 'file' | 'src'
 
 /** 查看模式：doc / annot / tr / source。 */
@@ -113,7 +110,7 @@ interface Fold {
   content: string
 }
 
-/** `workspaces` 服务的最小切面（源实现只消费 `list` 的 getSnapshot/subscribe）。 */
+/** `workspaces` 服务的最小切面（只消费 `list` 的 getSnapshot/subscribe）。 */
 interface WorkspacesSurface {
   list: {
     getSnapshot(): { items?: WorkspaceItem[] | undefined } | undefined
@@ -143,7 +140,7 @@ type SlotProps = Record<string, unknown>
  * 客户端槽位注册表契约。
  *
  * 真实形状来自 `@deepseek-ai/dsh-client-ui-slots`，由 web shell 在运行时提供；
- * 此处按本插件实际消费的两个方法声明最小切面（与迁移源 `src/client/index.js:765-770` 一致）。
+ * 此处按本插件实际消费的两个方法声明最小切面。
  */
 interface SlotsSurface {
   inject(name: string, callback: () => void): void
@@ -153,7 +150,7 @@ interface SlotsSurface {
 // ---- 调宿主路由 ----
 
 /**
- * 取错误对象的消息文本（迁移源 12 处 `e && e.message ? e.message : String(e)` 的类型安全等价式）。
+ * 取错误对象的消息文本（`e && e.message ? e.message : String(e)` 的类型安全等价式）。
  * @param e - catch 到的未知值。
  * @returns `message` 字段的字符串形式（为假值时）或 `String(e)`。
  */
@@ -181,7 +178,7 @@ function api<T>(path: string, opts?: RequestInit): Promise<T> {
   })
 }
 
-/** 带 JSON 体的 POST 选项（五个 POST 端点共用，`headers` 逐字同源）。 */
+/** 带 JSON 体的 POST 选项（五个 POST 端点共用，`headers` 逐字一致）。 */
 function jsonPost(body: unknown): RequestInit {
   return {
     method: 'POST',
@@ -285,12 +282,12 @@ function renderMd(content: string): React.JSX.Element {
 /**
  * CodeBlock 的调用窄化。
  *
- * 迁移源（`src/client/index.js:110`）只传 `{ code, lang }`；上游
+ * 本实现只传 `{ code, lang }`；上游
  * `@deepseek-ai/dsh-client-ui-primitives` 0.1.5 起把 `copyLabel`/`copiedLabel`
  * 声明为必填（真源 `packages/client/ui-primitives/src/markdown/CodeBlock.tsx:35-38`）。
- * 按决策 D-8/D-9「既有缺陷逐字保留」，本迁移**不补值**——补值会改变高亮区复制按钮的
- * 可见文案，属行为变化。故此处只在类型层窄化到源实现真正传递的两个字段，
- * 运行时调用与源逐字一致（该缺陷已在 P4 交付报告中单列，待用户裁决）。
+ * 按「既有缺陷逐字保留」，此处**不补值**——补值会改变高亮区复制按钮的
+ * 可见文案，属行为变化。故只在类型层窄化到真正传递的两个字段，
+ * 运行时调用逐字一致（该缺陷待用户裁决）。
  */
 const CodeBlockCall = CodeBlock as unknown as (props: {
   code: string
@@ -314,7 +311,7 @@ function viewBody(content: string, ext: string): React.JSX.Element {
   return <pre className="fs-code">{content || t('emptyFile')}</pre>
 }
 
-/** FsTree 的 props（与迁移源 JSDoc `src/client/index.js:117-124` 同契约）。 */
+/** FsTree 的 props。 */
 interface FsTreeProps {
   tree: TreeNode[]
   expanded: Record<string, boolean>
@@ -386,7 +383,7 @@ function FsTree(props: FsTreeProps): React.JSX.Element {
   }
 
   /**
-   * 渲染文件行：点击即打开；角标按扩展名，文档蓝点仅有标记无事件（源行为，D-8 保留）。
+   * 渲染文件行：点击即打开；角标按扩展名，文档蓝点仅有标记无事件（既有行为，保留）。
    * @param node - 文件节点。
    * @param depth - 缩进深度。
    * @returns 文件行元素。
@@ -434,7 +431,7 @@ function FsTree(props: FsTreeProps): React.JSX.Element {
 // 文件→文件摘要；annot→源码注解；tr→文章翻译（译文，仅项目内 md）；source→源码（预览+编辑）。
 // 名称与 GLOSSARY.md 保持一致；label 文案由 t(labLabelKey(mode, isDir)) 取值（字典唯一真相源）。
 
-/** useOpenedViewer 的返回契约（与迁移源 JSDoc `src/client/index.js:169-177` 同形，去掉死字段）。 */
+/** useOpenedViewer 的返回契约（去掉死字段）。 */
 interface ViewerState {
   source: ReadResponse | null
   docData: string | null
@@ -463,7 +460,7 @@ interface ViewerState {
 /**
  * 打开对象的状态与操作集：读源/读三类文档、生成任务轮询、翻译、保存、编辑态。
  *
- * 死字段已按决策 D-8 例外 a 删除（迁移源 `src/client/index.js` 中只写不读、无任何消费点）：
+ * 死字段（只写不读、无任何消费点）已删除：
  * `cardDismissed`/`setCardDismissed`、`genStatus`、`isMdFile`、`isBookFile`
  * （后两者的局部变量仍保留，供 `canTranslate` 派生使用）。
  * @param opened - 当前打开节点（`/tree` 节点或空占位对象）。
@@ -552,8 +549,8 @@ function useOpenedViewer(
   /**
    * 统一轮询生成任务状态；成功/失败前每 1.5s 查询一次，超 POLL_LIMIT_MS 置 error 停止。
    *
-   * D-8 例外 b：迁移源未保存 `setTimeout` 句柄、卸载后不做清理。本实现对组件卸载可观察地
-   * 等价（`aliveRef` 短路与源一致），但**不新增清理**——行为与源逐字一致，差异清单见交付报告。
+   * 例外 b：不保存 `setTimeout` 句柄、卸载后不做清理。对组件卸载可观察地
+   * 等价（`aliveRef` 短路一致），但**不新增清理**——行为逐字一致。
    * @param taskId - gen-doc / translate 返回的任务 id。
    * @param onSuccess - 任务成功回调（收到任务对象）。
    * @param onError - 任务失败/超时/消失回调（收到错误文本）。
@@ -698,7 +695,7 @@ function useOpenedViewer(
    */
   function changeEdit(value: string): void { setEdit(value); setDirty(true) }
 
-  /** 在编辑态与查看态之间切换（不清除 dirty，源行为）。 */
+  /** 在编辑态与查看态之间切换（不清除 dirty，既有行为）。 */
   function toggleEdit(): void { setEditMode(!editMode) }
 
   return {
@@ -1070,7 +1067,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
   }
 
   /**
-   * 目录展开/折叠：首次展开时懒加载子节点并写缓存；折叠不删缓存（源行为）。
+   * 目录展开/折叠：首次展开时懒加载子节点并写缓存；折叠不删缓存（既有行为）。
    * @param path - 目录相对路径。
    * @param open - 目标展开态。
    */
@@ -1577,8 +1574,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
 }
 
 // ---- 样式 ----
-// 迁移源 `src/client/index.js:695-753` 逐字保留；按决策 D-8 例外 a 删除 4 个
-// 无任何 JS 引用的死类（`.fs-folder-gen` / `.fs-card-actions` / `.fs-card-src` / `.fs-card-err`）。
+// 样式逐字保留，只删除 4 个无任何 JS 引用的死类（`.fs-folder-gen` / `.fs-card-actions` / `.fs-card-src` / `.fs-card-err`）。
 // R1/R3 段另删两处随 JSX 改动失效的类：`.fs-tabs`（胶囊组被视图选择器取代）与
 // `.fs-badge`（扩展名角标改用 primitives 的 Tag）；同时新增 `.fs-viewwrap` 与 `.fs-exttag`，
 // 两者只承担布局（flex 项定位），字号底色等观感一律交给 primitives。

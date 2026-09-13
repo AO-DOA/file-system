@@ -1,5 +1,4 @@
 // dsh-plugin-fs — src/host/book-index.ts 单元测试。
-// 迁移自迁移源 src/host/book-index.js（该文件原先只被 gen/translate 执行器消费，无单测），
 // 用例按「可观察行为」设计：index.json 的 upsert 语义（按「源码路径」命中整条替换 / 未命中 push）、
 // 四层数组兜底、其它数组原样保留、目录不存在时 mkdir -p。
 // 覆盖口径：本文件按 file 级 行/函数/分支 100% 设计。

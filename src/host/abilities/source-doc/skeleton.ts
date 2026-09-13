@@ -1,12 +1,11 @@
 // L3 源码注解 — 确定性骨架渲染（宿主内置，2026-09-10 去技能化）。
 // 本文件职责：把目标源码切分成「可注解单元」并渲染成一张填空题骨架（模型只写中文语义，
 // 行号、代码原文、排版、产物与自检全由宿主保证）。
-// 原由独立技能脚本实现，2026-09-10 迁入宿主成为纯函数，逻辑与文案逐字等价，
-// 仅把 CLI 形态换成可 import 的模块。只依赖 Node 内置模块。
+// 只依赖 Node 内置模块。
 import { readFile } from 'node:fs/promises'
 import { ZH } from '../../../shared/locale.ts'
 
-// 可注解单元（源里以注释给出 `Unit = { type, start, end, code, note }`；TS 下显式声明形状）。
+// 可注解单元（形状为 `Unit = { type, start, end, code, note }`，TS 下显式声明）。
 interface Unit {
   type: 'block' | 'line'
   start: number
@@ -26,7 +25,7 @@ export function buildUnits(srcLines: readonly string[]): Unit[] {
     if (pending) { units.push(pending); pending = null }
   }
   for (let i = 0; i < srcLines.length; i++) {
-    // `as string` 是纯类型断言（编译后零残留）：循环边界内 i < length，取值与源实现逐字相同。
+    // `as string` 是纯类型断言（编译后零残留）：循环边界内 i < length，取值逐字相同。
     const raw = srcLines[i] as string
     const t = raw.trim()
     const lineNo = i + 1

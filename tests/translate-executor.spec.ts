@@ -3,8 +3,7 @@
  *
  * translate-executor（src/host/translate-executor.ts）单元测试。
  *
- * 迁移自迁移源的同名执行器（`src/host/translate-executor.js`，冻结于 3a3f89e），并按
- * PROGRESS.md D-2 把分支口径补到 100%：每条早退、每个三元与每条告警取值路径都有真实用例。
+ * 分支口径要求 100%：每条早退、每个三元与每条告警取值路径都有真实用例。
  *
  * 装置要点：
  *   · `@deepseek-ai/dsh-llm` 是 peerDependency（本仓 node_modules 里没有），用 vi.mock 提供
@@ -175,7 +174,7 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
       },
     },
     bookStore: {
-      // 按传入 rel 定向（源实现同样用 rel 解析绝对路径）：前置校验的「源文不存在」用例
+      // 按传入 rel 定向（用 rel 解析绝对路径）：前置校验的「源文不存在」用例
       // 要靠它把执行器指向一个并不存在的路径。
       bookTargetFor: async (rel: string) => ({
         abs: join(projectRoot, rel),

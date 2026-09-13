@@ -1,5 +1,5 @@
 // dsh-plugin-fs — src/host/fs-utils.ts 单元测试。
-// 迁移自迁移源 tests/fs-utils.test.js（node:test → vitest），只断言外部可观察行为：
+// 只断言外部可观察行为：
 // 路径编码、桶名/层名校验、越权边界、模板渲染、时间戳与台账序号。
 // 覆盖口径：本文件按「file 级 行/函数/分支 100%」设计，边缘分支用例集中在各 describe 末尾。
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -164,7 +164,7 @@ describe('computeDocStem', () => {
     expect(computeDocStem('ws/note.markdown')).toBe('ws-note')
   })
 
-  it('空串与 null 输入保持源语义（parts 为空 → undefined-）', () => {
+  it('空串与 null 输入保持既有语义（parts 为空 → undefined-）', () => {
     expect(computeDocStem('')).toBe('undefined-')
     expect(computeDocStem(null)).toBe('undefined-')
   })

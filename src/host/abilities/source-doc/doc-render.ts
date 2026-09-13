@@ -58,7 +58,7 @@ export function parseFilledSkeleton(skeletonText: string): { units: Unit[]; summ
   return { units, summary }
 }
 
-// 围栏语言标签映射（照搬脚本 LANG_BY_EXT）：按源文件扩展名推断，未知扩展名回落 'javascript'。
+// 围栏语言标签映射（LANG_BY_EXT）：按源文件扩展名推断，未知扩展名回落 'javascript'。
 const LANG_BY_EXT: Record<string, string> = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
   ts: 'typescript', mts: 'typescript', cts: 'typescript', tsx: 'typescript',
@@ -75,7 +75,7 @@ export function langOf(relPath: string): string {
 
 // 注解填充统计（按单元）：filled = note 非空的单元数，total = 单元总数，ratio = filled/total
 // （total 为 0 时 ratio 记 0）。宿主收尾用它判空转：total 为 0 或 filled 为 0 即失败。
-// 入参放宽到 null/undefined 与「含假值元素」：源实现 `units || []` 与 `u && u.note` 都按假值兜底。
+// 入参放宽到 null/undefined 与「含假值元素」：本实现 `units || []` 与 `u && u.note` 都按假值兜底。
 export function annotationStats(
   units: readonly (Unit | null | undefined)[] | null | undefined,
 ): { filled: number; total: number; ratio: number } {
@@ -162,14 +162,14 @@ interface RenderInput {
 // 产物渲染：按真实行号取码 → 排版 → frontmatter/标题/正文，返回 { doc, problems }。
 // 取码：srcLines 给出时以它为权威行号源（单元行号越界直接抛错，错误信息含单元范围与源码总行数）；
 // srcLines 缺失时回落用骨架内 code（兼容不传源码的调用）。
-// 排版（照搬脚本，逐字一致）：单元与前单元行号不连续先插一个空行；
+// 排版（逐字一致）：单元与前单元行号不连续先插一个空行；
 //   type !== 'block' && start === end && code 长度 <= 78 && note 字符数 <= 30 && note 非空
 //   → 行尾 `<code>  // [N] <note>`；否则行上方 `<缩进>// [label] <note>` + 代码行
 //   （缩进取代码行前导空白；块且 note 为空时保留原代码行，避免丢内容）。
 // problems 非空时调用方必须让任务失败（不得落盘半成品）。
-// 类型按运行时事实标为 `string[]`（checkHealth 恒返回数组）：源里 `if (problems && problems.length > 0)`
+// 类型按运行时事实标为 `string[]`（checkHealth 恒返回数组）：`if (problems && problems.length > 0)`
 // 的 `problems &&` 是 JS 习惯写法、在类型系统下恒真，故调用方按其等价形式 `problems.length > 0` 判定 ——
-// 运行时行为与源逐字相同（无可观察差异）。
+// 运行时行为逐字相同（无可观察差异）。
 export function renderAnnotatedDoc(
   { units, summary, srcLines, rel, layer, generatedAt }: RenderInput,
 ): { doc: string; problems: string[] } {
@@ -204,7 +204,7 @@ export function renderAnnotatedDoc(
     const indent = ((r.code || '').match(/^[\t ]*/) as RegExpMatchArray)[0] // 代码行前导缩进
     // 源码中该单元与其前一单元之间若有空行/被跳过行（行号不连续），保留一个空行分隔
     if (prevEnd && r.start - prevEnd > 1) codeOut.push('')
-    // `Array.from(note)` 与源的 `[...note]` 语义逐字等价（都按 Unicode 码点计数）；
+    // `Array.from(note)` 与 `[...note]` 语义逐字等价（都按 Unicode 码点计数）；
     // 仅为避开 oxlint no-misused-spread 而换写法，判定口径不变。
     if (r.type !== 'block' && r.start === r.end && !(r.code.length > 78) && !(Array.from(note).length > 30) && note) {
       // 短行 + 短注解 → 行尾

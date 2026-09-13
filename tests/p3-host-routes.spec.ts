@@ -1,25 +1,23 @@
 /**
  * src/host/index.ts（P3-A 路由层 + P3-B 任务状态机）集成式 spec。
  *
- * 迁移自迁移源 `tests/host-routes.test.js`（638 行 / 21 例，node:test）与
- * `tests/task-timeout.test.js`（121 行 / 2 例）—— 用例逐条映射，标题后标注源文件行号；
- * 另按 `docs/baseline/host.md` §A（路由全表）与 §B（任务状态机）补齐源测试未覆盖的
- * 分支：`/root`、`/session`、`/mkdir`、`/delete`、body 10MB→413、去重键规范化、
+ * 按路由全表与任务状态机覆盖各分支：
+ * `/root`、`/session`、`/mkdir`、`/delete`、body 10MB→413、去重键规范化、
  * sweep 的 TTL/容量淘汰、`fsgen-`/`fstr-` 两个 taskId 前缀、`__fsTest` 句柄成员。
  *
  * 被测面是**对外契约**，不是内部实现：断言只读 HTTP 状态码、JSON 出参、任务记录叶子
  * 字段与磁盘上的真实文件；`ctx.__fsTest` 只是观察窗口（NODE_ENV==='test' 才挂载）。
  *
- * 四条纪律（1–2 是源仓踩过的坑，逐条保留其语义；3–4 是 2026-09-11 的 G-1/G-1b 修复新增）：
+ * 四条纪律（1–2 是踩过的坑，逐条保留其语义；3–4 是 2026-09-11 的 G-1/G-1b 修复新增）：
  *   1. **严禁固定 sleep**：后台任务用 `setImmediate` 起、宿主立即回 200，固定等待在并发
- *      负载下会漏判（源仓缺陷 C：6 并发 6/6 失败）。一律轮询可观测信号——`waitTaskRegistered`
+ *      负载下会漏判（实测：6 并发 6/6 失败）。一律轮询可观测信号——`waitTaskRegistered`
  *      （占位记录）、`waitTaskRunning`、`waitTaskSettled`（直读 genTasks）、`waitSettled`
  *      （走真实 /gen-status）；10s 上限只用于防挂死，不作为同步手段。
  *   2. **路径隔离**：所有临时根用 `mkdtemp(join(tmpdir(), …))`（禁用 `Date.now()` 拼可预测
  *      路径：vitest 并行下会撞）；`DSH_HOME` 与 `DSH_FS_ISSUES_DIR` 指向进程级临时目录，
  *      后者防宿主收尾的 `syncIssueIndex()` read-modify-write 改写受版本控制的 issues/README.md。
  *   3. **写路由 path 必填（G-1，2026-09-11）**：`/write`、`/mkdir`、`/delete` 缺失 `path`
- *      一律 400 `path required`（判据与既有 `/read`、`/translate` 同源）。源插件「锁定无校验」
+ *      一律 400 `path required`（判据与既有 `/read`、`/translate` 一致）。原先「锁定无校验」
  *      的 D-10 用例已按本次修复改写：`/delete` 缺 path 曾把 `abs` 解析成工作区根并整根 `rm -rf`。
  *   4. **`/delete` 拒绝根自身（G-1b，2026-09-11）**：`.`, `./`, `sub/..` 都解析回 root，而越权
  *      检查 `abs !== root` 恰好放行根自身 → 该路由另设守卫，一律 400
@@ -558,7 +556,7 @@ function createFakeAgentLoop(options: FakeLoopOptions = {}): FakeAgentLoop {
 // ---- 用例 ----
 
 describe('apply 装配与 __fsTest 句柄', () => {
-  it('apply 暴露测试句柄，root 默认取 sandboxPolicy.workspaceRoot（源 host-routes.test.js:89）', async () => {
+  it('apply 暴露测试句柄，root 默认取 sandboxPolicy.workspaceRoot', async () => {
     const root = await newRoot('fs-p3-apply-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -567,7 +565,7 @@ describe('apply 装配与 __fsTest 句柄', () => {
     expect(ctx.webServer.routes).toHaveLength(1)
   })
 
-  it('apply 注册 /api/fs 前缀路由：真实 handler 逐字解析 seg 并分派（源 real-composition.test.js:93 的进程内等价）', async () => {
+  it('apply 注册 /api/fs 前缀路由：真实 handler 逐字解析 seg 并分派（进程内等价）', async () => {
     const root = await newRoot('fs-p3-prefix-')
     await mkdir(join(root, 'sub'), { recursive: true })
     const ctx = createCtx(root)
@@ -599,13 +597,13 @@ describe('apply 装配与 __fsTest 句柄', () => {
     expectDictError((postOut.json as ErrorBody).error)
   })
 
-  it('apply 无 sandboxPolicy 时 root 回退 process.cwd()（源 index.ts:145 的兜底支）', () => {
+  it('apply 无 sandboxPolicy 时 root 回退 process.cwd()', () => {
     const ctx = createCtx()
     apply(ctx)
     expect(fsTestOf(ctx).getRoot()).toBe(process.cwd())
   })
 
-  it('NODE_ENV 非 test 时不挂 __fsTest，路由照常注册（源 real-composition.test.js:116 的生产支）', () => {
+  it('NODE_ENV 非 test 时不挂 __fsTest，路由照常注册', () => {
     const ctx = createCtx()
     vi.stubEnv('NODE_ENV', 'production')
     try {
@@ -617,7 +615,7 @@ describe('apply 装配与 __fsTest 句柄', () => {
     }
   })
 
-  it('__fsTest 暴露统一工作目录与书库桶发现，setRoot 立即影响 getRoot（源 gen-scope.test.js:480 的进程内等价）', async () => {
+  it('__fsTest 暴露统一工作目录与书库桶发现，setRoot 立即影响 getRoot（进程内等价）', async () => {
     const root = await newRoot('fs-p3-handle-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -635,7 +633,7 @@ describe('apply 装配与 __fsTest 句柄', () => {
 })
 
 describe('GET /root 与 GET /session', () => {
-  it('GET /root 只回 {root}（无 ok 字段），set-root 后跟随新根（源 §A 的出参形状）', async () => {
+  it('GET /root 只回 {root}（无 ok 字段），set-root 后跟随新根', async () => {
     const root = await newRoot('fs-p3-root-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -646,7 +644,7 @@ describe('GET /root 与 GET /session', () => {
     // 反直觉契约：/root 与 /tree 的响应没有 ok 字段（逐字锁定形状）
     expect(out.json).toEqual({ root })
 
-    // req.url 缺失时兜底 '/'（源 index.ts:352 的 `req.url || '/'`）：/root 不读 query，正好覆盖该支
+    // req.url 缺失时兜底 '/'（`req.url || '/'`）：/root 不读 query，正好覆盖该支
     const noUrl = await call(fsTest, createReq('GET', ''), 'root')
     expect(noUrl.json).toEqual({ root })
 
@@ -659,7 +657,7 @@ describe('GET /root 与 GET /session', () => {
     expect(after.json).toEqual({ root: target })
   })
 
-  it('GET /session 四种会话形态：无 id / 会话不存在 / 有 header.cwd / 会话无 header（源 §A，源测试未覆盖）', async () => {
+  it('GET /session 四种会话形态：无 id / 会话不存在 / 有 header.cwd / 会话无 header', async () => {
     const root = await newRoot('fs-p3-session-')
     const ctx = createCtx(root)
     ctx.sessions = {
@@ -686,7 +684,7 @@ describe('GET /root 与 GET /session', () => {
     expect(noHeader.json).toEqual({ sessionId: 's2', cwd: null, root })
   })
 
-  it('GET /session 在 sessions 服务缺失或缺 get 时不崩，cwd 为 null（源 index.ts:203-207 的防御支）', async () => {
+  it('GET /session 在 sessions 服务缺失或缺 get 时不崩，cwd 为 null', async () => {
     const root = await newRoot('fs-p3-session-nosrv-')
 
     const noService = createCtx(root)
@@ -704,7 +702,7 @@ describe('GET /root 与 GET /session', () => {
 })
 
 describe('GET /tree', () => {
-  it('tree 列出目录与文件：目录优先、只返回当前层（源 :97）', async () => {
+  it('tree 列出目录与文件：目录优先、只返回当前层', async () => {
     const root = await newRoot('fs-p3-tree-')
     await mkdir(join(root, 'src'), { recursive: true })
     await writeFile(join(root, 'src', 'a.js'), 'const a = 1\n', 'utf8')
@@ -730,7 +728,7 @@ describe('GET /tree', () => {
     expect(nodeOf(subOut.json as TreeBody, 'a.js').path).toBe('src/a.js')
   })
 
-  it('#1 /tree 归属兜底：已知根注册表尚未跟上切根时，节点仍归属当前根（源 :116）', async () => {
+  it('#1 /tree 归属兜底：已知根注册表尚未跟上切根时，节点仍归属当前根', async () => {
     const parent = await newRoot('fs-p3-tree-home-')
     const child = join(parent, 'child')
     await mkdir(join(child, 'sub'), { recursive: true })
@@ -780,7 +778,7 @@ describe('GET /tree', () => {
     })
   })
 
-  it('tree 四层圆点位与 docRel 同源：文件命中三层、目录命中目录层、未命中为 false + 空串（源 §A 的补充形状契约）', async () => {
+  it('tree 四层圆点位与 docRel 同源：文件命中三层、目录命中目录层、未命中为 false + 空串', async () => {
     const root = await newRoot('fs-p3-tree-layers-')
     await mkdir(join(root, 'src'), { recursive: true })
     await writeFile(join(root, 'src', 'a.js'), 'export const a = 1\n', 'utf8')
@@ -831,7 +829,7 @@ describe('GET /tree', () => {
     expect(bJs.docTrRel).toBe('')
   })
 
-  it('tree 未知目录 → 500（readdir ENOENT 未兜底，既有行为）（源 §A 的 500 分支）', async () => {
+  it('tree 未知目录 → 500（readdir ENOENT 未兜底，既有行为）', async () => {
     const root = await newRoot('fs-p3-tree-500-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -842,7 +840,7 @@ describe('GET /tree', () => {
     expect(body.error).toMatch(/ENOENT/)
   })
 
-  it('read/tree 双位置回退：旧库文档仍可见，新桶优先（源 :502）', async () => {
+  it('read/tree 双位置回退：旧库文档仍可见，新桶优先', async () => {
     const root = await newRoot('fs-p3-dual-')
     await mkdir(join(root, 'src'), { recursive: true })
     const ws = basename(root)
@@ -884,7 +882,7 @@ describe('GET /tree', () => {
     expect((legacyRead.json as ReadBody).content).toBe('# 旧库文件摘要\n')
   })
 
-  it('跨工作区共享：子树定向最近已知项目根桶，读写同桶（源 :553）', async () => {
+  it('跨工作区共享：子树定向最近已知项目根桶，读写同桶', async () => {
     // root 为父工作区；plugins/child 是已注册项目根（其桶 index.json 含「项目根」绝对路径）。
     const root = await newRoot('fs-p3-cross-')
     const child = join(root, 'plugins', 'child')
@@ -968,7 +966,7 @@ describe('GET /tree', () => {
 })
 
 describe('POST /set-root、/write、/mkdir、/delete', () => {
-  it('set-root 拒绝不存在的路径，root 不被修改（源 :233）', async () => {
+  it('set-root 拒绝不存在的路径，root 不被修改', async () => {
     const root = await newRoot('fs-p3-setroot-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -995,7 +993,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expect(fsTest.getRoot()).toBe(root)
   })
 
-  it('set-root 缺 path 时幂等返回当前 root，并确保桶存在（源 :233 的另一支）', async () => {
+  it('set-root 缺 path 时幂等返回当前 root，并确保桶存在', async () => {
     const root = await newRoot('fs-p3-setroot-nopath-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1003,11 +1001,11 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     const out = await call(fsTest, createReq('POST', '/api/fs/set-root', {}), 'set-root')
     expect(out.status).toBe(200)
     expect(out.json).toEqual({ ok: true, root })
-    // ensureBookDir：建桶 + 四层子目录（读接口之外的写副作用，源 §E-4）
+    // ensureBookDir：建桶 + 四层子目录（读接口之外的写副作用）
     expect((await stat(join(booksRoot(), projectKey(root), 'index.json'))).isFile()).toBe(true)
   })
 
-  it('read 读取文件，write 写入后 read 回读一致；缺 content 写空文件（源 :154）', async () => {
+  it('read 读取文件，write 写入后 read 回读一致；缺 content 写空文件', async () => {
     const root = await newRoot('fs-p3-rw-')
     await mkdir(join(root, 'sub'), { recursive: true })
     const ctx = createCtx(root)
@@ -1029,7 +1027,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expect(await readFile(join(root, 'sub', 'empty.txt'), 'utf8')).toBe('')
   })
 
-  it('write 越权路径被拒绝，不会写出 root（源 :176）', async () => {
+  it('write 越权路径被拒绝，不会写出 root', async () => {
     const root = await newRoot('fs-p3-write-escape-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1040,7 +1038,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     await expect(stat(join(root, '..', 'outside.txt'))).rejects.toThrow()
   })
 
-  it('write 无 path → 400 path required，不再落到 writeFile(root)（G-1 修复，源 D-10 锁定已解除）', async () => {
+  it('write 无 path → 400 path required，不再落到 writeFile(root)（G-1 修复）', async () => {
     const root = await newRoot('fs-p3-write-nopath-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1053,7 +1051,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expect((await stat(root)).isDirectory()).toBe(true)
   })
 
-  it('mkdir 建目录成功、越权 400（源 :233 之外的 mkdir 支）', async () => {
+  it('mkdir 建目录成功、越权 400', async () => {
     const root = await newRoot('fs-p3-mkdir-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1070,7 +1068,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expectDictError((escaped.json as ErrorBody).error)
   })
 
-  it('mkdir 无 path → 400 path required，不再对工作区根 mkdir -p（G-1 修复，源 D-10 锁定已解除）', async () => {
+  it('mkdir 无 path → 400 path required，不再对工作区根 mkdir -p（G-1 修复）', async () => {
     const root = await newRoot('fs-p3-mkdir-nopath-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1111,7 +1109,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expect(again.json).toEqual({ ok: true })
   })
 
-  it('delete 无 path → 400，工作区根与其中文件不被递归删除（G-1 修复，源 §F-3 高危已消除）', async () => {
+  it('delete 无 path → 400，工作区根与其中文件不被递归删除（G-1 修复）', async () => {
     const root = await newRoot('fs-p3-delete-nopath-')
     await writeFile(join(root, 'keep.txt'), 'x\n', 'utf8')
     const ctx = createCtx(root)
@@ -1130,7 +1128,7 @@ describe('POST /set-root、/write、/mkdir、/delete', () => {
     expect(fsTest.getRoot()).toBe(root)
   })
 
-  it('read 超过 2MB 上限被拒绝（源 :218）', async () => {
+  it('read 超过 2MB 上限被拒绝', async () => {
     const root = await newRoot('fs-p3-read-big-')
     const limit = 2 * 1024 * 1024
     await writeFile(join(root, 'big.txt'), 'a'.repeat(limit + 1), 'utf8')
@@ -1245,7 +1243,7 @@ describe('G-1/G-1b：写路由 path 必填，且 /delete 拒绝工作区根自�
 })
 
 describe('POST body 读取与上限', () => {
-  it('POST 非法 JSON body 返回 400 而非 500（源 :247）', async () => {
+  it('POST 非法 JSON body 返回 400 而非 500', async () => {
     const root = await newRoot('fs-p3-badjson-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1255,7 +1253,7 @@ describe('POST body 读取与上限', () => {
     expectDictError((out.json as ErrorBody).error)
   })
 
-  it('POST body 超过 10MB → 413 body too large，并 destroy 未读完的请求（源 §A 的 413 分支）', async () => {
+  it('POST body 超过 10MB → 413 body too large，并 destroy 未读完的请求', async () => {
     const root = await newRoot('fs-p3-body-limit-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1277,7 +1275,7 @@ describe('POST body 读取与上限', () => {
     expect(destroyed).toBe(true)
   })
 
-  it('非 Buffer 分片同样计入 10MB 上限；req 无 destroy 时也不崩（源 index.ts:225-230 的两支）', async () => {
+  it('非 Buffer 分片同样计入 10MB 上限；req 无 destroy 时也不崩', async () => {
     const root = await newRoot('fs-p3-body-string-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1295,7 +1293,7 @@ describe('POST body 读取与上限', () => {
     expectDictError((out.json as ErrorBody).error)
   })
 
-  it('end 之后的迟到 data 分片被丢弃，不改写已解析的 body（源 index.ts:224 的 settled 守卫）', async () => {
+  it('end 之后的迟到 data 分片被丢弃，不改写已解析的 body', async () => {
     const root = await newRoot('fs-p3-body-late-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1313,7 +1311,7 @@ describe('POST body 读取与上限', () => {
     expect(await readFile(join(root, 'late.txt'), 'utf8')).toBe('ok')
   })
 
-  it('req 的 error 事件让 readBody reject → 500，处理器不挂起（源 index.ts:236 的防御支）', async () => {
+  it('req 的 error 事件让 readBody reject → 500，处理器不挂起', async () => {
     const root = await newRoot('fs-p3-body-error-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1326,7 +1324,7 @@ describe('POST body 读取与上限', () => {
     expect(out.json).toEqual({ ok: false, error: 'socket hang up' })
   })
 
-  it('JSON 字面量 null（非对象 body）→ 500，而不是 400（源 index.ts:358-366 的既有行为）', async () => {
+  it('JSON 字面量 null（非对象 body）→ 500，而不是 400', async () => {
     const root = await newRoot('fs-p3-body-null-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1338,7 +1336,7 @@ describe('POST body 读取与上限', () => {
 })
 
 describe('POST /gen-doc', () => {
-  it('gen-doc 返回 fsgen- 前缀 taskId 与 docRel，gen-status 可查到该任务（源 :188）', async () => {
+  it('gen-doc 返回 fsgen- 前缀 taskId 与 docRel，gen-status 可查到该任务', async () => {
     const root = await newRoot('fs-p3-gen-')
     await mkdir(join(root, 'src'), { recursive: true })
     const ctx = createCtx(root)
@@ -1372,7 +1370,7 @@ describe('POST /gen-doc', () => {
     expect(statusBody.task?.status).toBe('error')
   })
 
-  it('gen-doc 占位先于 setImmediate：返回响应前任务已占位、docRel 已补算（源 index.ts:439-457 的顺序契约）', async () => {
+  it('gen-doc 占位先于 setImmediate：返回响应前任务已占位、docRel 已补算', async () => {
     const root = await newRoot('fs-p3-gen-order-')
     await mkdir(join(root, 'src'), { recursive: true })
     const ctx = createCtx(root)
@@ -1389,7 +1387,7 @@ describe('POST /gen-doc', () => {
     await waitTaskSettled(fsTest.genTasks, placeholder.id)
   })
 
-  it('重复生成同 kind+rel 复用进行中的 taskId（源 :259）', async () => {
+  it('重复生成同 kind+rel 复用进行中的 taskId', async () => {
     const root = await newRoot('fs-p3-gen-dedup-')
     await mkdir(join(root, 'src'), { recursive: true })
     // 假 agentLoop：whenIdle 永不 settle → 任务停在 running，去重断言不依赖真实子 agent 时序
@@ -1400,7 +1398,7 @@ describe('POST /gen-doc', () => {
     const fsTest = fsTestOf(ctx)
 
     // 等第一个请求真的占位再发第二次：去重读的是 genTasks 占位记录，而占位之前还有若干 await
-    // （读 body、预检 stat）——「同时发起」并不保证后者看到前者（源 :453-458 的实测结论）。
+    // （读 body、预检 stat）——「同时发起」并不保证后者看到前者（实测结论）。
     const first = call(fsTest, createReq('POST', '/api/fs/gen-doc', { kind: 'folder', path: 'src' }), 'gen-doc')
     await waitTaskRegistered(fsTest.genTasks, 'src')
     const second = await call(fsTest, createReq('POST', '/api/fs/gen-doc', { kind: 'folder', path: 'src' }), 'gen-doc')
@@ -1417,7 +1415,7 @@ describe('POST /gen-doc', () => {
     expect(loop.calls).toHaveLength(1)
   })
 
-  it('去重命中判据：pending/running 复用、终态不复用、kind 不同不复用（源 :285-289 的三支）', async () => {
+  it('去重命中判据：pending/running 复用、终态不复用、kind 不同不复用', async () => {
     const root = await newRoot('fs-p3-gen-dedup-branch-')
     await mkdir(join(root, 'src'), { recursive: true })
     await mkdir(join(root, 'lib'), { recursive: true })
@@ -1456,7 +1454,7 @@ describe('POST /gen-doc', () => {
     expect(otherBody.taskId).not.toBe('fstr-other')
   })
 
-  it('gen-doc 未知 kind 返回 400；空 body 的 kind 为 undefined 同样 400（源 :278）', async () => {
+  it('gen-doc 未知 kind 返回 400；空 body 的 kind 为 undefined 同样 400', async () => {
     const root = await newRoot('fs-p3-gen-kind-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1473,7 +1471,7 @@ describe('POST /gen-doc', () => {
     expectDictError((empty.json as ErrorBody).error)
   })
 
-  it('gen-doc 对 markdown 文件拒绝生成 L2/L3，folder 目标不受限（源 :290）', async () => {
+  it('gen-doc 对 markdown 文件拒绝生成 L2/L3，folder 目标不受限', async () => {
     const root = await newRoot('fs-p3-gen-md-')
     await writeFile(join(root, 'b.md'), '# hi\n', 'utf8')
     await mkdir(join(root, 'a.md'), { recursive: true })
@@ -1494,7 +1492,7 @@ describe('POST /gen-doc', () => {
     await waitTaskSettled(fsTest.genTasks, taskId)
   })
 
-  it('gen-doc（folder）目标不是目录时 400，不创建任务（源 :312）', async () => {
+  it('gen-doc（folder）目标不是目录时 400，不创建任务', async () => {
     const root = await newRoot('fs-p3-gen-notdir-')
     await writeFile(join(root, 'a.js'), 'export const a = 1\n', 'utf8')
     const ctx = createCtx(root)
@@ -1508,7 +1506,7 @@ describe('POST /gen-doc', () => {
     expect(fsTest.genTasks.size).toBe(0)
   })
 
-  it('gen-doc（file/src）目标不是文件时 400，不创建任务（源 :328）', async () => {
+  it('gen-doc（file/src）目标不是文件时 400，不创建任务', async () => {
     const root = await newRoot('fs-p3-gen-notfile-')
     await mkdir(join(root, 'src'), { recursive: true })
     const ctx = createCtx(root)
@@ -1523,7 +1521,7 @@ describe('POST /gen-doc', () => {
     expect(fsTest.genTasks.size).toBe(0)
   })
 
-  it('gen-doc/translate 目标不存在时 400，且不创建任务（源 :416）', async () => {
+  it('gen-doc/translate 目标不存在时 400，且不创建任务', async () => {
     const root = await newRoot('fs-p3-target-missing-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1543,7 +1541,7 @@ describe('POST /gen-doc', () => {
     expect(fsTest.genTasks.size).toBe(before)
   })
 
-  it('gen-doc 缺 path 时 rel 取默认 "."（源 index.ts:407 的默认支）', async () => {
+  it('gen-doc 缺 path 时 rel 取默认 "."', async () => {
     const root = await newRoot('fs-p3-gen-dot-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1559,7 +1557,7 @@ describe('POST /gen-doc', () => {
     await waitTaskSettled(fsTest.genTasks, taskId)
   })
 
-  it('gen-doc 越权 path 由预检 stat 的 resolveIn 拦下 → 400（源 :176 同源语义）', async () => {
+  it('gen-doc 越权 path 由预检 stat 的 resolveIn 拦下 → 400', async () => {
     const root = await newRoot('fs-p3-gen-escape-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1571,7 +1569,7 @@ describe('POST /gen-doc', () => {
     expect(fsTest.genTasks.size).toBe(0)
   })
 
-  it('gen-doc 的 kind 白名单含 translate（G-2）：走生成分支、前缀 fsgen-、与 /translate 共用去重键（源 §F-4）', async () => {
+  it('gen-doc 的 kind 白名单含 translate（G-2）：走生成分支、前缀 fsgen-、与 /translate 共用去重键', async () => {
     const root = await newRoot('fs-p3-gen-translate-kind-')
     await writeFile(join(root, 'a.js'), 'const a = 1\n', 'utf8')
     const ctx = createCtx(root)
@@ -1597,7 +1595,7 @@ describe('POST /gen-doc', () => {
 })
 
 describe('POST /translate', () => {
-  it('translate 返回 fstr- 前缀 taskId 与 docRel（文章翻译层），任务可达 gen-status（源 :344）', async () => {
+  it('translate 返回 fstr- 前缀 taskId 与 docRel（文章翻译层），任务可达 gen-status', async () => {
     const root = await newRoot('fs-p3-tr-')
     await mkdir(join(root, 'docs'), { recursive: true })
     await writeFile(join(root, 'README.md'), '# Hello\n', 'utf8')
@@ -1633,7 +1631,7 @@ describe('POST /translate', () => {
     expect((statusOut.json as TaskBody).task?.id).toBe(taskId)
   })
 
-  it('translate 拒绝非 md 文件、书库内文档与缺 path（源 :385）', async () => {
+  it('translate 拒绝非 md 文件、书库内文档与缺 path', async () => {
     const root = await newRoot('fs-p3-tr-bad-')
     await writeFile(join(root, 'a.js'), 'const a = 1\n', 'utf8')
     await mkdir(join(root, '.book', 'x-book', '文章翻译'), { recursive: true })
@@ -1656,7 +1654,7 @@ describe('POST /translate', () => {
     expectDictError((noPath.json as ErrorBody).error)
   })
 
-  it('translate 重复请求复用进行中的 taskId（源 :436）', async () => {
+  it('translate 重复请求复用进行中的 taskId', async () => {
     const root = await newRoot('fs-p3-tr-dup-')
     await writeFile(join(root, 'a.md'), '# hi\n', 'utf8')
     // 假 agentLoop：whenIdle 永不 settle → 任务停在 running，去重断言不依赖真实子 agent 时序
@@ -1680,7 +1678,7 @@ describe('POST /translate', () => {
     expect(loop.calls).toHaveLength(1)
   })
 
-  it('translate 去重键用原始未规范化 rel："a.md" 与 "./a.md" 不去重（源 §B 的并发/去重契约）', async () => {
+  it('translate 去重键用原始未规范化 rel："a.md" 与 "./a.md" 不去重', async () => {
     const root = await newRoot('fs-p3-tr-rel-')
     await writeFile(join(root, 'a.md'), '# hi\n', 'utf8')
     const loop = createFakeAgentLoop({ idle: 'never' })
@@ -1704,7 +1702,7 @@ describe('POST /translate', () => {
     expect(loop.calls).toHaveLength(2)
   })
 
-  it('translate 越权 path 在 stat 预检处被拦下 → 400（源 :553 的带桶防穿越同源语义）', async () => {
+  it('translate 越权 path 在 stat 预检处被拦下 → 400', async () => {
     const root = await newRoot('fs-p3-tr-escape-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1718,7 +1716,7 @@ describe('POST /translate', () => {
 })
 
 describe('GET /gen-status', () => {
-  it('gen-status 未命中：HTTP 200 + {ok:false,error:"task not found",task:null}（源 §A 的反直觉契约）', async () => {
+  it('gen-status 未命中：HTTP 200 + {ok:false,error:"task not found",task:null}', async () => {
     const root = await newRoot('fs-p3-status-404-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1728,7 +1726,7 @@ describe('GET /gen-status', () => {
     expectDictError((out.json as ErrorBody).error)
   })
 
-  it('gen-status 无 id：最近任务列表按 startedAt 倒序、上限 20、未启动的排最后（源 index.ts:541）', async () => {
+  it('gen-status 无 id：最近任务列表按 startedAt 倒序、上限 20、未启动的排最后', async () => {
     const root = await newRoot('fs-p3-status-list-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1752,7 +1750,7 @@ describe('GET /gen-status', () => {
 })
 
 describe('GET /read', () => {
-  it('read 普通文件返回 content/ext/size；目录与不存在路径一律 400 not a file；缺 path 400（源 §A）', async () => {
+  it('read 普通文件返回 content/ext/size；目录与不存在路径一律 400 not a file；缺 path 400', async () => {
     const root = await newRoot('fs-p3-read-')
     await mkdir(join(root, 'dir'), { recursive: true })
     await writeFile(join(root, 'note.txt'), 'hello\n', 'utf8')
@@ -1780,7 +1778,7 @@ describe('GET /read', () => {
     expectDictError((noPath.json as ErrorBody).error)
   })
 
-  it('read 书库白名单：../../ 穿越、四层外、非法结构 rel 与带反斜杠的叶子均被拒绝（源 :468）', async () => {
+  it('read 书库白名单：../../ 穿越、四层外、非法结构 rel 与带反斜杠的叶子均被拒绝', async () => {
     const root = await newRoot('fs-p3-read-book-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1826,7 +1824,7 @@ describe('GET /read', () => {
     expectDictError((notFound.json as ErrorBody).error)
   })
 
-  it('read 带桶 rel：新桶定位、注册桶的旧库回退、未注册桶只读新桶（源 :553 与 :629 的合成）', async () => {
+  it('read 带桶 rel：新桶定位、注册桶的旧库回退、未注册桶只读新桶', async () => {
     const root = await newRoot('fs-p3-read-bucket-')
     const bucketName = projectKey(root)
     const bucket = join(booksRoot(), bucketName)
@@ -1865,7 +1863,7 @@ describe('GET /read', () => {
 })
 
 describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
-  it('sweepGenTasks 淘汰超时 running：置 error + 字典文案 + finishedAt 打点；未超时不动（源 task-timeout.test.js:74）', async () => {
+  it('sweepGenTasks 淘汰超时 running：置 error + 字典文案 + finishedAt 打点；未超时不动', async () => {
     const root = await newRoot('fs-p3-sweep-timeout-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1899,7 +1897,7 @@ describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
     expect(fresh?.error).toBeNull()
   })
 
-  it('超时任务经 gen-status 可见且 error 透传字典文案（源 task-timeout.test.js:104）', async () => {
+  it('超时任务经 gen-status 可见且 error 透传字典文案', async () => {
     const root = await newRoot('fs-p3-sweep-status-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1923,7 +1921,7 @@ describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
     expect(body.task?.error).toBe(ZH.errTaskTimeout)
   })
 
-  it('sweepGenTasks TTL：完成超 10 分钟的记录被删除，未超期的保留（源 §B，源测试未覆盖）', async () => {
+  it('sweepGenTasks TTL：完成超 10 分钟的记录被删除，未超期的保留', async () => {
     const root = await newRoot('fs-p3-sweep-ttl-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1938,7 +1936,7 @@ describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
     expect(fsTest.genTasks.has('recent')).toBe(true)
   })
 
-  it('sweepGenTasks 容量：超 100 条时按 finishedAt 删最旧的已完成记录，未完成的不参与（源 §B，源测试未覆盖）', async () => {
+  it('sweepGenTasks 容量：超 100 条时按 finishedAt 删最旧的已完成记录，未完成的不参与', async () => {
     const root = await newRoot('fs-p3-sweep-cap-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -1961,7 +1959,7 @@ describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
     expect(fsTest.genTasks.has('still-pending')).toBe(true)
   })
 
-  it('任务 4 态：占位 pending（startedAt 为 null）→ running（打点 startedAt）→ success（打点 finishedAt）（源 §B 的 11 个迁移点）', async () => {
+  it('任务 4 态：占位 pending（startedAt 为 null）→ running（打点 startedAt）→ success（打点 finishedAt）', async () => {
     const root = await newRoot('fs-p3-state-')
     await mkdir(join(root, 'src'), { recursive: true })
     // holdCreate：createAgent 停在闸门 → 任务可确定性停在 pending；
@@ -2002,7 +2000,7 @@ describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
 })
 
 describe('执行器装配面：模型路由与工具面收敛（index.ts 的闭包，经真实执行器触达）', () => {
-  it('子 agent 模型路由：initiator 优先、缺字段回退部署默认、两者皆无为空对象（源 index.ts:257-278）', async () => {
+  it('子 agent 模型路由：initiator 优先、缺字段回退部署默认、两者皆无为空对象', async () => {
     const root = await newRoot('fs-p3-route-model-')
     await mkdir(join(root, 'src'), { recursive: true })
     const loop = createFakeAgentLoop()
@@ -2041,7 +2039,7 @@ describe('执行器装配面：模型路由与工具面收敛（index.ts 的闭�
     expect(loop.calls[3]?.agentOptions).toEqual({})
   })
 
-  it('工具面收敛：有 restrict 时按能力白名单收敛；无 tools / restrict 非函数时跳过；restrict 抛错只降级 warn（源 index.ts:182-192）', async () => {
+  it('工具面收敛：有 restrict 时按能力白名单收敛；无 tools / restrict 非函数时跳过；restrict 抛错只降级 warn', async () => {
     const root = await newRoot('fs-p3-route-scope-')
     await mkdir(join(root, 'src'), { recursive: true })
     const restricts: Array<{ allow: string[] }> = []
@@ -2109,7 +2107,7 @@ describe('执行器装配面：模型路由与工具面收敛（index.ts 的闭�
     expect(warns.join('\n')).toContain('tools.restrict 降级')
   })
 
-  it('applyGenScope 在 agentCtx 为空（未提供工具面）时直接返回，不抛（源 index.ts:182-186 的左支）', async () => {
+  it('applyGenScope 在 agentCtx 为空（未提供工具面）时直接返回，不抛', async () => {
     const root = await newRoot('fs-p3-route-scope-none-')
     await mkdir(join(root, 'src'), { recursive: true })
     // setupArg 缺省即 undefined：执行器把 undefined 交给 applyGenScope
@@ -2129,13 +2127,13 @@ describe('执行器装配面：模型路由与工具面收敛（index.ts 的闭�
   })
 })
 
-// ---- 覆盖率补齐（P3-1 收口）：源用例未触达、但运行时可构造的分支 ----
-// 这三处都是**可达**的，只是源 `host-routes.test.js` 的用例组合没走到；
+// ---- 覆盖率补齐（P3-1 收口）：现有用例未触达、但运行时可构造的分支 ----
+// 这三处都是**可达**的，只是用例组合没走到；
 // 剩下几处（parseBookDocRel 的三重双保险、serveFile 的 not-a-file、applyGenScope
 // 的空白名单）在当前调用链下不可达，另见交付报告。
 
-describe('覆盖率补齐：可达但源用例未触达的分支', () => {
-  it('resolveAgentOptions：initiator 缺 provider 时由 agentDefaultModel 补齐（源 index.ts:157-159 的左支）', async () => {
+describe('覆盖率补齐：可达但现有用例未触达的分支', () => {
+  it('resolveAgentOptions：initiator 缺 provider 时由 agentDefaultModel 补齐', async () => {
     const root = await newRoot('fs-p3-cov-model-')
     await mkdir(join(root, 'src'), { recursive: true })
     const loop = createFakeAgentLoop()
@@ -2154,7 +2152,7 @@ describe('覆盖率补齐：可达但源用例未触达的分支', () => {
     expect(loop.calls[0]?.agentOptions).toEqual({ model: 'm-only', provider: 'p-from-default', reasoningEffort: 'low' })
   })
 
-  it('setGenTaskStatus 对已被淘汰的任务是 no-op（源 index.ts:165-172 的 `if (!task) return`）', async () => {
+  it('setGenTaskStatus 对已被淘汰的任务是 no-op', async () => {
     const root = await newRoot('fs-p3-cov-status-')
     await mkdir(join(root, 'src'), { recursive: true })
     // services 留空 → agentLoop 缺失 → runGenDoc 立即抛，setImmediate 的 .catch 会调 setGenTaskStatus
@@ -2173,7 +2171,7 @@ describe('覆盖率补齐：可达但源用例未触达的分支', () => {
     expect(fsTest.genTasks.has(taskId)).toBe(false)
   })
 
-  it('serveFile：书库文档超过 READ_LIMIT → 400 file too large（源 index.ts:334-347 的上限分支）', async () => {
+  it('serveFile：书库文档超过 READ_LIMIT → 400 file too large', async () => {
     const root = await newRoot('fs-p3-cov-big-')
     const bucketName = projectKey(root)
     const bucket = join(booksRoot(), bucketName)
@@ -2197,11 +2195,11 @@ describe('覆盖率补齐：可达但源用例未触达的分支', () => {
 
 // ---- 覆盖率补齐（二）：其余可达分支 ----
 // 这些分支都是**可达**的（与第一批的 parseBookDocRel 双保险等不可达代码不同），
-// 只是源 host-routes.test.js 的用例组合没走到：靠空 body / 抛非 Error / settled 后事件 /
+// 只是用例组合没走到：靠空 body / 抛非 Error / settled 后事件 /
 // 同 kind 不同 rel / startedAt 为 null / 缺 ?path 这些输入即可确定性地触达。
 
 describe('覆盖率补齐（二）：可达分支', () => {
-  it('readBody：error 事件先到则 reject 一次，迟到的 end 不重复 settle（源 index.ts:236 的两个分支）', async () => {
+  it('readBody：error 事件先到则 reject 一次，迟到的 end 不重复 settle', async () => {
     const root = await newRoot('fs-p3-cov-bodyerr-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -2217,7 +2215,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect((out.json as ErrorBody).error).toBe('socket boom')
   })
 
-  it('readBody：错误不带 message 时 catch 走 `|| err` 右支（源 index.ts:655 与 :284 的右支）', async () => {
+  it('readBody：错误不带 message 时 catch 走 `|| err` 右支', async () => {
     const root = await newRoot('fs-p3-cov-bodyplain-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -2233,7 +2231,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect((out.json as ErrorBody).error).toBe('plain rejection')
   })
 
-  it('applyGenScope：restrict 抛非 Error 时降级 warn 仍出（源 index.ts:190 的右支）', async () => {
+  it('applyGenScope：restrict 抛非 Error 时降级 warn 仍出', async () => {
     const root = await newRoot('fs-p3-cov-scopeplain-')
     await mkdir(join(root, 'src'), { recursive: true })
     const warns: string[] = []
@@ -2261,7 +2259,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect(warns.join('\n')).toContain('plain restrict failure')
   })
 
-  it('resolveAgentOptions：default 的 model 只在 initiator 缺 model 时补齐（源 index.ts:274 的左支）', async () => {
+  it('resolveAgentOptions：default 的 model 只在 initiator 缺 model 时补齐', async () => {
     const root = await newRoot('fs-p3-cov-model2-')
     await mkdir(join(root, 'src'), { recursive: true })
     const loop = createFakeAgentLoop()
@@ -2279,7 +2277,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect(loop.calls[0]?.agentOptions).toEqual({ provider: 'p-init', model: 'm-default' })
   })
 
-  it('sweepGenTasks：未收尾（finishedAt 为 null）的任务不参与 TTL 淘汰（源 index.ts:164 的假支）', async () => {
+  it('sweepGenTasks：未收尾（finishedAt 为 null）的任务不参与 TTL 淘汰', async () => {
     const root = await newRoot('fs-p3-cov-sweep-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -2302,7 +2300,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect(fsTest.genTasks.has('drop-done')).toBe(false)
   })
 
-  it('translate 去重循环：同 kind 但 rel 不同不命中，照常新建（源 index.ts:483 的假支）', async () => {
+  it('translate 去重循环：同 kind 但 rel 不同不命中，照常新建', async () => {
     const root = await newRoot('fs-p3-cov-dedup-')
     await writeFile(join(root, 'a.md'), '# a\n', 'utf8')
     const ctx = createCtx(root)
@@ -2321,7 +2319,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
     expect((out.json as StartedBody).taskId).not.toBe('other-pending')
   })
 
-  it('GET /tree 缺 ?path 时默认 .；/gen-status 列表对 startedAt 为 null 的任务排序（源 :547 与 :541 的右支）', async () => {
+  it('GET /tree 缺 ?path 时默认 .；/gen-status 列表对 startedAt 为 null 的任务排序', async () => {
     const root = await newRoot('fs-p3-cov-tree-default-')
     await writeFile(join(root, 'x.txt'), 'x\n', 'utf8')
     const ctx = createCtx(root)
@@ -2351,7 +2349,7 @@ describe('覆盖率补齐（二）：可达分支', () => {
 // ---- 覆盖率补齐（三）：把每个复合条件的两侧都走一遍 ----
 
 describe('覆盖率补齐（三）：复合条件的另一侧', () => {
-  it('sweepGenTasks：刚完成（finishedAt 存在但未超 TTL）的任务不淘汰（源 :164 第二条件的假支）', async () => {
+  it('sweepGenTasks：刚完成（finishedAt 存在但未超 TTL）的任务不淘汰', async () => {
     const root = await newRoot('fs-p3-cov-sweep2-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -2365,7 +2363,7 @@ describe('覆盖率补齐（三）：复合条件的另一侧', () => {
     expect(fsTest.genTasks.has('just-done')).toBe(true)
   })
 
-  it('readBody：error 事件重复到达时第二次不再 settle（源 :236 的 `if (!settled)` 假支）', async () => {
+  it('readBody：error 事件重复到达时第二次不再 settle', async () => {
     const root = await newRoot('fs-p3-cov-bodyerr2-')
     const ctx = createCtx(root)
     apply(ctx)
@@ -2382,7 +2380,7 @@ describe('覆盖率补齐（三）：复合条件的另一侧', () => {
     expect((out.json as ErrorBody).error).toBe('first')
   })
 
-  it('translate 去重循环：非 translate 的占位不参与比较（源 :483 的 `t.kind` 假支）', async () => {
+  it('translate 去重循环：非 translate 的占位不参与比较', async () => {
     const root = await newRoot('fs-p3-cov-dedupkind-')
     await writeFile(join(root, 'a.md'), '# a\n', 'utf8')
     const ctx = createCtx(root)
@@ -2400,7 +2398,7 @@ describe('覆盖率补齐（三）：复合条件的另一侧', () => {
     expect((out.json as StartedBody).taskId).not.toBe('folder-same-rel')
   })
 
-  it('GET /tree：节点本身即已知项目根时 relHome 退化为点（源 :578 的短路右支）', async () => {
+  it('GET /tree：节点本身即已知项目根时 relHome 退化为点', async () => {
     const root = await newRoot('fs-p3-cov-subroot-')
     const subRoot = join(root, 'sub')
     await mkdir(subRoot, { recursive: true })

@@ -22,14 +22,14 @@
 | `abilities/folder-doc/prompt.md` | L1 目录层（宿主内置） | **宿主内置**（2026-09-10 去技能化）：不调技能、无 skill/bash 工具面；骨架与目录树由宿主渲染后经 `${skeleton}` 注入 |
 | `abilities/file-doc/prompt.md` | L2 文件层（宿主内置） | **宿主内置**（2026-09-10 去技能化）：不调技能、无 skill/bash 工具面（保留 glob/grep 查引用）；骨架由宿主渲染后经 `${skeleton}` 注入 |
 | `abilities/source-doc/prompt.md` | L3 源码层（宿主内置） | **宿主内置**（2026-09-10 去技能化）：不调技能、无 skill/bash 工具面；骨架因体量大改为**落盘**到 `${cwd}`（提示词只给 `${skeletonPath}` 与行数），模型用 `read` 分段读、`edit` 分批填空，产物由宿主 `finalize` 构建 |
-| `abilities/translate-doc/prompt.md` | 文章翻译（宿主内置翻译任务） | 已迁移（本层无 skill/bash 工具，模板内不调用技能脚本）；**保持 standard 形态，但改为「骨架 + 锚点分段 edit 追加」**——长文档一次写完会耗尽单步输出预算而空转 |
+| `abilities/translate-doc/prompt.md` | 文章翻译（宿主内置翻译任务） | **宿主内置**（本层无 skill/bash 工具，模板内不调用技能脚本）；**保持 standard 形态，但改为「骨架 + 锚点分段 edit 追加」**——长文档一次写完会耗尽单步输出预算而空转 |
 
 > PTC 形态 = 提示模型「用 run_code 组合操作、尽量合并工具调用」，与 `ptc` 预设配套；
 > 改回 `standard` 预设时这些模板仍可运行（模型会按原生工具逐步执行），但不再有合并收益。
 > **该表述对四层均已不适用**（2026-09-10）：L1/L2/L3 去技能化后所在层无 bash 工具，没有 run_code
 > 可组合（工具面分别是 `read`/`write`、`read`/`write`/`glob`/`grep`、`read`/`write`/`edit`），
 > 模板一律保持工具无关表述。
-> 依据与实测数据见源仓 `docs/ptc-probe-2026-09-09.md`。
+> 依据与实测数据见会话探针记录。
 
 模板名 = 各能力目录下的 `prompt.md`（`abilities/folder-doc` / `abilities/file-doc` / `abilities/source-doc` / `abilities/translate-doc`）。**加载规则**：`src/host/prompt-loader.ts` 按 `ability.dir` + `ability.promptFile` 定位，两个候选路径覆盖两种加载形态——源码直载/测试 `<HERE>/abilities/<dir>`（`<HERE>` = 加载器所在目录，即 `src/host/`）与打包后 `<HERE>/../../src/host/abilities/<dir>`（产物 `lib/host/index.js` 需回退两级再进源码树 `src/host/`）；宿主**每次派发任务时读盘**，故改提示词免 build、免重启。**文件不存在即回退**到代码内联文本（`gen-executor.ts` 与 `translate-executor.ts` 的内联数组），因此删掉某个 `prompt.md` 不会让任务失败，只会退回旧表述。
 
@@ -75,7 +75,7 @@
 
 **只注入一处：user message**（任务指令）。渲染结果即子 agent 收到的任务提示词，四层一致。
 
-2026-09-10 去重：此前同一份渲染结果还额外注入 system prompt 的 `fs-book-doc` 段（order 950）。system prompt 与 user message 是两条独立通道、**两处都计费**，而两者逐字相同；且任务文本含每次变化的绝对路径，注入 system 会破坏跨任务的前缀缓存。故 system 段不再注入任何任务文本（`applyGenScope` 只做工具面收敛）。依据源仓 `docs/token-review-2026-09-08.md` 待决项 A。
+2026-09-10 去重：此前同一份渲染结果还额外注入 system prompt 的 `fs-book-doc` 段（order 950）。system prompt 与 user message 是两条独立通道、**两处都计费**，而两者逐字相同；且任务文本含每次变化的绝对路径，注入 system 会破坏跨任务的前缀缓存。故 system 段不再注入任何任务文本（`applyGenScope` 只做工具面收敛）。
 
 ## 各技能脚本的 `--content` 语义（写模板前必看）
 

@@ -27,8 +27,8 @@ export const inject = ['webServer', 'sandboxPolicy', 'sessions', 'agentLoop']
 
 // ---- 上下文最小面（类型层，运行时无对应物）----
 // 各服务只声明本文件真正触达的成员，不 import 具体服务包、也不对 cordis `Context` 做
-// 声明合并：同一 `Context` 键在 host/client 两个编译面各写一份不同形状会触发合并冲突
-// （见 PROGRESS.md D-6）。运行时仍由 Loader 传入真实 ctx，结构兼容。
+// 声明合并：同一 `Context` 键在 host/client 两个编译面各写一份不同形状会触发合并冲突。
+// 运行时仍由 Loader 传入真实 ctx，结构兼容。
 
 /** 宿主 web-server 服务：本插件只用 prefix 注册。 */
 interface WebServerSurface {
@@ -87,7 +87,7 @@ interface GenTask {
   finishedAt: number | null
 }
 
-/** POST body 的已知字段；未知形状的属性读出来即 undefined（与源一致）。 */
+/** POST body 的已知字段；未知形状的属性读出来即 undefined。 */
 interface FsPayload {
   path?: string
   content?: string
@@ -583,8 +583,8 @@ export function apply(ctx: FsHostContext): void {
         // 在切根后的窗口期不同步——此时 view 不含当前根，bestRootFor 对根下节点也返回 null。
         const self = projectRootPath()
         // 当前根的归属条目：视图含它（按 projectRoot 匹配）就用视图里的条目，否则现算。
-        // 与源的 `view.find(...) || fallbackHome` 两段同义——两者互补（视图含当前根则 find 必
-        // 命中、不含则现算），合成一个条目后取值与 `selfHomeEntry()` 的调用次数都与源一致。
+        // 与 `view.find(...) || fallbackHome` 两段同义——两者互补（视图含当前根则 find 必
+        // 命中、不含则现算），合成一个条目后取值与 `selfHomeEntry()` 的调用次数一致。
         const selfHome: BookViewEntry = view.find(v => v.projectRoot === self) ?? await selfHomeEntry()
         const entries = await fsp.readdir(abs, { withFileTypes: true })
         const list = entries.map((e): TreeNode => {
@@ -592,7 +592,7 @@ export function apply(ctx: FsHostContext): void {
           const nodeAbs = resolve(root, nodePath)
           // 跨工作区共享：节点归属「包含它的最深已知项目根」的桶（当前根恒在视图中，必有归属）；
           // docRel 带桶段（@<桶名>/<层名>/<stem>.md），前端不透明透传、/read 按桶段定位。
-          // 归属兜底与源同序：bestRootFor（遍历的 roots 即视图条目，返回的就是归属条目）→ 当前根条目。
+          // 归属兜底次序：bestRootFor（遍历的 roots 即视图条目，返回的就是归属条目）→ 当前根条目。
           const home: BookViewEntry = bestRootFor(nodeAbs, view) || selfHome
           if (e.isDirectory()) {
             // 目录概览文档名 = folderDocStem（与 folder-doc 能力 docStem 同函数、与文件层

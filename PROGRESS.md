@@ -12,7 +12,7 @@
 | 项 | 值 |
 |---|---|
 | **入场必读**（新人 / 新子代理开工前） | [docs/agent/README.md](docs/agent/README.md)：三层存储（会话上下文 / 仓库文件 / `dsh知识库`）各放什么、谁写谁读、**入场阅读顺序**；已验证的负结果看 [docs/agent/lessons.md](docs/agent/lessons.md) |
-| 包名 | `dsh-plugin-file-system`（非 scoped，决策 D-1） |
+| 包名 | `dsh-plugin-file-system`（非 scoped） |
 | 仓库 | `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system` |
 | profile | `~/.dsh/profiles/web`：`dependencies` 与 `dsh.profile.bundles` 均已指向 `dsh-plugin-file-system` |
 | 运行态 | dsh web 运行中，端口 3080；boot manifest 装载本插件。PID 每次重启都变：以 `~/.dsh/logs/web.log` 最近一次「启动命令」行或 `pgrep -f 'dsh web'` 为准 |
@@ -36,7 +36,7 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 ```
 
 **注意事项**
-- `lib/`、`client/` **不入库**（决策 D-7）；改代码后必须 `build` 才生效——**是否还要重启，看改的是哪一半**：
+- `lib/`、`client/` **不入库**；改代码后必须 `build` 才生效——**是否还要重启，看改的是哪一半**：
   **client 免重启**（产物由 HMR watch 热更，`build` + 刷新页面即可），**host 必须重启**
   （产物是进程内 `require` 的模块）。2026-09-12 实测订正，判据与证据见本文件「改动的生效条件」一节。
 - 验收 build 前先 `rm -rf lib client`——`tsc` 不清理 outDir，会留下陈旧产物。
@@ -86,11 +86,11 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 
 **验证**：测试 74 → **80 例**全绿（含 6 种缺失形态 × 3 路由、`'.'`/`'./'`/`'sub/..'` 三种回根写法，以及 `delete 'sub'` → 200 的反向对照，证明守卫只拦根自身）；`src/host/index.ts` 覆盖率由 96.93/96.21/97.56/98.07 升至 **97.05/96.4/97.56/98.15**。
 
-### 覆盖率例外（决策 D-13，用户裁决）
+### 覆盖率例外（用户裁决）
 
 `src/host/index.ts` 与 `src/client/index.tsx` **不进 per-file 100% 门禁**（`vitest.config.ts` 的 `coverage.exclude` 显式列入，同处注释写明实测值与逐条不可达出处）。
 
-理由：两文件剩余未覆盖语句**经逐条证明逻辑不可达**（源插件原样移植的防御性双保险与竞态兜底）——D-8 不许删、禁令不许 ignore、D-2 要求覆盖，三者不可兼得。实测（顺序 stmts/branch/funcs/lines）：`index.ts` **97.07/96.4/97.56/98.15**；`client/index.tsx` **97.96/95.68/99.16/100**。
+理由：两文件剩余未覆盖语句**经逐条证明逻辑不可达**（防御性双保险与竞态兜底）——不许删、禁令不许 ignore、覆盖率门禁要求覆盖，三者不可兼得。实测（顺序 stmts/branch/funcs/lines）：`index.ts` **97.07/96.4/97.56/98.15**；`client/index.tsx` **97.96/95.68/99.16/100**。
 
 > 数值出处是 `vitest.config.ts:37,46` 的注释（G-1 修复后的重测值），**本轮未重跑 `test:coverage`**（纪律所限），故字典化是否再移动这两个数值**未核实**。原记 `index.ts` 96.93/96.21/97.56/98.07、`client/index.tsx` 97.97/95.68/99.17/97.42 是 G-1 修复**前**的快照，已过期。另一处对不齐的读数：上节 G-1「验证」写的「升至 **97.05**/96.4/97.56/98.15」是当次快照，与配置注释现记的 stmts **97.07** 相差 0.02 个百分点——差异来源未进一步核实，引用时以配置注释为准。
 
@@ -98,9 +98,9 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 
 ### 其余逐字保留的既有行为（G-2 ~ G-12）
 
-详见 `docs/feature-baseline.md` §4 的登记表。要点：
-- **G-2** kind 白名单过宽；**G-3** 目录重复请求同一 `/read`；**G-4** 切换文件静默丢弃未保存编辑；**G-5** `refreshRoot` 失败不上屏；**G-6/G-7** 资源泄漏类（`pollTask` 无 `clearTimeout`、拖拽监听无 cleanup）**P4 阶段决定主动保留未修**——该决定贯穿至交付，`src/client/index.tsx:538-539` 注释明写「不新增清理」；`docs/feature-baseline.md` §4 对该两项只写 D-8 例外 b 的「允许修正」授权，非「已修」记录；**G-8~G-11** 任务表进程内 Map、未消费 View 焦点协议等。
-- **G-12**：`CodeBlock` 的 `copyLabel`/`copiedLabel` 在 primitives 里是必填，而源插件只传 `{code, lang}`（纯 JS 无类型检查故从未暴露）。迁移版**同样不传**，仅做局部类型窄化，UI 表现与源一致。
+已知缺陷登记要点：
+- **G-2** kind 白名单过宽；**G-3** 目录重复请求同一 `/read`；**G-4** 切换文件静默丢弃未保存编辑；**G-5** `refreshRoot` 失败不上屏；**G-6/G-7** 资源泄漏类（`pollTask` 无 `clearTimeout`、拖拽监听无 cleanup）**P4 阶段决定主动保留未修**——该决定贯穿至交付，`src/client/index.tsx:538-539` 注释明写「不新增清理」；对该两项只写例外 b 的「允许修正」授权，非「已修」记录；**G-8~G-11** 任务表进程内 Map、未消费 View 焦点协议等。
+- **G-12**：`CodeBlock` 的 `copyLabel`/`copiedLabel` 在 primitives 里是必填，而实现只传 `{code, lang}`（纯 JS 无类型检查故从未暴露）。本实现**同样不传**，仅做局部类型窄化，UI 表现一致。
 
 ### 与主仓风格的有意差异（交付时需说明）
 
@@ -108,7 +108,7 @@ npm run build          # tsc(host) → lib/host/  +  tsdown → client/  + banne
 |---|---|
 | host 产物是 `lib/host/index.js` 而非 `lib/index.js` | `tsconfig.host.json` 的 `rootDir` 上提到 `src`，以解决 `../shared/locale.ts` 的跨面导入（TS6059/TS6307） |
 | solution 根 `tsconfig.json` 自身无 `extends`（只有 `"files": []` + 5 条 `references`） | 根不拥有程序，只做 solution 清单；`extends` 由两个产品 leaf 各自指向 `tsconfig.base.json`（2026-09-11 提取，结构见本节末「tsconfig 五 leaf 结构」），测试 leaf 再经 leaf 间接继承 |
-| 包名非 `@deepseek-ai/` scope | 该 scope 仅组织成员可发布（决策 D-1） |
+| 包名非 `@deepseek-ai/` scope | 该 scope 仅组织成员可发布 |
 | `dsh.client` 未写 `inject` | 实测「不写与旧插件行为完全等价」——旧插件那两个名字在客户端 graph 里都不存在（空转） |
 
 ### host 错误串字典化（2026-09-11 三批收口 —— 待办 #7 / 规范报告 §4-2 结项）
@@ -252,7 +252,7 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
 
 **生效条件（2026-09-12 订正）**：改的是 `src/` 的 **client 侧**。旧记录写「须 `npm run build` + 重启 dsh web」，前半对、后半错——按 2026-09-12 实测的判据，client 产物是 HMR watch 热更的静态资源，**`npm run build` + 刷新页面即生效，不需要重启**（重启多余且会中断对话）。见本文件「改动的生效条件」一节。**本轮是否已 `build`：未核实。**
 
-**订正（本段记录，与 `docs/spec-ui-revamp.md` 有关，影响 §5 #12 的措辞）**：`Tooltip` 那条要求写在
+**订正（本段记录，影响 §5 #12 的措辞）**：`Tooltip` 那条要求写在
 规格 **§1 R2**（「三个按钮收成纯图标，且全部保留 `Tooltip` + `aria-label`」），而**§2 第 87 行已明文
 把它作废**：「原文写的『原生 `<button>` + `Tooltip` + `aria-label`』是我写错了」，现行口径是
 `<Button size icon title>` + 补 `aria-label`（再包一层 `Tooltip` 会**出双气泡**）。所以待办 #12 **不是**
@@ -343,7 +343,7 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
 - 本文件 §2 注意事项：「改代码后必须 `build` 再重启才生效」
 - 本文件 §3 顶栏/侧栏窄宽度重叠修复段与 §3 三段末态复测段：「改后必须 `npm run build` 再重启 dsh web 才生效」
 - 本文件 §3 探针复刻 DOM 同步段：「改的是 `src/`，运行中的页面要看到修复须 `npm run build` + 重启 dsh web」
-- `docs/spec-ui-revamp.md` §4 验收段：「改动后需 `npm run build` 并**重启 dsh web** 才生效」
+- 验收段：「改动后需 `npm run build` 并**重启 dsh web** 才生效」
 
 **病根**：这句话把**两半性质完全不同的产物**当成一回事说了。谁都没验过机制，只是照抄。
 后果是主代理在 2026-09-12 为**纯 client** 改动连着重启了好几次 `dsh web`，每次中断一次用户对话——
@@ -395,7 +395,7 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
 
 **需求（用户原话）**：「文件概览位置跟解读选择放在一起，统一放在右侧」；追问后裁决的次序是
 「视图选择 解读选择 编辑保存 分栏 依次排序」⇒ 视图选择器由 `.fs-hbar-mid` 移到 `.fs-hbar-right`，
-中列只剩路径，右列次序 = 视图选择 → 解读选择 → 编辑⇄保存 → 分栏。规格条目 `docs/spec-ui-revamp.md`
+中列只剩路径，右列次序 = 视图选择 → 解读选择 → 编辑⇄保存 → 分栏。规格条目
 §1 R5 与 **R5.1**，逐档实测与取证见 `docs/agent/reports/2026-09-13-view-picker-to-right.md`。
 
 **口径**：`--wsicon`、7 场景 × 551 档 = **3857 档**、判据＝可见矩形 ∩ 全部 `overflow != visible` 祖先
@@ -468,7 +468,7 @@ C 315（**红线不可行**：视图胶囊是裸文本、DSH 无「视图」语�
 
 **需求（用户原话）**：「点击 deepseekHARNESS，出现目录概览，点击分栏之后当前的目录概览右侧冻结，再点击
 packages 会出现 packages 的目录概览在左侧，这样就是我的目标」；追问确认两条：右侧数据**要跟着刷新**
-（同对象时）、「**拽比例 不用记得**」。规格条目 `docs/spec-ui-revamp.md` §1 **R6**，逐条判据 ↔ 实现 ↔ 断言
+（同对象时）、「**拽比例 不用记得**」。规格条目 §1 **R6**，逐条判据 ↔ 实现 ↔ 断言
 对照表、设计取舍与边界清单见 `docs/agent/reports/2026-09-13-split-freeze-target.md`。
 
 **R4 的什么被反转了**：R4 冻的只有**视图类型**（`SplitState.mode`），右侧拿左侧那份 viewer 换个 mode 显示
@@ -534,9 +534,9 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 
 | # | 待办 | 说明 |
 |---|---|---|
-| 1 | ~~T-62 交付摘要~~ | ✅ **2026-09-11 已完成**（commit `cf13458`；含「G-1 已加固」（唯一有意的行为差异 + 运行时前后对照）、G-2~G-12 逐字保留项、D-13 覆盖率例外；交付摘要文档已随本仓整理移除） |
+| 1 | ~~T-62 交付摘要~~ | ✅ **2026-09-11 已完成**（commit `cf13458`；含「G-1 已加固」（唯一有意的行为差异 + 运行时前后对照）、G-2~G-12 逐字保留项、覆盖率例外；交付摘要文档已随本仓整理移除） |
 | 2 | ~~`src/host/abilities/README.md` 的 4 处 `.js` 文件名~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **6 处**替换点 / 6 个位置 —— L16、L34 行内 3 个不同文件名、L115、L116。原记「4 处」为误） |
-| 3 | ~~`docs/spec-p5-tests-detail.md` 的 2 处行号~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **10 项**替换 / **9 个位置** —— 第一轮 6 处 L477/L478/L555/L559/L561/L563 + 补改 L419、L425 行内 2 项（行号 + 加粗）、L549。原记「2 处」为误。与 #2 合计 **16 项替换 / 15 个位置 / 2 文件**） |
+| 3 | ~~规格文档的 2 处行号~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **10 项**替换 / **9 个位置** —— 第一轮 6 处 L477/L478/L555/L559/L561/L563 + 补改 L419、L425 行内 2 项（行号 + 加粗）、L549。原记「2 处」为误。与 #2 合计 **16 项替换 / 15 个位置 / 2 文件**） |
 | 4 | ~~G-1 是否开新账目修~~ | ✅ **2026-09-11 已完成**（见 §3，两道闸门 + 运行时对照 + 80 例测试） |
 | 5 | ~~`R3`：两个 leaf 的 compilerOptions 手抄~~ | ✅ **2026-09-11 已完成**（commit `5c7dced`；提取 `tsconfig.base.json`，消除两个产品 leaf **逐字节相同的 13 项**——原记「6 项严格设置」为误，实际是 13 项：4 项模块方言 + `composite` + **7** 项严格开关 + `skipLibCheck`；测试 leaf 经 extends 链自动继承。实测 `npm run typecheck` exit 0 无输出、`npx tsc --showConfig -p tsconfig.host.json` 各项就位。结构与「哪些项故意不上提」见 §3） |
 | 6 | ~~pnpm store v10/v11 冲突~~ | ✅ **2026-09-11 已完成**（根因：该 profile 的 `package.json` 缺 `packageManager` 声明 ⇒ `dsh plugin`（`apps/cli/src/plugin.ts:134` 用 `spawnSync('pnpm', …)` 走 PATH）拿到全局 pnpm **10.33.4**（store v10），而 `node_modules/.modules.yaml` 记的是 **store v11** ⇒ `ERR_PNPM_UNEXPECTED_STORE`；修法：`~/.dsh/profiles/web/package.json:4` 新增一行 `"packageManager": "pnpm@11.7.0"`，**只加这一行**（与备份 `~/.dsh/backups/web-profile-before-pnpmfix-20260911-052009`（12M）逐行 diff 仅此一处）；修后 profile 内 `pnpm --version` 10.33.4→**11.7.0**、`pnpm store path` store/v10→**store/v11**，`pnpm-lock.yaml` 与 `.modules.yaml` mtime 由 Sep 10 01:05 → **2026-09-11 05:20:27**，`dependencies` 与 `dsh.profile.bundles` 逐字未变。**留档坑**：pnpm 自管理缓存 `~/.local/share/pnpm/.tools/pnpm/` 只有 10.33.2 / 11.2.2 / 11.7.0 / 11.15.1，**无 10.33.4** ⇒ 将来给仍用 pnpm 10 的目录补声明必须写 `pnpm@10.33.2`（已缓存、离线可用）。**遗留**：`plugins/dsh-annotate`、`profiles/dsh-robot`、`profiles/lark`、`profiles/open-design`、`~/.understand-anything/repo/understand-anything-plugin` 五个目录的 node_modules 仍是 pnpm 10 装的且无声明，目前靠全局 10.33.4 正常工作，本次**刻意未动**） |
@@ -545,7 +545,7 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 | 9 | ~~`.fs-genwrap` 造成的同列重叠~~ | ✅ **2026-09-11 23:29:46 已完成**（第三段 a 去掉 `.fs-genwrap` 的 `min-width:0`：同列可见重叠由基线 **1002 档** → **0 档**（3857 档口径，含第三段 b 的 R4 分栏按钮后仍为 0）。代价已如实登记：右列整块裁下界由面板 284 退到 314，第三段 b 再因分栏按钮退到 356——见 §5 #11） |
 | 10 | 面板 **≤400px** 时中列视图名被 `.fs-hbar-mid{overflow:hidden}` 裁掉 | **已知边界，不修**（第三段 b 用户裁决：牺牲显示、保住功能键）。区间实测：S1/S2/S4/S6 为面板 200–400、S3 为 200–252、S5 为 200–352（步长 1）。成因：中列是 `minmax(0,1fr)`，要给视图名保 min-content 就得把溢出推给右列，直接违反「右列不被整块裁」的门禁。视图选择器与路径仍在（路径给全），只是窄档下视图名被裁 |
 | 11 | ~~右列整块裁下界由 314 退到 356（R4 分栏按钮给右列 +42px min-content）~~ | ✅ **2026-09-13 订正（356 → 307）**：356 是**第三段 b 当时的**读数 —— 那时右列还是独立的「编辑」+「保存」两个按钮，R4 的分栏按钮先给右列 +42px min-content、把它从 314 推到 356。`8d5d591` 把编辑/保存**合并成一个**按钮后，右列最后一档被裁由 356 退到 306 ⇒ **下界 307、余量 53px**（门禁 ≤360）。这才是现值：`tools/ui-probe/README.md` §1.2、同文件 §4 的同步前后对照表与本文件 §3 三处共用的都是 307，产物 `out-base-b286bab.json`（`--wsicon`，3857 档）。旧的「实测 356、余量仅 4px」按**历史时态**保留在此，不再作门禁依据。同一探针的 S0 场景（无打开对象）另在**面板 200–209 有 10 档右列部分裁切**（门禁口径不含此项）。**注意：本单 R5 把下界又抬到 389，见 #13。** |
-| 12 | ~~顶栏的原生 `title` 气泡（挂在「解读选择」上的长条，文案即 `a11yGen`：`生成/重新生成：目录概览·文件摘要·源码注解·文章翻译`）~~ | ✅ **2026-09-12 已完成**（commit `8d5d591`；台账/探针收尾在本段工作树）：① 顶栏 **7 个按钮**的气泡统一改为 primitives 的 `Tooltip`，原生 `title` 全部撤除，并补齐 `aria-label`（`foldBtn` / `refreshBtn` 原先**只有** `title`）。锚点必须是**原生元素**——primitives 的 `Button` 在 React 18 下挂不上 ref、气泡永不渲染（经验卡 B-5）——所以每个挂气泡的按钮外面包了一层 `.fs-tipwrap`（实测几何中性，见 §3 探针那节）；② **视图选择器与解读选择两个按钮豁免不挂气泡**：它们的悬停手势已被下拉占用（`onMouseEnter` 开菜单），再挂气泡会同时弹两个浮层。**这是刻意的例外，不是遗漏**（源码注释与断言 `tooltipLabel(...) === null` 都钉住了它）。右格下面那条「反向风险」因此按「不加气泡」处置。以下是**裁决前的原始记录**（保留不改）：**待用户裁决**。它是**浏览器原生**气泡：宽度 / 深色底 / 位置 / 层级完全不受页面控制，表现为按钮下方一条又宽又扁的深色条、**压住正文**，且不受任何 `overflow` 裁剪（正是这一点让它比被裁的下拉更显眼）。**规格口径已订正（见 §3 末节「顶栏三个下拉被 `overflow` 裁剪」的末段「订正」）**：`Tooltip` 那要求写在 `docs/spec-ui-revamp.md` **§1 R2**，而 **§2 第 87 行已明文作废**该写法（`Button` 已透传 `title`，再包一层 `Tooltip` 会**出双气泡**）⇒ 待裁决的是「这条长条怎么处理」（缩短文案 / 只留 `aria-label` / 另设计气泡 / 维持原状），**不是**「按规格换 Tooltip」。同批一并裁决**可访问名缺口**：`foldBtn` / `refreshBtn` **只有 `title`、没有 `aria-label`**（实测 `src/client/index.tsx` 里 `IconPanelLeftOutline16` 与 `IconRefreshOutline16` 两个 `Button`），而规格 §2 现行口径要求纯图标按钮「`<Button size icon title>` + 补 `aria-label`」；`viewBtn` 只有 `title`（有可见文字，名字来自文字）；`edit` / `save` 只有 `aria-label`（无 `title`）；`genAnchor` / `wsAnchor` / `splitBtn` 两个都有。**反向风险**：`genAnchor` 悬停即开 Menu，若给它加气泡需决定关掉气泡（`disabled`）或留 `delayMs` 时差，否则悬停会同时出气泡与下拉 |
+| 12 | ~~顶栏的原生 `title` 气泡（挂在「解读选择」上的长条，文案即 `a11yGen`：`生成/重新生成：目录概览·文件摘要·源码注解·文章翻译`）~~ | ✅ **2026-09-12 已完成**（commit `8d5d591`；台账/探针收尾在本段工作树）：① 顶栏 **7 个按钮**的气泡统一改为 primitives 的 `Tooltip`，原生 `title` 全部撤除，并补齐 `aria-label`（`foldBtn` / `refreshBtn` 原先**只有** `title`）。锚点必须是**原生元素**——primitives 的 `Button` 在 React 18 下挂不上 ref、气泡永不渲染（经验卡 B-5）——所以每个挂气泡的按钮外面包了一层 `.fs-tipwrap`（实测几何中性，见 §3 探针那节）；② **视图选择器与解读选择两个按钮豁免不挂气泡**：它们的悬停手势已被下拉占用（`onMouseEnter` 开菜单），再挂气泡会同时弹两个浮层。**这是刻意的例外，不是遗漏**（源码注释与断言 `tooltipLabel(...) === null` 都钉住了它）。右格下面那条「反向风险」因此按「不加气泡」处置。以下是**裁决前的原始记录**（保留不改）：**待用户裁决**。它是**浏览器原生**气泡：宽度 / 深色底 / 位置 / 层级完全不受页面控制，表现为按钮下方一条又宽又扁的深色条、**压住正文**，且不受任何 `overflow` 裁剪（正是这一点让它比被裁的下拉更显眼）。**规格口径已订正（见 §3 末节「顶栏三个下拉被 `overflow` 裁剪」的末段「订正」）**：`Tooltip` 那要求写在规格 **§1 R2**，而 **§2 第 87 行已明文作废**该写法（`Button` 已透传 `title`，再包一层 `Tooltip` 会**出双气泡**）⇒ 待裁决的是「这条长条怎么处理」（缩短文案 / 只留 `aria-label` / 另设计气泡 / 维持原状），**不是**「按规格换 Tooltip」。同批一并裁决**可访问名缺口**：`foldBtn` / `refreshBtn` **只有 `title`、没有 `aria-label`**（实测 `src/client/index.tsx` 里 `IconPanelLeftOutline16` 与 `IconRefreshOutline16` 两个 `Button`），而规格 §2 现行口径要求纯图标按钮「`<Button size icon title>` + 补 `aria-label`」；`viewBtn` 只有 `title`（有可见文字，名字来自文字）；`edit` / `save` 只有 `aria-label`（无 `title`）；`genAnchor` / `wsAnchor` / `splitBtn` 两个都有。**反向风险**：`genAnchor` 悬停即开 Menu，若给它加气泡需决定关掉气泡（`disabled`）或留 `delayMs` 时差，否则悬停会同时出气泡与下拉 |
 | 13 | ~~R5 视图选择器搬进右列 ⇒ 右列整块裁下界 **307 → 389**（破门禁 ≤360）~~ | ✅ **2026-09-13 已裁决并修（候选 B ⇒ 下界 339）**：用户裁决「窄档把分栏按钮收起」，落地为**一条容器查询规则（阈值 620）+ 分栏按钮上的类名 `fs-splitbtn`**（不新增元素），右列整块裁下界 **389 → 339**（✓ 门禁 ≤360，余量 21px）、被裁合计 916 → **624 档**、右列部分裁切 1045 → **777 档**；跨列 / 同列仍 **0 档**、顶栏高恒 **{48}**；相对搬位置态**变差 0 档 / 变好 1184 档**、分屏态 0 差异。阈值论证（端点 573 × 8%）、生效边界（面板 648/649）与四条候选对照见 §3 本单小节、规格 §1 R5.1，产物 `out-final-lian3.json`。**R5 搬动本身相对基线的残留代价仍在**：下界 307 → 339、变差 509 档（全部落在 ≥210px 的档）—— 一句「已修」只针对破门禁，不等于回到基线读数 |
 | 14 | 窄档（面板 **≤648px**）没有开 / 关分屏的入口 | **已知边界，不修**（R5.1 收纳裁决的直接代价，写法与 #10 同源）。事实依据：`toggleSplit` 在 `src/client/index.tsx` 里的**唯一调用点**就是那个分栏按钮（**R6 订正**：这句话在 R6 之后**仍然成立** —— R6 只把拖拽改比例从 `setSplits` 换成了 `setSplitRatio`，那条路从来不碰开关；菜单与快捷键里都没有第二条路），而 `@container (max-width:620px)` 那条把整个 `.fs-tipwrap` 锚点层 `display:none`。后果：**面板已开着分屏时再把它拖到 ≤648px 就关不掉**（拖宽才回得来），这一档里也开不了新的分屏。不修的理由：门禁（右列被整块裁 ≤360）只能靠减少右列 min-content 过线，而右列每一项都是功能键或状态标记；四条候选里 B 的代价面已压到最小（并进 760 档会把失去入口的区间扩到 ≤788）。 |
 | 15 | ~~切工作区后**同名的相对 path 会被判成「同一个对象」**~~ | ✅ **2026-09-13 已修（B-3）**：`SplitTarget` 加 `curWsId` 字段（开启那一刻的工作区 id，随 `selectWs` 切换变化、刷新不动），`splitSameObj` 判据改为「`frozen.curWsId === curWsId` 且 path 相同」，测试新增 `treats a same-named path in another worktree as a different object (B-3)`（两个工作区各有同名 `packages`，冻结 A 的再切 B 点开 → 右侧仍显示 A 的）。选 `curWsId` 而非 `rootPath` 的理由：它只在 `selectWs` 里变、刷新与树操作都不动它，是「切工作区」这个动作的直接标识；`rootPath` 每次 `refreshRoot` 都会重新赋值（语义上是「当前根」而非「所选工作区」），同一工作区被外部重整路径时还会漂移。**未做**：切工作区后冻结对象数据**在哪个 root 下读取**仍按 `frozen.opened.path` 走（新 root 读同名路径）—— 属另一语义问题，与 B-2 同族，登记在报告「未做/边界」里，本单未动（**A 类修正后已解，见 #16**）。详见 `docs/agent/reports/2026-09-13-split-freeze-target.md` §7 B-3 与「未做」节 |
@@ -563,7 +563,8 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 - **包名去后缀**：`dsh-plugin-file-system-zc` → `dsh-plugin-file-system`（目录改名、`package.json`、profile 两处引用、全仓 40 文件 94 处引用一次替换到底）。
 - **删技能链路**：`skills/`（5 技能 / 13 文件）、`agent.cordis.yml`、`preset.yml` 全删——插件从「bundle + agent 预设」双身份退回**纯 bundle 单身份**。连带：`package.json` 的 `files` 去掉三项；`gen-executor.ts` 的 `SKILLS_ROOT` 变量与 `skillsRoot` 渲染变量删除（四层 prompt 从不引用它，宿主生成能力全在 `src/host/abilities/`，功能不变）；`~/.agents/skills/` 下 file-doc / folder-doc / source-doc 三条已断软链清除。
 - **删问题台账**：`issues/`（21 篇）删除。`issuesDir()` 因目录不存在返回空串，宿主生成/翻译任务据此跳过台账步骤（该能力随之关闭；如需恢复，设 `DSH_FS_ISSUES_DIR` 指向外部目录即可）。
-- **清迁移史**：删 `docs/archive/`（整目录）、`docs/baseline/`（整目录，旧仓取证三份）、`docs/p6-cutover-runbook.md`、`docs/delivery-summary-2026-09-11.md`、`docs/t14-stale-refs.md`、`docs/p1c-skills-migration.md`、`docs/p2a-tsconfig-d6.md`、`docs/spec-p2-pure-logic.md`、`docs/spec-p3-host-routes.md`、`docs/spec-p4-client.md`、`docs/spec-p5-p6-tests-and-cutover.md`、`docs/p5-migration-matrix.md` 共 12 项；`README.md` / `docs/feature-baseline.md` / `docs/spec-*` 里的迁移源、旧仓对照、已删文件引用一并清除。清理后 `docs/` 只剩：`agent/`、`feature-baseline.md`、`spec-p1-skeleton.md`、`spec-p5-tests-detail.md`、`spec-ui-revamp.md`。
+- **清迁移史与阶段规格**：删 `docs/` 根下全部文档——`archive/`、`baseline/`（旧仓取证三份）、`p6-cutover-runbook.md`、`delivery-summary-2026-09-11.md`、`t14-stale-refs.md`、`p1c-skills-migration.md`、`p2a-tsconfig-d6.md`、`spec-p2-pure-logic.md`、`spec-p3-host-routes.md`、`spec-p4-client.md`、`spec-p5-p6-tests-and-cutover.md`、`p5-migration-matrix.md`、`feature-baseline.md`、`spec-p1-skeleton.md`、`spec-p5-tests-detail.md`、`spec-ui-revamp.md`；`README.md` / `PROGRESS.md` 里的迁移源、旧仓对照、已删文档引用一并清除。清理后 `docs/` 只剩 `agent/`（子智能体协作体系：入场文档 + 历史报告索引）。
+- **代码与测试注释**：清掉 `tests/` `src/` `tools/` 里的迁移溯源表述（「迁移自迁移源 X」「源实现」「决策 D-N」「冻结于 3a3f89e」等），改中性说法，不动逻辑与断言；报告 `docs/agent/reports/2026-09-15-clean-migration-notes-in-code.md`。
 - **门禁**：typecheck / lint / test（**19 spec / 602 例**）/ coverage（**100×4**，分母 19/19）全绿；`build` 已跑（包名变更后须重建产物并通过 banner 校验）。
 - **例外裁决记录**：本次用户明确裁决「`-zc` 引用全部替换**含历史快照**」，覆盖本仓「历史时态保留」惯例。
 - **报告**：`docs/agent/reports/2026-09-14-rename-drop-zc.md`（改名 + 孤儿盘点）、`docs/agent/reports/2026-09-15-doc-cleanup-migration-history.md`（文档清理）。

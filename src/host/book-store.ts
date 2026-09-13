@@ -88,7 +88,7 @@ export function createBookStore({ getRoot }: { getRoot: () => string }): BookSto
   // 三层文档状态不建索引：按「文档命名规则」由节点路径推导文档文件是否存在，
   // /tree 每次只读四层子目录文件名一次，开销与被浏览目录有关、与书库总量无关。
   // 书库集中化：新桶 $DSH_HOME/books/<projectKey>/<4层>/ 只写（projectKey 与 DSH format.ts 逐字一致）；
-  // 旧库 <项目根>/.book/<basename>-book/ 仅作只读回退（迁移兼容），目录不再创建。
+  // 旧库 <项目根>/.book/<basename>-book/ 仅作只读回退，目录不再创建。
   // 跨工作区共享：读写都定向「包含目标的最深已知项目根」的桶（见 knownBookRoots/bestRootFor）。
   // 项目根绝对路径（index.json「项目根」字段、bucketKey 入参）。
   function projectRootPath(): string { return resolve(getRoot()) }
@@ -242,7 +242,7 @@ export function createBookStore({ getRoot }: { getRoot: () => string }): BookSto
       r.projectRoot === self || r.projectRoot.startsWith(self + sep) || self.startsWith(r.projectRoot + sep))
     const view: BookViewEntry[] = []
     for (const r of roots) {
-      // 每桶双位置只读回退：新桶 + 该项目根的旧库（迁移兼容，通常不存在 → readdir 跳过）。
+      // 每桶双位置只读回退：新桶 + 该项目根的旧库（通常不存在 → readdir 跳过）。
       const sets = await docStemSetsIn([r.dir, legacyBookDir(r.projectRoot)])
       view.push({ projectRoot: r.projectRoot, bucket: r.bucket, sets })
     }

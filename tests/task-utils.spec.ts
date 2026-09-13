@@ -1,7 +1,6 @@
 // 后台生成/翻译任务通用工具（src/host/task-utils.ts）单元测试。
 //
-// 迁移源没有对应 spec（源 tests/task-timeout.test.js 走的是宿主路由与 sweep 兜底），
-// 这里按「file 级 行/函数/分支 100%」为本模块单独补齐：
+// 本模块按「file 级 行/函数/分支 100%」单独补齐：
 //   · genAgentPreset 的三条取值路径（未设 / 空串 / 显式覆盖）；
 //   · withTimeout 的计时器 unref 两条路径（有 unref / 无 unref）与超时、正常收尾两条竞速结果；
 //   · onDisposeFailure 的三类入参（Error / 无 message 的对象 / 非对象）。

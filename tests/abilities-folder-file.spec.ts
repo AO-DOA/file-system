@@ -1,6 +1,5 @@
 // dsh-plugin-fs — folder-doc / file-doc 两个能力目录的单元测试。
-// 迁移自迁移源 tests/abilities.test.js 中归属本单元的两组用例（node:test → vitest）；
-// 迁移源未覆盖的收尾校验（verify 的四类分支）与骨架构建（buildFolderSkeleton）在本文件补齐。
+// 收尾校验（verify 的四类分支）与骨架构建（buildFolderSkeleton）一并在本文件覆盖。
 // 只断言外部可观察行为：渲染文本逐字、抛错消息逐字、描述符字段值与返回值。
 // 覆盖口径：本文件按「folder-doc / file-doc 两个目录下每个文件 行/函数/分支 100%」设计；
 // buildFolderSkeleton 用真实临时目录（node:fs/promises + os.tmpdir），不 mock fs，用例结束清理。

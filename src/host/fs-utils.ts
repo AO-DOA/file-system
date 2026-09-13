@@ -43,7 +43,7 @@ export function newBookDir(projectRoot: string): string {
   return join(booksRoot(), projectKey(projectRoot))
 }
 
-// 旧库目录（迁移期只读回退）：<项目根>/.book/<basename(项目根)>-book/。
+// 旧库目录（只读回退）：<项目根>/.book/<basename(项目根)>-book/。
 // 新代码只写新桶，旧库目录不再创建。
 export function legacyBookDir(projectRoot: string): string {
   return resolve(projectRoot, '.book/' + basename(projectRoot) + '-book')
@@ -141,7 +141,7 @@ export function isBookDocRel(rel: string | null | undefined): boolean {
 }
 
 // 文档文件相对路径（新格式 <层名>/<stem>.md；root 参数保留仅为调用兼容）。
-// `_root` 前缀：该参数源实现未使用，仅为调用兼容保留位置；noUnusedParameters 要求下划线命名。
+// `_root` 前缀：该参数本实现未使用，仅为调用兼容保留位置；noUnusedParameters 要求下划线命名。
 export function docRelPath(_root: string, sub: string, stem: string): string {
   return docRelBook(sub, stem)
 }
@@ -159,7 +159,7 @@ export function isBookPath(p: string | null | undefined): boolean {
   return n === '.book' || n.startsWith('.book/')
 }
 
-// 越权错误形状：源实现以动态属性挂 statusCode（host 侧统一映射 400），TS 下需显式声明。
+// 越权错误形状：本实现以动态属性挂 statusCode（host 侧统一映射 400），TS 下需显式声明。
 interface PathEscapeError extends Error {
   statusCode: number
 }

@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 
 const HERE: string = dirname(fileURLToPath(import.meta.url))
 
-// 按能力目录名缓存探测结果：未探测 = 无键；null = 两个候选都不存在（提示词未迁移）。
+// 按能力目录名缓存探测结果：未探测 = 无键；null = 两个候选都不存在（提示词不存在）。
 const dirCache: Map<string, string | null> = new Map<string, string | null>()
 
 async function resolveAbilityDir(dirName: string, promptFile: string): Promise<string | null> {

@@ -170,7 +170,7 @@ export const LANG: Record<string, Record<string, string>> = { zh: ZH }
 /**
  * 取当前语言文案；缺省 zh。缺键时 warn 并返回 key 本身（开发期即可发现未登记文案）。
  * @param key - ZH 中的文案键。
- * @param lang - 语言码；未注册或缺省时回退 zh（与源实现 `LANG[lang] || ZH` 同语义）。
+ * @param lang - 语言码；未注册或缺省时回退 zh（语义同 `LANG[lang] || ZH`）。
  * @returns 对应文案；键未登记时返回 key 本身。
  */
 export function t(key: string, lang?: string): string {

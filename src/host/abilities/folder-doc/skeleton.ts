@@ -24,7 +24,7 @@ export const FOLDER_TREE_ITEM_PLACEHOLDER = '# <作用>'
 export const FOLDER_DOC_ROLE_PLACEHOLDER = '<1-2 句总体角色说明：这个目录整体在项目里扮演什么角色；不要逐项罗列子目录/文件>'
 
 // 目录树条目的入参形状：调用方把 Dirent 转成普通对象后传入，便于纯逻辑单测。
-// 三项均可缺省、条目本身可为 null——源实现把无名项与脏输入一并跳过，测试按同一口径喂入。
+// 三项均可缺省、条目本身可为 null——本实现把无名项与脏输入一并跳过，测试按同一口径喂入。
 export interface FolderTreeEntry {
   name?: string | null
   isDirectory?: boolean
@@ -53,7 +53,7 @@ export interface FolderSkeletonTarget {
 // entries 为 [{ name, isDirectory }]（由调用方把 Dirent 转成普通对象，便于纯逻辑单测）。
 // 规则与 gen-tree.sh 对齐：隐藏项（'.' 开头）一律跳过；目录再排除 FOLDER_TREE_IGNORE；
 // 排序为「目录在前、文件在后，各自按名升序」；空目录只输出一行 '<目录名>/'。
-// TS 下条目类型含 null（源实现靠 name 判空先行跳过），故两处 directory/file 判定加必要类型断言；
+// TS 下条目类型含 null（本实现靠 name 判空先行跳过），故两处 directory/file 判定加必要类型断言；
 // 断言是纯类型构造、运行时零残留，也不引入额外分支（走到该行时 entry 必非 null）。
 export function renderFolderTree(dirName: string, entries?: readonly (FolderTreeEntry | null)[] | null): string {
   const dirs: string[] = []

@@ -53,8 +53,8 @@ export default {
     // split('\n') 与源码行口径一致，行号口径（1 起）不变。
     const srcLines = (await readFile(abs, 'utf8')).split('\n')
     const { doc, problems } = renderAnnotatedDoc({ units, summary, srcLines, rel: targetKey, layer, generatedAt })
-    // 源写 `problems && problems.length > 0`；`problems` 运行时恒为数组（checkHealth 恒返回数组），
-    // 该守卫在类型系统下恒真，故按其等价形式判定 —— 行为与源逐字相同（无可观察差异）。
+    // `problems && problems.length > 0` 的守卫：`problems` 运行时恒为数组（checkHealth 恒返回数组），
+    // 该守卫在类型系统下恒真，故按其等价形式判定 —— 行为逐字相同（无可观察差异）。
     if (problems.length > 0) {
       throw new Error(ZH.errHealthCheck + problems.join('；'))
     }

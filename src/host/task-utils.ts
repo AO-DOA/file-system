@@ -19,7 +19,7 @@ export function genAgentPreset(): string {
 
 // 构造任务超时错误：message 走字典（经 gen-status 透传前端同一文案），
 // code 供内部识别超时分支（与普通生成失败区分）。
-// `code` 是源实现动态挂上的自有属性，TS 下需在返回类型上显式声明。
+// `code` 是本实现动态挂上的自有属性，TS 下需在返回类型上显式声明。
 export function errTaskTimeout(): Error & { code: string } {
   const err = new Error(ZH.errTaskTimeout) as Error & { code: string }
   err.code = 'ETASK_TIMEOUT'
