@@ -816,10 +816,17 @@ function FsPane(props: FsPaneProps): React.JSX.Element {
  * `opened` 是开启那一刻打开的那份 `/tree` 节点（带着 `path` / `type` / `hasDoc*` / `doc*Rel`，
  * {@link SplitPane} 与 {@link FsPane} 都直接消费它）；`mode` 是那一刻左侧正在显示的视图类型。
  * 两者在**开启那一刻**一起定格，之后只有「再点一次分栏按钮」会让它消失。
+ *
+ * `curWsId`（B-3 修正加入）是开启那一刻的工作区 id：`path` 只是**项目根内的相对路径**，切换
+ * 工作区后命名空间整体换掉，同名路径不再指向同一对象 —— 同一性判据于是从「只看 path」收紧为
+ * 「工作区相同 **且** path 相同」（见 `FsView` 的 `splitSameObj`），钉住「切工作区后右侧仍显示
+ * 冻结那一刻那个工作区里的那个对象」。
  */
 interface SplitTarget {
   opened: OpenedNode
   mode: ViewMode
+  /** 开启那一刻的工作区 id（`curWsId`，随 `selectWs` 切换而变化、刷新不动）。 */
+  curWsId: string
 }
 
 /** 分栏比例的初值与上下限。它们是**比例**不是像素阈值——分档阈值全部在样式表的容器查询里。 */
@@ -841,7 +848,8 @@ interface SplitPaneProps {
  * **为什么异对象时需要独立的一份数据**：判据「左侧切对象后右侧不动」要求右侧继续显示**冻结的
  * 那个对象**，而左侧那份 viewer 的数据此时已经换成新对象的内容了 —— 共用只在「左右是同一个
  * 对象」那一支成立（`FsView` 里的 `splitSameObj`），那里天然实时（判据「同对象时右侧跟着左侧
- * 刷新」）。
+ * 刷新」）。**「同一个对象」自 B-3 起还要求工作区相同** —— 切工作区后同名 path 走的是这一支
+ * （独立数据源），右侧因此不会跟着跳到新工作区的同名对象上。
  *
  * **为什么做成子组件，而不是在 `FsView` 里条件调 hook**：hooks 规则禁止条件调用 hook，但
  * **条件挂载一个子组件是允许的** —— 于是「只在确实需要独立数据源时才挂载」不需要任何开关变量，
@@ -1347,11 +1355,18 @@ function FsView(props: FsViewProps): React.JSX.Element {
   // 两支都把 `editMode` 硬为 false ⇒ `FsPane` 天然只走查看分支（只读：无编辑区、无保存、
   // 无生成入口；那条顶栏只有一份，且它绑的是左侧的 viewer，右侧根本没有顶栏）。
   //
-  // **同一性判据用 `opened.path`**：它是 `/tree` 下发的**项目根相对路径**（项目根为 `.`，书库
-  // 文档形如 `.book/note.md`），在同一个项目根内唯一标识一个对象。用 `name` 不行 —— 不同目录
-  // 可以同名；`TreeNode` 也没有别的稳定 id 字段（`type` / `hasDoc*` 都是可变的元数据）。
-  // 已知边界：切换工作区（项目根）后 `path` 的命名空间换了，左右两个同名字符串会被判成「同一
-  // 个对象」而走复用支 —— 见 `docs/agent/reports/2026-09-13-split-freeze-target.md` §7 B-3。
+  // **同一性判据 = 工作区相同（`frozen.curWsId === curWsId`）且 path 相同**。`opened.path` 是
+  // `/tree` 下发的**项目根相对路径**（项目根为 `.`，书库文档形如 `.book/note.md`），只在同一个
+  // 项目根内唯一标识一个对象；用 `name` 不行 —— 不同目录可以同名；`TreeNode` 也没有别的稳定 id
+  // 字段（`type` / `hasDoc*` 都是可变的元数据）。
+  // **为什么必须带工作区（B-3 修正）**：切工作区后 `path` 的命名空间整个换掉，两个不同工作区
+  // 里可以各有一个同名 path（如各自的 `packages`）。只比 path 会把它们误判成「同一个对象」而走
+  // 复用支 —— 右侧跟着跳到新工作区的同名对象，而不是留在冻结那一刻那个工作区里的那个对象。
+  // 带上 `curWsId` 后，新工作区的同名对象因为工作区不同而被判为异对象，右侧走 {@link SplitPane}
+  // 的独立支。选 `curWsId` 而不是 `rootPath` 的理由：`curWsId` 只在 `selectWs` 里变化，刷新
+  // （`refreshRoot()` 无参）与树操作都不动它，是「切工作区」这个动作的**直接**标识；`rootPath`
+  // 每次 `refreshRoot` 都会重新赋值（值通常相同，但语义上是「当前根」而非「所选工作区」），
+  // 且同一工作区若被外部重整路径会漂移。无工作区菜单时两者都恒为空串，判据退化为旧行为。
   const splitOn = splitTarget !== null
   // 右侧窗格只改 flex-grow：它与 `.fs-main{flex:1}` 同为 `flex-basis:0`，故两侧宽度比 = grow 比，
   // 占比 p 对应 grow = p / (1 − p)（p ∈ [0.2, 0.8]，分母恒不为 0）。
@@ -1359,7 +1374,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
   let splitPane: React.JSX.Element | null = null
   if (splitTarget) {
     const frozen = splitTarget
-    const splitSameObj = !!opened && frozen.opened.path === opened.path
+    const splitSameObj = !!opened && frozen.curWsId === curWsId && frozen.opened.path === opened.path
     splitPane = splitSameObj
       ? (
         <div className="fs-splitpane" style={{ flexGrow: splitGrow }}>
@@ -1384,7 +1399,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
   function toggleSplit(): void {
     if (splitTarget) { setSplitTarget(null); return }
     if (!opened) return
-    setSplitTarget({ opened, mode: viewer.mode })
+    setSplitTarget({ opened, mode: viewer.mode, curWsId })
   }
 
   /**

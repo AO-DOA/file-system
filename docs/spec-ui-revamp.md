@@ -168,7 +168,7 @@
 | 状态 | `const [splitTarget, setSplitTarget] = React.useState<SplitTarget \| null>(null)` + `const [splitRatio, setSplitRatio] = React.useState(SPLIT_RATIO_DEFAULT)`；`splitTarget === null` 即「关着」。R4 的 `splits: Record<path, SplitState>` 整个删除 |
 | 数据源两支 | 左右 path 相同 ⇒ 复用左侧 viewer（天然 live）；不同 ⇒ 渲染一个新子组件 `SplitPane({frozen, grow})`，它内部 `useOpenedViewer(frozen.opened, null)` 起**自己的一份**实例 |
 | 为什么用子组件 | hooks 规则禁止条件调用 hook，但**条件挂载子组件是允许的**：独立实例只在确实需要时挂载，不必为未开启态造占位对象（那会让 `useOpenedViewer` 的 `useEffect` 反复重读 host） |
-| 同一性判据 | `opened.path`（`/tree` 下发的**项目根相对路径**，根为 `.`、书库文档形如 `.book/note.md`）。用 `name` 不行（不同目录可同名），`TreeNode` 也没有别的稳定 id 字段 |
+| 同一性判据 | `opened.path`（`/tree` 下发的**项目根相对路径**，根为 `.`、书库文档形如 `.book/note.md`）。用 `name` 不行（不同目录可同名），`TreeNode` 也没有别的稳定 id 字段。**B-3 修正（本表之后补记）**：切工作区后 path 命名空间换掉，同名 path 会误判同对象 ⇒ 判据改为「`frozen.curWsId === curWsId` **且** path 相同」，`SplitTarget` 加 `curWsId` 字段 |
 | key | 右侧窗格的 `key` 绑**冻结对象**的 path（不是左侧当前 path）：左侧每切一次对象，右侧都不该被卸载重建、重拉一遍数据 |
 | 按钮 `disabled` | 由 `!opened` 改为 `!opened && !splitOn`：没有东西可冻**且**没有东西可关时才禁用（否则左侧被清空后就没有关闭分栏的入口了） |
 | 拖拽守卫 | `startSplitDrag` 的守卫由左侧 path 改为 `splitTarget`：右侧开着就该能拖，与左侧此刻有没有对象无关 |
@@ -190,6 +190,12 @@
 
 **已登记的边界**：左侧对象在分栏开启期间被清空、冻结对象被删 / 改名 / 换工作区 —— 清单与逐条
 事实见该报告的「边界」一节（**不编造**：无法处理的如实登记为已知边界）。
+
+**B-3 修正（本条目之后补记，历史时态）**：上文把「同一性判据」写成 `opened.path` 一项 —— 那是
+R6 落地时的实现，随后被登记为已知边界 B-3：切工作区后 `path` 的命名空间整体换掉，两个不同工作区
+可以各有一个同名 path，只比字符串会被误判成「同一个对象」而走复用支（右侧跟着跳到新工作区的同名
+对象）。2026-09-13 已修：`SplitTarget` 加 `curWsId` 字段（开启那一刻的工作区 id），判据改为
+**工作区相同且 path 相同**；右侧在切工作区后仍显示冻结那个工作区里的对象。
 
 ---
 

@@ -2870,6 +2870,7 @@ describe('unsaved-changes guard on page leave (C)', () => {
  *   判据 5（全局一份开关）→ `keeps one global split: every object keeps the frozen right pane`
  *   判据 6（比例不再按对象记）→ `drags the divider, clamps the ratio and keeps one ratio for every object`
  *   判据 7（右侧恒只读）→ 判据 1/3 两条里各有 `button` / `.fs-area` 的计数断言
+ *   判据 8（切工作区后同名 path 不算同一对象，B-3）→ `treats a same-named path in another worktree as a different object (B-3)`
  *   边界①（左侧对象被清空）→ `keeps the frozen pane after the left object is cleared`
  */
 describe('split view: the frozen target (R4 → R6)', () => {
@@ -2968,6 +2969,69 @@ describe('split view: the frozen target (R4 → R6)', () => {
     expect((splitBtn() as HTMLButtonElement).disabled).toBe(false)
     await click(splitBtn())
     expect(splitPane()).toBeNull()
+  })
+
+  it('treats a same-named path in another worktree as a different object (B-3)', async () => {
+    // 两个工作区各有一个同名目录 `packages`（docRel 不同 ⇒ 读内容不同）。在 wA 开了分栏
+    //（冻结 wA 的 packages）后切到 wB，左侧点开 wB 的同名 packages —— path 字符串相同但
+    // 工作区不同，**不许**走「同一对象」的复用支：右侧必须仍显示冻结的 A packages。
+    // 判据 = `frozen.curWsId === curWsId` 且 path 相同（修复前只看 path，这里会误判同对象）。
+    let root = '/wa'
+    wsSnapshot = {
+      items: [
+        { workspaceId: 'wA', path: '/wa', title: 'WsA' },
+        { workspaceId: 'wB', path: '/wb', title: 'WsB' },
+      ],
+    }
+    const treeA = [
+      { type: 'directory', path: 'packages', name: 'packages', hasDoc: true, docRel: 'bkA/pkg.md' },
+    ]
+    const treeB = [
+      { type: 'directory', path: 'packages', name: 'packages', hasDoc: true, docRel: 'bkB/pkg.md' },
+    ]
+    handler = (url, init) => {
+      if (url.startsWith('/api/fs/set-root')) {
+        const raw = init?.body
+        if (typeof raw === 'string') {
+          const body = JSON.parse(raw) as { path?: string }
+          if (body.path) root = body.path
+        }
+        return { body: { ok: true } }
+      }
+      if (url.startsWith('/api/fs/root')) return { body: { root } }
+      if (url.startsWith('/api/fs/tree?path=.')) {
+        return { body: { path: '.', list: root === '/wb' ? treeB : treeA } }
+      }
+      if (url.startsWith('/api/fs/read?path=')) {
+        const target = decodeURIComponent(url.slice('/api/fs/read?path='.length))
+        if (target === 'bkA/pkg.md') return { body: { content: '# A pk', ext: 'md', size: 6 } }
+        if (target === 'bkB/pkg.md') return { body: { content: '# B pk', ext: 'md', size: 6 } }
+        return defaultHandler(url)
+      }
+      return defaultHandler(url)
+    }
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    // 先在工作区 wA 落地（curWsId = 'wA'），打开 packages 并点分栏 ⇒ 冻结 A 的 packages。
+    await click(byText('.fs-wsbtn', 'wa'))
+    await click(byText('.stub-menu-item', 'WsA' + L('wsItemSep') + '/wa'))
+    await click(row('packages'))
+    expect(leftText()).toContain('# A pk')
+    await click(splitBtn())
+    // 刚分栏时左右是同一对象（path 同、工作区同）⇒ 复用支，右侧显示 A 的 packages。
+    expect(rightText()).toContain('# A pk')
+    // 切到 wB：树换成 B 的同名 packages；左侧 opened 被 refreshRoot 清空 ⇒ 右侧走 SplitPane
+    // 独立支（`frozen.curWsId='wA'` 已随冻结定格，不随切工作区改变）。
+    // 此刻 wsbtn 显示的是工作区 title（'WsA'），不再是 root basename（'wa'）。
+    await click(byText('.fs-wsbtn', 'WsA'))
+    await click(byText('.stub-menu-item', 'WsB' + L('wsItemSep') + '/wb'))
+    expect(rightText()).toContain('# A pk')
+    // 左侧点开 B 的同名 packages —— path 相同但工作区不同 ⇒ 不许走复用支：右侧不跟着换成
+    // B 的内容。修复前（判据只看 path）这一句会红：rightText 被左侧 viewer 带成 '# B pk'。
+    await click(row('packages'))
+    expect(leftText()).toContain('# B pk')
+    expect(rightText()).toContain('# A pk')
+    expect(rightText()).not.toContain('# B pk')
   })
 
   it('freezes the view type: left-side view switches never touch the right pane (判据 3 / 7)', async () => {

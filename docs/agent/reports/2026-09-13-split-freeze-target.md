@@ -171,7 +171,7 @@
 |---|---|---|---|
 | B-1 | 左侧对象在分栏开启期间被清空 | `refreshRoot`（刷新按钮 / 切工作区）会 `setOpened(null)`。此时 `splitPane` 仍在（它的条件不含 `opened`），右侧继续显示冻结对象；左侧渲染空态。**已实测** | 已处理：按钮 `disabled` 改成 `!opened && !splitOn`（见 §4），否则这一态下没有关闭入口 |
 | B-2 | 冻结对象在分栏开启期间被**删除 / 重命名** | 右侧独立实例的 `/read` 失败 ⇒ `FsPane` 在 `v.status && !v.source` 分支显示 `errReadFail` 文本；若左侧此时也切到该对象，两侧显示同一份错误。**不做任何自动处置**（不自动关分栏、不自动改冻结对象） | **已知边界，不修**。本单只在 jsdom 里验证（stub fetch），**没有在真实 host 里造「开着分栏删文件」的场景** |
-| B-3 | 切工作区后 `path` 命名空间改变 | 同一性判据是相对路径字符串；新 root 下若存在同名 `path`，会被判成「同一个对象」而走复用支（右侧显示的其实是新 root 的同名对象，不是冻结时那个）。`refreshRoot` 同时清空了 `opened`，所以实际表现是「切工作区后左右都空、右侧显示新 root 的同名对象读到的东西」 | **已知边界，不修**。要修得给 `SplitTarget` 记 workspaceId / rootPath，属扩大改动面 |
+| B-3 | 切工作区后 `path` 命名空间改变 | 同一性判据是相对路径字符串；新 root 下若存在同名 `path`，会被判成「同一个对象」而走复用支（右侧显示的其实是新 root 的同名对象，不是冻结时那个）。`refreshRoot` 同时清空了 `opened`，所以实际表现是「切工作区后左右都空、右侧显示新 root 的同名对象读到的东西」 | ~~**已知边界，不修**~~ → **2026-09-13 已修**，见 §11（`SplitTarget` 加 `curWsId`，判据收紧为「工作区相同且 path 相同」） |
 | B-4 | 异对象支首次挂载会**多读一次** host | 判据 2 的实现代价：右侧要显示冻结对象就得自己有数据 | 有意为之，并把这一次读取钉成断言（`hits(...) === frozenReads + 1`） |
 | B-5 | 窄档（面板 ≤648px）没有开 / 关分栏的入口 | R5.1 的既有边界（`@container (max-width:620px)` 把按钮整块藏掉），本单**未改**它 | 照旧登记（`PROGRESS.md` §5 #14）。本单**没有**新增第二条关闭入口，故该边界的性质不变 |
 
@@ -227,3 +227,67 @@ node scripts/verify-stage.mjs --allow 'src/client/index.tsx,tests/client-view.sp
 ```
 
 运行产物（`/tmp/dsh-ui-probe/*.json`、`coverage/`）**不进仓库**。
+
+---
+
+## 11. B-3 修正：同一性判据收紧为「工作区相同且 path 相同」（2026-09-13，追加）
+
+**背景**：§7 B-3 登记的边界被用户裁决要修。R6 的 `splitSameObj` 只比 `opened.path` 字符串，而
+`path` 是**项目根内相对路径** —— 切工作区后命名空间整个换掉，工作区 A 与 B 可以各有一个同名
+`packages`。只比字符串时，用户「在 A 开分栏冻结 A 的 packages → 切到 B → 左侧点开 B 的 packages」
+会被判成「同一对象」而走**复用支**：右侧跟着跳成左侧 viewer 的数据（B 的 packages），而不是留在
+冻结那一刻 A 工作区里的那个对象。
+
+**新旧判据对照**：
+
+| | 判据 | 后果 |
+|---|---|---|
+| 修前（R6） | `!!opened && frozen.opened.path === opened.path` | 切工作区后同名 path 误判「同一对象」→ 复用支 → 右侧跟着左侧跳到新工作区的同名对象 |
+| 修后（B-3） | `!!opened && frozen.curWsId === curWsId && frozen.opened.path === opened.path` | 工作区不同 ⇒ 异对象支（`SplitPane` 独立实例）⇒ 右侧留在冻结对象那份数据上 |
+
+**为什么选 `curWsId` 而不是 `rootPath`**（任务书要求说明理由，也供主代理裁决）：
+
+1. **语义对应「切工作区」这个动作本身**：工作区切换的唯一入口是 `selectWs`，它 `setCurWsId(id)`
+   再 `refreshRoot(ws.path)`。「切换工作区」的直接标识就是 `curWsId`；`rootPath` 只是它的投影，
+   还要多经过一轮 host `/root` 往返。
+2. **不随其它状态漂移**：`curWsId` 只在 `selectWs` 里变化，刷新（`refreshRoot()` 无参，刷新按钮走它）、
+   展开/折叠树、切换视图**都不动它**。`rootPath` 每次 `refreshRoot` 都会 `setRootPath(r.root)`
+   重新赋值（值通常相同，但语义上是「当前根」而非「所选工作区」）；万一同一工作区被外部重整
+   路径，`rootPath` 会漂移而 `curWsId` 仍是同一个工作区 —— 用 `rootPath` 会把「同一工作区」误判成
+   「换了工作区」。
+3. **与既有语义自洽**：无工作区菜单时（插件未注入 `workspaces` 槽或列表为空）`curWsId` 恒为 `''`，
+   判据 `'' === ''` 恒真，行为退化为 R6 的「只看 path」—— 与旧行为逐位一致，现有断言零破坏；
+   `rootPath` 此时虽是真实路径，但切不了工作区（没有菜单），用它没有任何额外收益。
+
+**实现点**（全在 `src/client/index.tsx`，4 处）：
+
+| 处 | 改动 |
+|---|---|
+| `SplitTarget` 接口 | 加 `curWsId: string` 字段（JSDoc 注明 B-3 语义） |
+| `toggleSplit()` | `setSplitTarget({ opened, mode: viewer.mode, curWsId })` |
+| `splitSameObj` | `!!opened && frozen.curWsId === curWsId && frozen.opened.path === opened.path` |
+| 注释 | 判据段、`SplitPane` JSDoc 同步更新（「同一对象」要求工作区相同） |
+
+**新增断言**（`tests/client-view.spec.ts`，`split view: the frozen target (R4 → R6)` 块）：
+`treats a same-named path in another worktree as a different object (B-3)`。手段沿用既有
+`` `switches worktrees from the menu` `` 的「`wsSnapshot` + 点菜单项」来切工作区：两个工作区
+`wA('/wa')` / `wB('/wb')` 各有一棵同名目录 `packages`（`docRel` 不同 ⇒ `/read` 内容不同：
+`'# A pk'` / `'# B pk'`）。流程 = 在 wA 点开 packages → 分栏冻结 → 切到 wB → 左侧点开 B 的
+packages。断言左侧显示 `# B pk`、右侧仍显示 `# A pk`（**不**含 `# B pk`）。**验证过测试真的能
+钉住缺陷**：临时把判据改回旧版（只看 path）后本用例红（`expected '# B pk' to contain '# A pk'`），
+恢复新版后绿。
+
+**为何不改 Two 个邻居**（任务书 ④.1 的登记，本单**没动**，只在报告里如实写清）：
+
+- **冻结对象被删 / 改名（B-2）**：右侧独立实例 `/read` 失败 ⇒ `FsPane` 显示 `errReadFail` 文本，
+  不做自动处置。本单未碰。
+- **切工作区后冻结对象的数据在哪个 root 下读取**：异对象支的 `useOpenedViewer(frozen.opened)` 是照
+  `frozen.opened.path`（目录则 `docRel`）去 `/read` 的，`root` 已切到新工作区后，读到的可能是新
+  工作区**同名路径**的内容 —— 也就是说修复判据后，右侧虽然**不再被左侧 viewer 带跑**（不再走复用
+  支），但若它自己发起的那次 `/read` 落点在新 root 下，显示文本仍可能是新工作区的同名对象（取决于
+  host 侧 `/read` 对 root 的处理）。触发条件：切工作区前分栏已开启、且新工作区存在同名 path / docRel。
+  这与 B-2 同族（都属于「冻结对象的失效处置」），**本单不修** —— 任务书明令不做，只登记。
+
+**门禁**：typecheck / lint / test（client spec 155 → 156 例）/ coverage / 范围守卫全部复跑通过；
+几何探针与基线逐档 0 差异（本单只改判据与字段，DOM 结构与样式表一字未动）。实测数据见前节与
+PROGRESS.md §1。
