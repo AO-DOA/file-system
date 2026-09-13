@@ -2860,7 +2860,19 @@ describe('unsaved-changes guard on page leave (C)', () => {
   })
 })
 
-describe('split view (R4)', () => {
+/**
+ * 分栏的新语义（R4 引入，R6 由用户反转）：右侧是**一个被冻结的对象 + 被冻结的视图类型**，
+ * 不再是「当前对象的视图副本」。逐条判据的钉子分布在本块里：
+ *   判据 1（冻结对象 + 视图类型）→ `freezes the open object together with the view type`
+ *   判据 2（左侧切对象右侧不动）→ `keeps the frozen object on the right while the left switches objects`
+ *   判据 3（左侧切视图右侧不动）→ `freezes the view type: left-side view switches never touch the right pane`
+ *   判据 4（同对象时右侧 live）→ `keeps the right pane live while both sides show the same object`
+ *   判据 5（全局一份开关）→ `keeps one global split: every object keeps the frozen right pane`
+ *   判据 6（比例不再按对象记）→ `drags the divider, clamps the ratio and keeps one ratio for every object`
+ *   判据 7（右侧恒只读）→ 判据 1/3 两条里各有 `button` / `.fs-area` 的计数断言
+ *   边界①（左侧对象被清空）→ `keeps the frozen pane after the left object is cleared`
+ */
+describe('split view: the frozen target (R4 → R6)', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   /** 顶栏的分栏按钮（可见文字「分栏」，窄档收进 `.fs-btnlabel`）。 */
@@ -2868,7 +2880,7 @@ describe('split view (R4)', () => {
     return byText('.fs-hbar-right button', L('btnSplit'))
   }
 
-  /** 右侧那份只读副本的窗格；未分栏时为 null。 */
+  /** 右侧那份「冻结对象」的窗格；未分栏时为 null。 */
   function splitPane(): HTMLElement | null {
     return document.querySelector('.fs-splitpane') as HTMLElement | null
   }
@@ -2885,6 +2897,16 @@ describe('split view (R4)', () => {
     return document.querySelector('.fs-splitpane .fs-main') as HTMLElement | null
   }
 
+  /** 右侧窗格当前渲染出的文字（未分栏时为空串）。 */
+  function rightText(): string {
+    return rightPane()?.textContent || ''
+  }
+
+  /** 左侧窗格当前渲染出的文字。 */
+  function leftText(): string {
+    return leftPane().textContent || ''
+  }
+
   it('keeps the entry disabled until something is open', async () => {
     mount()
     await flush()
@@ -2893,15 +2915,19 @@ describe('split view (R4)', () => {
     expect((splitBtn() as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('copies the open view to the right, and the second click closes it', async () => {
+  it('freezes the open object together with the view type (判据 1 / 7)', async () => {
     mount()
     await flush()
     await click(row('full.md'))
     expect(viewIs('labSrc')).toBe(true)
     expect(splitPane()).toBeNull()
+    // 同一对象那一支**沿用左侧那份 viewer** ⇒ 分栏本身不该额外读一次源文件。
+    const reads = hits('/api/fs/read?path=full.md')
     await click(splitBtn())
-    // 右侧是完整的一份窗格，但里面没有任何控件：无编辑、无保存、无生成入口。
     expect(rightPane()).not.toBeNull()
+    expect(rightText()).toContain('# Full')
+    expect(hits('/api/fs/read?path=full.md')).toBe(reads)
+    // 右侧是完整的一份窗格，但里面没有任何控件：无编辑、无保存、无生成入口。
     expect(rightPane()?.querySelectorAll('button')).toHaveLength(0)
     expect(splitPane()?.querySelectorAll('.fs-area')).toHaveLength(0)
     // 再点同一个按钮即关闭。
@@ -2910,12 +2936,46 @@ describe('split view (R4)', () => {
     expect(document.querySelectorAll('.fs-main')).toHaveLength(1)
   })
 
-  it('freezes the right pane view while the left keeps switching, and stays read-only', async () => {
+  it('keeps the frozen object on the right while the left switches objects (判据 2)', async () => {
     mount()
     await flush()
     await click(row('full.md'))
     await click(splitBtn())
-    // 左侧进编辑态：右侧那份副本仍走查看分支（textarea 只有左侧一个）。
+    const frozenReads = hits('/api/fs/read?path=full.md')
+    await click(row('app.ts'))
+    // 左侧换成 app.ts，右侧**不消失、也不跟着换** —— 它一直是被冻结的那份 full.md。
+    expect(splitPane()).not.toBeNull()
+    expect(leftText()).toContain('const a = 1')
+    expect(rightText()).toContain('# Full')
+    expect(rightText()).not.toContain('const a = 1')
+    // 异对象那一支给右侧起了**自己的一份**实例（数据与左侧互不影响）⇒ 冻结对象被重新读了一次；
+    // 若右侧只是「复用左侧 viewer 换个 mode」，这一次读取根本不会发生。
+    expect(hits('/api/fs/read?path=full.md')).toBe(frozenReads + 1)
+  })
+
+  it('keeps the frozen pane after the left object is cleared (边界①)', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(splitBtn())
+    // 刷新按钮会走 `refreshRoot`，它 `setOpened(null)` —— 左侧自此没有打开对象。
+    await click(refreshButton())
+    expect(document.querySelectorAll('.fs-body > .fs-main')).toHaveLength(1)
+    expect(splitPane()).not.toBeNull()
+    expect(rightText()).toContain('# Full')
+    // 左侧空态下仍能关掉分栏：`disabled` 的判据是「没有东西可冻**且**没有东西可关」，
+    // 冻着东西时按钮必须可用 —— 它是「再点一次即关闭」的唯一入口。
+    expect((splitBtn() as HTMLButtonElement).disabled).toBe(false)
+    await click(splitBtn())
+    expect(splitPane()).toBeNull()
+  })
+
+  it('freezes the view type: left-side view switches never touch the right pane (判据 3 / 7)', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    await click(splitBtn())
+    // 左侧进编辑态：右侧那份冻结窗格仍走查看分支（textarea 只有左侧一个）。
     await click(button(L('btnEdit')))
     expect(document.querySelectorAll('.fs-area')).toHaveLength(1)
     expect(leftPane().querySelector('.fs-area')).not.toBeNull()
@@ -2923,26 +2983,68 @@ describe('split view (R4)', () => {
     // 左侧切到「源码注解」：右侧仍是开启那一刻冻结的「源码」正文 —— 视图类型冻结、数据实时。
     await pickView('labAnnot')
     expect(viewIs('labAnnot')).toBe(true)
-    expect((rightPane()?.querySelector('.stub-md')?.textContent) || '').toContain('# Full')
-    expect((leftPane().querySelector('.stub-md')?.textContent) || '').toContain('# Title')
+    expect(rightText()).toContain('# Full')
+    expect(leftText()).toContain('# Title')
+    // 反向对照：关掉再开，这次冻的是「源码注解」⇒ 左侧切回「源码」时右侧仍是注解。
+    await click(splitBtn())
+    await click(splitBtn())
+    await pickView('labSrc')
+    expect(viewIs('labSrc')).toBe(true)
+    expect(leftText()).toContain('# Full')
+    expect(rightText()).toContain('# Title')
   })
 
-  it('remembers the split per file and restores the full width elsewhere', async () => {
+  it('keeps the right pane live while both sides show the same object (判据 4)', async () => {
+    vi.useFakeTimers()
+    handler = (url) => {
+      if (url.startsWith('/api/fs/gen-doc')) return { body: { ok: true, started: true, taskId: 't1' } }
+      if (url.startsWith('/api/fs/gen-status')) {
+        return { body: { ok: true, task: { id: 't1', kind: 'file', status: 'success', docRel: 'bk/d/doc.fresh.md' } } }
+      }
+      if (url.startsWith('/api/fs/read?path=')) {
+        const target = decodeURIComponent(url.slice('/api/fs/read?path='.length))
+        if (target === 'bk/d/doc.fresh.md') return { body: { content: '# Fresh', ext: 'md', size: 6 } }
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    // doc.txt 带 `hasDoc` ⇒ 「解读选择」里有「重新生成文件摘要」，能造出一次真实的文档更新。
+    await click(row('doc.txt'))
+    await pickView('labDocFile')
+    expect(leftText()).toContain('# Title')
+    await click(splitBtn())
+    expect(rightText()).toContain('# Title')
+    // 左侧重新生成文件摘要 ⇒ 同一个 viewer 的 `docData` 换成新文档，右侧**同一帧**跟着刷新
+    //（不是死快照：右侧该有自己的一份数据副本才对，而这一支刻意让它没有）。
+    await click(button(L('btnGen')))
+    await click(byText('.stub-menu-item', L('genFileRegen')))
+    await act(async () => { await vi.advanceTimersByTimeAsync(800) })
+    await flush()
+    expect(leftText()).toContain('# Fresh')
+    expect(rightText()).toContain('# Fresh')
+  })
+
+  it('keeps one global split: every object keeps the frozen right pane (判据 5)', async () => {
     mount()
     await flush()
     await click(row('full.md'))
     await click(splitBtn())
-    expect(splitPane()).not.toBeNull()
-    // 切到没开过分栏的文件 ⇒ 恢复全屏。
+    // 切文件、切目录都不关分栏，右侧始终是那个冻结对象（分栏状态是**全局一份**）。
     await click(row('app.ts'))
-    expect(splitPane()).toBeNull()
-    // 切回来 ⇒ 又分栏，且冻结的还是当时那一份视图。
-    await click(row('full.md'))
     expect(splitPane()).not.toBeNull()
-    expect((rightPane()?.querySelector('.stub-md')?.textContent) || '').toContain('# Full')
+    expect(rightText()).toContain('# Full')
+    await click(row('plain'))
+    expect(splitPane()).not.toBeNull()
+    expect(rightText()).toContain('# Full')
+    // 关掉之后**不再是「按文件各自记忆」**：切回当时开过栏的 full.md 也不会自动分栏。
+    await click(splitBtn())
+    expect(splitPane()).toBeNull()
+    await click(row('full.md'))
+    expect(splitPane()).toBeNull()
   })
 
-  it('drags the divider, clamps the ratio and remembers it per file', async () => {
+  it('drags the divider, clamps the ratio and keeps one ratio for every object (判据 6)', async () => {
     // jsdom 没有布局：给两侧窗格注入宽度，让「占比 = 右 / 两侧之和」这一步可测。
     const PANE_W = 500
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement): DOMRect {
@@ -2977,9 +3079,13 @@ describe('split view (R4)', () => {
       document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }))
     })
     expect(Array.from(document.querySelectorAll('.fs-split'))[1]?.className).not.toContain('active')
-    // 比例按文件记忆：切走再切回来，分栏比例仍是 0.8。
+    // 比例**不再按对象记**（用户原话「拽比例 不用记得」）：切到另一个对象，右侧仍是 4 ——
+    // 而 app.ts 从来没被拖过，若还按文件各记各的，这里会退回初值 1。
     await click(row('app.ts'))
-    await click(row('full.md'))
+    expect(grow()).toBeCloseTo(4, 10)
+    // 关掉再开、冻的是新对象，比例照样沿用同一个当前值。
+    await click(splitBtn())
+    await click(splitBtn())
     expect(grow()).toBeCloseTo(4, 10)
   })
 

@@ -805,23 +805,68 @@ function FsPane(props: FsPaneProps): React.JSX.Element {
 }
 
 /**
- * 分栏记录（R4）：按「打开对象的 path」索引，这就是「按文件各自记忆」——
- * 切到没开过分栏的文件/目录时查不到记录，自然回到全屏。
+ * 分栏冻结记录（R4 引入，R6 语义反转）：冻的是**「对象 + 视图类型」这一对**。
  *
- * `mode` 是**开启那一刻冻结**的视图类型（左侧之后切视图只影响左侧）；
- * `ratio` 是右侧窗格在内容区弹性宽度里的占比。关闭只把 `on` 置 false，
- * 冻结的视图类型与比例都留着，「拖拽比例同样按文件记忆」由此成立。
+ * **历史时态（R4 当时的裁决，已被用户反转）**：R4 冻的只有视图类型（`mode`），右侧拿左侧那
+ * 一份 viewer 换个 `mode` 显示 —— 于是「右侧是谁」完全跟着左侧走，分栏状态也只能按 path
+ * 各记各的（`Record<path, SplitState>`，切到没开过分栏的对象就恢复全屏）。用户 2026-09-13
+ * 反转了这个语义（原话：「点击分栏之后当前的目录概览右侧冻结，再点击 packages 会出现 packages
+ * 的目录概览在左侧」）⇒ 右侧从此是**一个被冻住的对象**，不再是「当前对象的副本」。
+ *
+ * `opened` 是开启那一刻打开的那份 `/tree` 节点（带着 `path` / `type` / `hasDoc*` / `doc*Rel`，
+ * {@link SplitPane} 与 {@link FsPane} 都直接消费它）；`mode` 是那一刻左侧正在显示的视图类型。
+ * 两者在**开启那一刻**一起定格，之后只有「再点一次分栏按钮」会让它消失。
  */
-interface SplitState {
-  on: boolean
+interface SplitTarget {
+  opened: OpenedNode
   mode: ViewMode
-  ratio: number
 }
 
 /** 分栏比例的初值与上下限。它们是**比例**不是像素阈值——分档阈值全部在样式表的容器查询里。 */
 const SPLIT_RATIO_DEFAULT = 0.5
 const SPLIT_RATIO_MIN = 0.2
 const SPLIT_RATIO_MAX = 0.8
+
+/** {@link SplitPane} 的 props。 */
+interface SplitPaneProps {
+  /** 被冻结的对象与视图类型。 */
+  frozen: SplitTarget
+  /** 右侧窗格在内容区弹性宽度里的占比对应的 `flex-grow`。 */
+  grow: number
+}
+
+/**
+ * 右侧窗格（**异对象支**）：自己起一份 `useOpenedViewer`，数据与左侧互不影响。
+ *
+ * **为什么异对象时需要独立的一份数据**：判据「左侧切对象后右侧不动」要求右侧继续显示**冻结的
+ * 那个对象**，而左侧那份 viewer 的数据此时已经换成新对象的内容了 —— 共用只在「左右是同一个
+ * 对象」那一支成立（`FsView` 里的 `splitSameObj`），那里天然实时（判据「同对象时右侧跟着左侧
+ * 刷新」）。
+ *
+ * **为什么做成子组件，而不是在 `FsView` 里条件调 hook**：hooks 规则禁止条件调用 hook，但
+ * **条件挂载一个子组件是允许的** —— 于是「只在确实需要独立数据源时才挂载」不需要任何开关变量，
+ * 也不会为未开启态造占位对象（那样 `useOpenedViewer` 的 `useEffect` 会按 `opened.path` 逐次
+ * 重读 host，甚至反复重载）。挂载时机由父组件的分支决定，卸载时 hook 内的 `aliveRef` 短路
+ * 掉所有在途回调，不会把上一个对象的数据写回来。
+ *
+ * **只读在这里封死**：`editMode` 硬为 `false`，`onTrDone` 传 `null`（右侧没有任何生成 /
+ * 翻译入口，也就没有回调的去处）。`FsPane` 因此天然只走查看分支：无编辑区、无保存、
+ * 无生成入口（那条常驻顶栏只有一份，且它绑的是左侧的 `viewer`）。
+ * @param props - 见 {@link SplitPaneProps}。
+ * @returns 右侧窗格元素。
+ */
+function SplitPane(props: SplitPaneProps): React.JSX.Element {
+  const frozen = props.frozen
+  const own = useOpenedViewer(frozen.opened, null)
+  return (
+    <div className="fs-splitpane" style={{ flexGrow: props.grow }}>
+      <FsPane
+        opened={frozen.opened}
+        viewer={{ ...own, mode: frozen.mode, editMode: false }}
+      />
+    </div>
+  )
+}
 
 /** FsView 的 props：`workspaces` 由注册处显式注入；槽位透传的其它字段被忽略。 */
 interface FsViewProps {
@@ -897,8 +942,12 @@ function FsView(props: FsViewProps): React.JSX.Element {
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
   const [cache, setCache] = React.useState<Record<string, TreeNode[]>>({})
   const [dragging, setDragging] = React.useState(false)
-  // 分栏（R4）：按打开对象的 path 记账（开关 / 冻结的视图类型 / 分栏比例），见 {@link SplitState}。
-  const [splits, setSplits] = React.useState<Record<string, SplitState>>({})
+  // 分栏（R4；R6 语义反转为「冻结对象」）：**全局一份**，不再按打开对象的 path 记账。
+  // `splitTarget === null` 就是「分栏关着」——关掉即清空，不留任何按对象的记录；
+  // `splitRatio` 也只有一个当前值（用户原话「拽比例 不用记得」），切对象与开关分栏一律沿用它，
+  // 且不做任何持久化（不写 `UiState`、不碰 localStorage）。
+  const [splitTarget, setSplitTarget] = React.useState<SplitTarget | null>(null)
+  const [splitRatio, setSplitRatio] = React.useState(SPLIT_RATIO_DEFAULT)
   const [draggingSplit, setDraggingSplit] = React.useState(false)
   const [status, setStatus] = React.useState('')
   const [wsItems, setWsItems] = React.useState<WorkspaceItem[]>([])
@@ -1284,52 +1333,71 @@ function FsView(props: FsViewProps): React.JSX.Element {
     ]
     : null
 
-  // ---- 分栏（R4）----
-  // 语义（上游裁决，照此实现）：右侧副本 = **视图类型冻结、内容数据实时、强制只读**。
-  //   冻结：视图类型在开启那一刻记进该 path 的 `SplitState.mode`，左侧之后切视图只影响左侧；
-  //   实时：数据字段（source / docData / annotData / trData / fold）共用同一个 viewer，
-  //         左侧编辑保存后右侧内容跟着刷新；
-  //   只读：`editMode` 恒为 false ⇒ `FsPane` 天然只走查看分支，没有编辑区、没有保存/生成入口
-  //         （本段不为右侧新写任何渲染分支，右侧就是同一个 FsPane）。
-  // 它不是「历史快照」：右侧没有自己的一份数据副本。
-  const splitState = openedPath ? splits[openedPath] : undefined
-  const splitOn = !!(splitState && splitState.on)
-  const splitViewer: ViewerState | null = (splitState && splitState.on)
-    ? { ...viewer, mode: splitState.mode, editMode: false }
-    : null
+  // ---- 分栏（R4；R6 语义反转为「冻结对象」）----
+  // 用户裁决的新语义：点分栏 = 把**当前打开的对象 + 当前视图类型**一起冻到右侧，此后
+  //   左侧切对象（文件 / 目录都一样）**右侧不动**，右侧一直显示那个被冻住的对象；
+  //   左侧切视图（源码 ↔ 文件摘要 ↔ 源码注解 ↔ 文章翻译）**右侧也不动** —— 视图类型同样冻结；
+  //   只有「再点一次分栏按钮」才关掉右侧。
+  // 数据来源分两支（判据「右侧数据是活的」，用户对「要不要跟着刷新」的答复就是「刷新」）：
+  //   * **左右是同一个对象**（`splitSameObj`，即刚点完分栏那段）：右侧沿用**左侧那一份 viewer**，
+  //     于是天然实时 —— 左侧重新生成 / 保存后数据字段（source / docData / annotData / trData /
+  //     fold）一变，右侧同一帧跟着变。它不是历史快照，右侧没有第二份数据副本。
+  //   * **左侧已切到别的对象**：右侧改由 {@link SplitPane} 自己起一份 `useOpenedViewer`，
+  //     两侧自此互不影响。
+  // 两支都把 `editMode` 硬为 false ⇒ `FsPane` 天然只走查看分支（只读：无编辑区、无保存、
+  // 无生成入口；那条顶栏只有一份，且它绑的是左侧的 viewer，右侧根本没有顶栏）。
+  //
+  // **同一性判据用 `opened.path`**：它是 `/tree` 下发的**项目根相对路径**（项目根为 `.`，书库
+  // 文档形如 `.book/note.md`），在同一个项目根内唯一标识一个对象。用 `name` 不行 —— 不同目录
+  // 可以同名；`TreeNode` 也没有别的稳定 id 字段（`type` / `hasDoc*` 都是可变的元数据）。
+  // 已知边界：切换工作区（项目根）后 `path` 的命名空间换了，左右两个同名字符串会被判成「同一
+  // 个对象」而走复用支 —— 见 `docs/agent/reports/2026-09-13-split-freeze-target.md` §7 B-3。
+  const splitOn = splitTarget !== null
   // 右侧窗格只改 flex-grow：它与 `.fs-main{flex:1}` 同为 `flex-basis:0`，故两侧宽度比 = grow 比，
   // 占比 p 对应 grow = p / (1 − p)（p ∈ [0.2, 0.8]，分母恒不为 0）。
-  const splitGrow = splitState ? splitState.ratio / (1 - splitState.ratio) : 1
+  const splitGrow = splitRatio / (1 - splitRatio)
+  let splitPane: React.JSX.Element | null = null
+  if (splitTarget) {
+    const frozen = splitTarget
+    const splitSameObj = !!opened && frozen.opened.path === opened.path
+    splitPane = splitSameObj
+      ? (
+        <div className="fs-splitpane" style={{ flexGrow: splitGrow }}>
+          <FsPane
+            // key 绑**冻结对象**而不是左侧当前 path：左侧每切一次对象，右侧都不该被卸载重建
+            // 再重拉一遍数据（那会把「右侧不动」破坏成「每次切左侧都闪一下」）。
+            key={'split-' + frozen.opened.path}
+            opened={frozen.opened}
+            viewer={{ ...viewer, mode: frozen.mode, editMode: false }}
+          />
+        </div>
+      )
+      : <SplitPane key={'split-' + frozen.opened.path} frozen={frozen} grow={splitGrow} />
+  }
 
   /**
-   * 分栏开关：同一个按钮再点一次即关闭（R4）。开启时把当前视图类型冻结进该 path 的记录
-   * ——「把当前显示的视图复制一份只读副本到右侧」；关闭只把 `on` 置 false，比例与冻结的
-   * 视图类型都留着，再开时沿用（「拖拽比例同样按文件记忆」）。
+   * 分栏开关（R4，语义按 R6 反转）：同一个按钮再点一次即关闭。开启时把**当前打开的对象**
+   * 与**当前视图类型**一起冻结成 {@link SplitTarget}；关闭只把它清空 —— 冻结对象与「按文件的
+   * 记录」都不复存在（分栏状态本来就是全局一份）。
+   * 没有打开对象时按钮是禁用的，所以这里的 `!opened` 只是防御性兜底。
    */
   function toggleSplit(): void {
-    if (!openedPath) return
-    setSplits((s) => {
-      const current = s[openedPath]
-      const on = !(current && current.on)
-      return {
-        ...s,
-        [openedPath]: {
-          on,
-          // 开启时冻结当前视图类型；关闭时 `current` 必然存在，保留原来那一份。
-          mode: current && !on ? current.mode : viewer.mode,
-          ratio: current ? current.ratio : SPLIT_RATIO_DEFAULT,
-        },
-      }
-    })
+    if (splitTarget) { setSplitTarget(null); return }
+    if (!opened) return
+    setSplitTarget({ opened, mode: viewer.mode })
   }
 
   /**
    * 右侧分栏的拖拽（R4）：与左侧树宽同一套做法（document 级监听、按 G-7 既有行为不做卸载
    * 清理），差别只在记的是**占比**而不是像素宽度 —— 窗口缩放后仍按比例复原。
+   *
+   * 比例是**全局单值**（R6，用户原话「拽比例 不用记得」）：不按对象记账、不做任何持久化，
+   * 切对象与开关分栏都沿用同一个当前值。守卫用 `splitTarget` 而不是左侧的 path —— 右侧开着
+   * 就该能拖，跟左侧此刻有没有打开对象无关。
    * @param e - 右侧分隔条上的 mousedown 事件。
    */
   function startSplitDrag(e: React.MouseEvent<HTMLDivElement>): void {
-    if (!openedPath) return
+    if (!splitTarget) return
     e.preventDefault()
     const startX = e.clientX
     const pane = e.currentTarget.nextElementSibling
@@ -1344,11 +1412,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
     function onMove(ev: MouseEvent): void {
       const right = startRight - (ev.clientX - startX)
       const ratio = Math.max(SPLIT_RATIO_MIN, Math.min(SPLIT_RATIO_MAX, right / total))
-      setSplits((s) => {
-        const current = s[openedPath]
-        if (!current) return s
-        return { ...s, [openedPath]: { ...current, ratio } }
-      })
+      setSplitRatio(ratio)
     }
     function onUp(): void {
       setDraggingSplit(false)
@@ -1361,7 +1425,7 @@ function FsView(props: FsViewProps): React.JSX.Element {
 
   // 分栏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝路径、右＝操作」。它与右列另外几个
   // 按钮共用同一套窄档收纳（文字进 `.fs-btnlabel`，≤760px 的档只留图标），可访问名由恒定的
-  // aria-label 给出；没有打开对象时不可用（没有可复制的视图）。
+  // aria-label 给出；没有打开对象时不可用（没有可冻结的对象）。
   // 它在右列的次序由用户裁决为**最后一个**（视图选择 → 解读选择 → 编辑⇄保存 → 分栏）。
   // **再窄一档（容器 ≤620px）它整个让位** —— 它顶着右列 min-content 的最后一截，收掉它
   // 右列「被整块裁」的下界才回到门禁内（389 → 339，门禁 ≤360）。代价是这一档里
@@ -1372,13 +1436,16 @@ function FsView(props: FsViewProps): React.JSX.Element {
   // 右列增删项），不承担任何几何。
   // 分栏按钮：气泡文案是 `a11ySplit`（说清「再点一次关闭」这个非通用交互），而按钮自己的
   // 可访问名仍是恒定的 `btnSplit`（与它可见的「分栏」二字一致）。
+  // `disabled` 的判据是「没有东西可冻**且**没有东西可关」：没有打开对象时开不了新分栏，但已经
+  // 冻着东西时按钮必须还能点 —— 它是「再点一次即关闭」的**唯一**入口（见下），左侧被清空
+  //（刷新 / 切工作区都会 `setOpened(null)`）时把按钮禁掉就等于把关闭入口一起拿掉。
   const splitBtn = tip((
     <Button
       className="fs-splitbtn"
       size="sm"
       icon={<SplitGlyph />}
       onClick={toggleSplit}
-      disabled={!opened}
+      disabled={!opened && !splitOn}
       aria-label={t('btnSplit')}
     >
       <span className="fs-btnlabel">{t('btnSplit')}</span>
@@ -1386,13 +1453,6 @@ function FsView(props: FsViewProps): React.JSX.Element {
   ), t('a11ySplit'))
   const splitBar = splitOn
     ? <div className={'fs-split' + (draggingSplit ? ' active' : '')} onMouseDown={startSplitDrag} />
-    : null
-  const splitPane = (opened && splitOn && splitViewer)
-    ? (
-      <div className="fs-splitpane" style={{ flexGrow: splitGrow }}>
-        <FsPane opened={opened} viewer={splitViewer} key={'split-' + openedPath} />
-      </div>
-    )
     : null
 
   const editor = opened
@@ -1403,11 +1463,14 @@ function FsView(props: FsViewProps): React.JSX.Element {
       </div>
     )
 
-  // 右侧分栏（R4）的两件套：分隔条 + 只读副本窗格。它们与「文件树折叠」是两个互不相干的开关，
+  // 右侧分栏（R4）的两件套：分隔条 + 只读的冻结窗格（`splitPane` 在上面的分栏段里算好）。
+  // 它们与「文件树折叠」是两个互不相干的开关，
   // 所以**两个分支都必须渲染**——先前只把它们写进「未折叠」分支，于是折叠文件树之后再点「分栏」，
   // 开关状态翻转了、右侧窗格却不出现（`splitOn` 为真而 `.fs-splitpane` 不在 DOM 里）。
   // 三者的兄弟顺序在两处必须一致（editor → splitBar → splitPane）：拖拽回调正是靠
   // `previousElementSibling` / `nextElementSibling` 取左右窗格来测宽度的。
+  // 注意 `splitPane` 的成立条件**不再包含左侧的 `opened`**：左侧被清空（刷新 / 切工作区都会
+  // `setOpened(null)`）时，右侧照样显示那个冻结的对象 —— 这正是「左侧切对象右侧不动」的延伸。
   const splitParts = <>{splitBar}{splitPane}</>
 
   let body: React.JSX.Element
