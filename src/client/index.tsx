@@ -1121,11 +1121,12 @@ function FsView(props: FsViewProps): React.JSX.Element {
       <span className="fs-btnlabel">{genLabel}</span>
     </Button>
   )
-  // 浮层一律 portal 到 body：`.fs-hbar` 与 `.fs-hbar-mid` 都带 `overflow:hidden`（第一段为
-  // 消跨列重叠加的兜底裁剪），而 `Menu` 默认是**内联**渲染（`portal = false`，见 primitives
+  // 浮层一律 portal 到 body：`.fs-hbar` 带 `overflow:hidden`（第一段为消跨列重叠加的兜底裁剪），
+  // 而 `Menu` 默认是**内联**渲染（`portal = false`，见 primitives
   // `lib/types/Menu.d.ts` 与 `lib/index.js` 的 `portal ? createPortal(list, document.body) : list`）
-  // ⇒ `.mr-list` 是这两条裁剪声明的后代，绝对定位在锚点下方 4px 的面板会被裁剪盒切掉大半
-  //（实测可见高只剩 0–6px，视图选择器那一份在全部 3306 档里**整块不可见**），
+  // ⇒ `.mr-list` 是这条裁剪声明的后代，绝对定位在锚点下方 4px 的面板会被裁剪盒切掉大半
+  //（实测可见高只剩 0–6px，视图选择器那一份在全部 3306 档里**整块不可见**；当时裁它的还有
+  // `.fs-hbar-mid` 一条 —— 视图选择器 2026-09-13 搬到右列后那条已删，现在只剩 `.fs-hbar`），
   // 用户看到的就是「鼠标放上去看不到下拉」。
   // portal **不改变** hover 收起语义：React 的 enter/leave 按 fiber 树判定（不是几何），portal
   // 出去的面板在 React 树里仍是锚点的后代，指针移进面板不会触发锚点的 `pointerleave`
@@ -1205,6 +1206,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
     t('a11yRefresh'),
   )
   // 视图选择器（R3）：单个按钮 + 悬停下拉，取代原来一排 Pill。
+  // 位置（2026-09-13 用户裁决）：挂在**右列**、排在「解读选择」之前 —— 用户原话是「文件概览位置
+  // 跟解读选择放在一起，统一放在右侧」，右列次序为视图选择 → 解读选择 → 编辑⇄保存 → 分栏。
+  // 这次只搬位置：下面的点击 / 悬停 / portal / closeOnPointerLeave / 不挂气泡全部原样未动。
   // 按钮文字恒等于当前视图名（`labLabelKey(viewer.mode)`），与所显示内容不分离；点击按钮主体
   // 即确认按钮所示视图 —— `setMode` 传同一个 mode，React 同值 bail out，是真正的 no-op
   // （用户明确要求：不伴随 `setEditMode(false)`，否则「点击」就成了会改变显示的操作）。
@@ -1232,8 +1236,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
             </Button>
           )}
           items={viewItems}
-          // 同「解读选择」：视图中列也带 `overflow:hidden`（第一段为防视图选择器画到右列加的），
-          // 内联面板会被整块裁掉，故一并 portal —— hover 收起语义不受影响（理由同上）。
+          // 同「解读选择」：内联面板会被 `.fs-hbar{overflow:hidden}` 整块裁掉，故一并 portal ——
+          // hover 收起语义不受影响（理由同上）。它原先在 `.fs-hbar-mid` 里，那条裁剪 2026-09-13
+          // 随它搬到右列而删除，但 `.fs-hbar` 这条对右列同样成立 ⇒ portal 依旧必需。
           portal
           closeOnPointerLeave
           // 选下拉项：切换视图并退出编辑态（沿用原 Pill 的行为）。
@@ -1354,13 +1359,22 @@ function FsView(props: FsViewProps): React.JSX.Element {
     document.addEventListener('mouseup', onUp)
   }
 
-  // 分栏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝状态、右＝操作」。它与右列三个按钮
-  // 共用同一套窄档收纳（文字进 `.fs-btnlabel`，≤672px 的档只留图标），可访问名由恒定的
+  // 分栏按钮（R4）：放右列 —— 顶栏分工是「左＝环境、中＝路径、右＝操作」。它与右列另外几个
+  // 按钮共用同一套窄档收纳（文字进 `.fs-btnlabel`，≤760px 的档只留图标），可访问名由恒定的
   // aria-label 给出；没有打开对象时不可用（没有可复制的视图）。
+  // 它在右列的次序由用户裁决为**最后一个**（视图选择 → 解读选择 → 编辑⇄保存 → 分栏）。
+  // **再窄一档（容器 ≤620px）它整个让位** —— 它顶着右列 min-content 的最后一截，收掉它
+  // 右列「被整块裁」的下界才回到门禁内（389 → 339，门禁 ≤360）。代价是这一档里
+  // **开/关分屏的入口随按钮一起消失**：`toggleSplit` 的调用点只有这一个按钮、菜单里没有
+  // 第二条路，所以面板已经开着分屏时再把它拖到 ≤648px 就关不掉了（要把面板拖宽才回得来）。
+  // 这是「已知边界，不修」，取舍与 `PROGRESS.md` §5 #10 同源 —— 窄档牺牲一个功能键。
+  // 类名 `fs-splitbtn` 只作样式表那条容器查询的锚点（比 `:last-child` 这类位置选择器经得住
+  // 右列增删项），不承担任何几何。
   // 分栏按钮：气泡文案是 `a11ySplit`（说清「再点一次关闭」这个非通用交互），而按钮自己的
   // 可访问名仍是恒定的 `btnSplit`（与它可见的「分栏」二字一致）。
   const splitBtn = tip((
     <Button
+      className="fs-splitbtn"
       size="sm"
       icon={<SplitGlyph />}
       onClick={toggleSplit}
@@ -1422,12 +1436,13 @@ function FsView(props: FsViewProps): React.JSX.Element {
         {wsMenu}
         <div className="fs-hd-actions">{refreshBtn}{foldBtn}</div>
       </div>
+      {/* 中列只剩路径：视图选择器已按用户裁决搬到右列（顺序见下），中列不再持有任何按钮。 */}
       <div className="fs-hbar-mid">
-        {viewWrap}
         <div className="fs-hbar-path">{pathLabel}</div>
       </div>
       {/* 翻译入口（R1）已并入「解读选择」菜单：这里原来是独立翻译按钮 trBtn 的位置。 */}
-      <div className="fs-hbar-right">{splitBtn}{genWrap}{editActions}</div>
+      {/* 右列顺序（用户裁决）：视图选择 → 解读选择 → 编辑⇄保存 → 分栏。 */}
+      <div className="fs-hbar-right">{viewWrap}{genWrap}{editActions}{splitBtn}</div>
     </div>
   )
 
@@ -1446,15 +1461,20 @@ function FsView(props: FsViewProps): React.JSX.Element {
 // `.fs-badge`（扩展名角标改用 primitives 的 Tag）；同时新增 `.fs-viewwrap` 与 `.fs-exttag`，
 // 两者只承担布局（flex 项定位），字号底色等观感一律交给 primitives。
 // 上述删除之外，顶栏与左侧树为修窄宽度重叠另有偏差：`.fs-hbar` 改 auto/minmax(0,1fr)/auto
-// 分列并加裁剪兜底，左右列去掉 `min-width:0`（保留 min-content 下限），`.fs-hbar-mid` 加
-// `overflow:hidden`（防视图选择器画到右列），`.fs-side` 加 `max-width:50%`。
+// 分列并加裁剪兜底，左右列去掉 `min-width:0`（保留 min-content 下限），`.fs-side` 加 `max-width:50%`。
+// 历史（2026-09-13 订正）：这套偏差原先还给 `.fs-hbar-mid` 加了一条 `overflow:hidden`，理由是
+// 「防视图选择器画到右列」。视图选择器按用户裁决搬到右列之后，中列只剩路径、**不再持有任何按钮**，
+// 那条裁剪就没有消费者了 —— 实测（`out-after-nomidclip.json` vs `out-after-lian.json`，3857 档逐档
+// 逐字段）去掉它 **0 差异**，故删除；跨列重叠的兜底只剩 `.fs-hbar` 那条，实测仍 **0 档**。
 const CSS = [
   '.fs-wrap{display:flex;flex-direction:column;height:100%;font-size:13px;color:var(--dsw-alias-label-primary,#0f1115);overflow:hidden;min-height:0;box-sizing:border-box;padding:2px 14px 8px;--fs-bottom-clearance:calc(var(--dsh-composer-height,152px) + 16px)}',
   '.fs-hbar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 10px;flex:none;min-width:0;padding:6px 0;overflow:hidden;container-type:inline-size}',
   // 上面这条 `overflow:hidden` 是跨列重叠归零的兜底裁剪，但它同时是**祖先裁剪盒**：任何从顶栏
   // 溢出的浮层都会被切掉（`Menu` 的下拉是绝对定位在锚点下方 4px 的 `.mr-list`，首当其冲）。
   // 因此顶栏三处 `Menu` 一律走 `portal`（挂到 `document.body`、fixed 定位、z-index 1100），
-  // 别改回内联渲染 —— 内联就是「鼠标放上去看不到下拉」的成因；`.fs-hbar-mid` 那条同理。
+  // 别改回内联渲染 —— 内联就是「鼠标放上去看不到下拉」的成因。
+  // 搬走视图选择器以前，`.fs-hbar-mid` 还有一条同样的裁剪、这条注释写的是「那条同理」；中列不再
+  // 持有按钮之后那条已删（见上方块注释的实测），现在**只有 `.fs-hbar` 这一条**在裁内联面板。
   '.fs-hbar-left{justify-self:start;display:flex;align-items:center;gap:8px}',
   '.fs-hd-actions{flex:none;display:flex;align-items:center;gap:2px;min-width:0}',
   // 顶栏气泡（`Tooltip`）的锚点层：`Tooltip` 需要一个能挂 ref 的**原生**元素
@@ -1465,25 +1485,35 @@ const CSS = [
   // 它不写 `min-width:0`：写了会把内层按钮的 min-content 下限抹掉，回到「按钮溢出压兄弟」的老问题。
   '.fs-tipwrap{display:inline-flex;align-items:center}',
   '.fs-wsbtn{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-  '.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}',
+  // 中列现在只有一个子元素（路径），所以 `overflow:hidden` 已删除、`gap` 也不再有效果；`min-width:0`
+  // 留着与 `.fs-hbar` 的 `minmax(0,1fr)` 同义，标出「中列可被压到 0」这一意图。
+  '.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0}',
   '.fs-hbar-path{flex:1;min-width:0;display:flex;align-items:center;justify-content:center}',
   '.fs-hd-path{display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,.85));font-size:12px;line-height:20px}',
+  // 右列顺序（用户裁决，2026-09-13）：视图选择 → 解读选择 → 编辑⇄保存 → 分栏。
+  // 视图选择器从 `.fs-hbar-mid` 搬来，右列因此多一个约 68px 宽的胶囊 + 一处 6px gap ——
+  // 右列 min-content 随之抬高，代价已逐档实测并登记（`PROGRESS.md` §5 #13 / 本次报告）。
   '.fs-hbar-right{justify-self:end;display:flex;align-items:center;gap:6px}',
   // `.fs-genwrap` 刻意**不给** `min-width:0`：给了它，flex 会把包装压到近 0 宽，而里面 36px 的
   // 「解读选择」按钮会溢出盖住同列的「● 未保存」标记（实测相交 411px²，即 `PROGRESS.md` §5 #9）；
   // 不给它，包装保住按钮的 min-content，代价是右列整体更早触底（实测下界由面板 284px 升到 314px，
   // 仍在门禁的 360px 以内），换来同列重叠从 153 档/场景降到 0。
   '.fs-genwrap{display:inline-flex;align-items:center}',
-  '.fs-viewwrap{display:inline-flex;align-items:center;min-width:0;flex:none}',
+  // `.fs-viewwrap`：收缩包裹 + `flex:none`（不伸不缩，宽度随按钮文字的 min-content）。它原先和
+  // `.fs-genwrap` 一样写着一个 `min-width:0`，但在 `flex:none`（`flex-shrink:0`）之下那个下限本来就
+  // 不会被用到 —— 迁到右列后实测确认无作用（`out-after-viewauto.json` vs `out-after-lian.json`，
+  // 3857 档逐档逐字段 **0 差异**），故去掉，免得读者以为它承担着 `.fs-genwrap` 那条取舍。
+  '.fs-viewwrap{display:inline-flex;align-items:center;flex:none}',
   // 窄档（R2）：按钮的可见文字统一收进 `.fs-btnlabel`，由容器查询隐藏 —— 文字节点留在 DOM 里，
   // 纯图标态的可访问名交给各按钮的 aria-label。`.fs-btnlabel` 只做不换行（宽度随文字自然）。
   '.fs-btnlabel{white-space:nowrap}',
   // 分档阈值就写在这里，是唯一的真相源；JS 不持有任何像素常量。
-  // 第一档（右列四个按钮图标化，含 R4 的分栏）：这一档要解决的不再是「右列被整块裁掉」，
-  // 而是四段文字一起把中列挤到 0 —— 实测最坏场景（长工作区名 + 长路径 + 四字视图名 +
-  // 五字菜单项）在面板 701–720 这 20 档里中列视图名被 `.fs-hbar-mid{overflow:hidden}` 裁掉，
-  // 右列同时出现部分裁切；收掉这四个按钮的文字后该窗口整段消失（S2/S6 的中列被裁区间
-  // 由面板 200–720 收到 200–400）。
+  // 第一档（右列 label 按钮图标化，含 R4 的分栏）：这一档要解决的不再是「右列被整块裁掉」，
+  // 而是几段文字一起把中列挤到 0 —— 实测最坏场景（长工作区名 + 长路径 + 四字视图名 +
+  // 五字菜单项）在面板 701–720 这 20 档里中列被挤到 0、右列同时出现部分裁切；当时中列还挂着
+  // 视图选择器（被裁的正是它的名字，裁它的是 `.fs-hbar-mid{overflow:hidden}`，那条已随视图选择器
+  // 搬到右列而删除 —— 见上方块注释的实测）。
+  // 收掉这些按钮的文字后该窗口整段消失（S2/S6 的中列被裁区间由面板 200–720 收到 200–400）。
   // 阈值 760 的标定：窗口上界是面板 720 ⇒ 阈值不得低于 hbar 692px（= 720 − `.fs-wrap`
   // 左右内边距 28px）；按同样的约 8% 字体余量取整为 760。逐档 diff 实测过：760 相对 672
   // **没有任何一档变差**（变差 0 档），只有 701–720 变好。
@@ -1491,6 +1521,24 @@ const CSS = [
   // 不会因为图标化让内容变窄而反复撤销标记（滞回振荡）。
   // 这里排除 `.fs-wslabel`：工作区名不属于本档，它比这四个按钮晚一档才让位。
   '@container (max-width:760px){.fs-btnlabel:not(.fs-wslabel){display:none}}',
+  // 分栏让位档（插在第一档与第二档之间；2026-09-13 的 R5 收纳裁决＝候选 B）：比第一档更窄时
+  // 不再只是收文字，而是把「分栏」按钮**整个**藏起来 —— 连它的 `.fs-tipwrap` 锚点层一起藏
+  //（只藏内层 `button` 的话，那层 0 宽却仍是 flex 项的锚点还会白占一处 6px gap）。
+  // 它解决的是「右列末项把自己挤出容器」：视图选择器搬进右列后右列 min-content 抬高约 74px，
+  // 面板 ≤388 时右列被整块裁（下界 389，破门禁 ≤360），而中列早被压到 0、左列也收完、
+  // 右列每一项都是功能键 —— 只能拿掉一项的可见性才过线。
+  // 阈值 620 的标定：端点＝分栏按钮**不再被裁**的容器宽 **573px**（面板 601 − `.fs-wrap`
+  // 左右内边距 28px。面板 ≤600 时它正是右列唯一被裁的那一项，`partRightN` 恒为 1），
+  // 按本仓惯例的约 8% 字体余量取整（573 × 1.08 ≈ 619）⇒ **620**。
+  // 生效边界实测：面板 ≤648 收起、649 起显示，且那一档右列完整。
+  // 为什么不并进第一档 760（上一单标定候选 B 时就是那么写的）：两条规则**读数逐档完全相同**
+  //（3857 档 × 全部字段 0 差异，`out-zz-lian3-T620.json` vs `out-zz-lian3-B760.json`），
+  // 差别只在「分栏入口消失」的面板区间 —— 并进 760 会把它由 ≤648 扩到 ≤788，窄档收纳没有
+  // 理由多牺牲 140 档宽度，所以照端点单独标一档。
+  // 代价（已实测，属「已知边界，不修」）：这一档里**开/关分屏的入口随按钮一起消失** ——
+  // 面板已开着分屏再被拖到 ≤648px 就关不掉了（`toggleSplit` 的唯一调用点就是这个按钮，
+  // 见 JSX 里 `splitBtn` 的注释）。类名 `fs-splitbtn` 只作这一档的锚点，不承担任何几何。
+  '@container (max-width:620px){.fs-hbar-right > .fs-tipwrap:has(.fs-splitbtn){display:none}}',
   // 第二档（工作区名让位）：四个按钮图标化后，左列工作区按钮所在的 `Menu` 根 `span`
   // 成了唯一的 min-content 大头 —— 它把左列顶到 284.8px，中列被 `minmax(0,1fr)` 让到 0、
   // 右列被挤出容器整块裁掉。收掉它的文字后左列降到 126px，最坏场景的右列下界由面板 459px 压到 314px。

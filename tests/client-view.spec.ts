@@ -2546,13 +2546,17 @@ describe('dropdown layering: the toolbar clip box must not crop the panels (R1/R
     expectOutsideToolbar('ws', false)
   })
 
-  it('keeps the toolbar clip declarations the cross-column fix depends on', () => {
+  it('keeps the toolbar clip declaration the cross-column fix depends on', () => {
     apply(makeCtx())
     const css = document.head.querySelector('style[data-plugin="fs"]')?.textContent ?? ''
-    // 修法靠 portal，**不是**撤销第一段的兜底裁剪：这两条一旦被删，跨列可见重叠会回到基线的
-    // 544 档（见 PROGRESS.md §3 的消融实验）。留着它们、把浮层搬出裁剪盒，两条要求才同时成立。
+    // 修法靠 portal，**不是**撤销第一段的兜底裁剪：`.fs-hbar` 那条一旦被删，跨列可见重叠会回到
+    // 基线的 544 档（见 PROGRESS.md §3 的消融实验）。留着它、把浮层搬出裁剪盒，两条要求才同时成立。
     expect(css).toContain('padding:6px 0;overflow:hidden;container-type:inline-size}')
-    expect(css).toContain('.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}')
+    // `.fs-hbar-mid` 那条 `overflow:hidden`（第一段「防视图选择器画到右列」）已随视图选择器搬到右列
+    // 而删除：中列只剩路径、不再有会外溢的按钮 ⇒ 无消费者，实测去掉它 3857 档逐档逐字段 0 差异
+    // （`out-after-nomidclip.json` vs `out-after-lian.json`）。这条反向断言钉住它没被顺手加回来。
+    expect(css).toContain('.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0}')
+    expect(css).not.toContain('.fs-hbar-mid{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}')
   })
 })
 
@@ -2568,15 +2572,45 @@ describe('narrow toolbar: icon bands (R2)', () => {
     await click(row('full.md'))
     // 三个按钮的可见文字在 `.fs-btnlabel` 里 —— 窄档样式表隐藏的正是这一层；
     // 文字节点留在 DOM 里，纯图标态的可访问名由常驻的 aria-label 给出。
-    // （分栏按钮 R4 与它们同组，所以在最前；编辑/保存已合并成一个按钮，故只剩一个「编辑」。）
+    // 阵列按**文档顺序**读：右列次序是视图选择 → 解读选择 → 编辑⇄保存 → 分栏，
+    // 所以分栏现在排在最后（视图选择器的文字是裸文本、没有 label 层，不在这个数组里；
+    // 编辑/保存已合并成一个按钮，故只剩一个「编辑」）。
     expect(Array.from(document.querySelectorAll('.fs-hbar-right .fs-btnlabel'))
       .map(node => (node.textContent || '').trim()))
-      .toEqual([L('btnSplit'), L('btnGen'), L('btnEdit')])
+      .toEqual([L('btnGen'), L('btnEdit'), L('btnSplit')])
     expect(rightButton(L('btnSplit')).getAttribute('aria-label')).toBe(L('btnSplit'))
     expect(rightButton(L('btnGen')).getAttribute('aria-label')).toBe(L('btnGen'))
     expect(rightButton(L('btnEdit')).getAttribute('aria-label')).toBe(L('btnEdit'))
     // 视图选择器的文字**就是**当前视图名（R3.2），因此不参与图标化：它没有 label 层。
     expect(viewBtn().querySelector('.fs-btnlabel')).toBeNull()
+  })
+
+  it('moves the view selector into the right group, ordered view → gen → edit → split', async () => {
+    mount()
+    await flush()
+    await click(row('full.md'))
+    // 用户裁决：视图选择跟解读选择放在一起、统一在右侧 —— 中列自此只剩路径，一个按钮都不剩。
+    expect(document.querySelectorAll('.fs-hbar-mid button')).toHaveLength(0)
+    const right = document.querySelector('.fs-hbar-right')
+    if (right === null) throw new Error('no right toolbar group')
+    /**
+     * The identity of one direct child of the right group.
+     * @param node - a direct child of `.fs-hbar-right`.
+     * @returns `view` / `gen` / `edit` / `split`, or the raw class name when unrecognised.
+     */
+    function identity(node: Element): string {
+      const el = node as HTMLElement
+      if (el.classList.contains('fs-viewwrap')) return 'view'
+      if (el.classList.contains('fs-genwrap')) return 'gen'
+      const named = el.querySelector('.fs-tipwrap button')?.getAttribute('aria-label')
+      if (named === L('btnEdit') || named === L('btnSave')) return 'edit'
+      if (named === L('btnSplit')) return 'split'
+      return el.className
+    }
+    expect(Array.from(right.children).map(identity)).toEqual(['view', 'gen', 'edit', 'split'])
+    // 搬位置**不动**交互语义：仍是那个裸文本、悬停即开下拉的按钮（「不挂气泡」由下一节钉住）。
+    expect(viewBtn().closest('.fs-hbar-right')).toBe(right)
+    expect(viewBtn().closest('.fs-viewwrap')).not.toBeNull()
   })
 
   it('merges edit and save into one button that swaps glyph and name with the mode', async () => {
@@ -2670,6 +2704,11 @@ describe('narrow toolbar: icon bands (R2)', () => {
     // 第二档的阈值是 550（第三段 b 由 470 上调）：470 时工作区名在面板 499px 就恢复可见，
     // 而右列要到 535px 才完全不被裁，499–534 那一段于是留下「保存按钮右边缘缺 17px」。
     expect(css).toContain('@container (max-width:760px){.fs-btnlabel:not(.fs-wslabel){display:none}}')
+    // 分栏让位档（620，插在上面两档之间）：再窄一档时「分栏」整块让位 —— 连 `.fs-tipwrap`
+    // 锚点层一起藏（只藏内层 `button` 会留下 0 宽却照旧占一处 gap 的锚点层）。
+    // 锚点是按钮自己的 `fs-splitbtn` 类名，不是 `:last-child` 这类位置选择器：右列增删项时
+    // 位置选择器会静静选错元素。这条规则是「右列整块裁下界 389 → 339」的唯一来源。
+    expect(css).toContain('@container (max-width:620px){.fs-hbar-right > .fs-tipwrap:has(.fs-splitbtn){display:none}}')
     expect(css).toContain('@container (max-width:550px){.fs-wslabel{display:none}}')
     // 「解读选择」的包装不给 `min-width:0`：给了它，里面的按钮会溢出压住「● 未保存」。
     expect(css).toContain('.fs-genwrap{display:inline-flex;align-items:center}')
@@ -2959,6 +2998,10 @@ describe('split view (R4)', () => {
     // 参与同一套窄档收纳：文字在 `.fs-btnlabel` 层里，可访问名恒定。
     expect(splitBtn().querySelector('.fs-btnlabel')?.textContent).toBe(L('btnSplit'))
     expect(splitBtn().getAttribute('aria-label')).toBe(L('btnSplit'))
+    // 更窄的那一档（620）把它整个收起，靠的正是按钮上的 `fs-splitbtn` 类名 ——
+    // 样式表用 `:has()` 从它找到外层的 `.fs-tipwrap` 一起藏。撤掉这个类名，收纳会**静默失效**
+    // （探针会立刻退回「下界 389」的破门禁读数，而这里不红就没人会知道）。
+    expect(splitBtn().classList.contains('fs-splitbtn')).toBe(true)
     // 气泡文案说清「再点一次关闭」这个非通用交互；原生 `title` 已换成受控气泡（不双气泡）。
     expect(splitBtn().getAttribute('title')).toBeNull()
     expect(splitBtn().closest('.fs-tipwrap')?.parentElement?.getAttribute('data-label')).toBe(L('a11ySplit'))

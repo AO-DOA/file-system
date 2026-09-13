@@ -56,8 +56,9 @@ const extra = args.extra ? '\n' + fs.readFileSync(args.extra, 'utf8') : ''
 const splitPaneOn = args.splitpane === '1'
 /**
  * 菜单打开态（交互态场景）：不带该选项时**一个面板都不注入**，既有四项门禁的读数口径不变。
- * - `--menus=inline`：面板留在锚点旁（`.mr` root 内、`position:absolute`）⇒ 它是 `.fs-hbar` /
- *   `.fs-hbar-mid` 的后代，落进那两条 `overflow:hidden` 的裁剪链 —— 这是修复前（Menu 未传
+ * - `--menus=inline`：面板留在锚点旁（`.mr` root 内、`position:absolute`）⇒ 它是 `.fs-hbar` 的
+ *   后代，落进那条 `overflow:hidden` 的裁剪链（`.fs-hbar-mid` 原先也有一条，视图选择器 2026-09-13
+ *   搬到右列后它已从源码删除，裁剪链如今只剩 `.fs-hbar` 一条）—— 这是修复前（Menu 未传
  *   `portal`）的真实形态。
  * - `--menus=portal`：面板搬到 `#stage` 之外（模拟 `createPortal(list, document.body)`）⇒
  *   祖先链里没有 `.fs-hbar` —— 这是修复后的形态。
@@ -189,12 +190,14 @@ function scenario(o) {
     })), inlinePanel('ws')) : '',
     `<div class="fs-hd-actions">${tipwrap(btn({ size: 'vp-sm', icon: true }))}${tipwrap(btn({ size: 'vp-sm', icon: true }))}</div>`,
   ].join('')
+  // 中列**只剩路径**：视图选择器已按用户裁决搬到右列（2026-09-13），中列不再持有按钮。
   const mid = [
-    o.view ? `<div class="fs-viewwrap">${wrapped(btn({ size: 'vp-sm', label: o.viewLabel || '源码', extra: 'fs-viewbtn' }), inlinePanel('view'))}</div>` : '',
     o.path ? `<div class="fs-hbar-path"><div class="fs-hd-path">${PATHS[o.path]}</div></div>` : '',
   ].join('')
+  // 右列顺序（与源码 JSX 逐字一致）：视图选择 → 解读选择 → 编辑⇄保存（含 `dirty` 标记）→ 分栏。
+  // 视图选择器从 `.fs-hbar-mid` 搬来（`mid` 那项已删）—— 少了这一同步就是在量另一个 DOM。
   const right = [
-    tipwrap(btn({ size: 'vp-sm', icon: true, label: '分栏', labelClass: 'fs-btnlabel' })),
+    o.view ? `<div class="fs-viewwrap">${wrapped(btn({ size: 'vp-sm', label: o.viewLabel || '源码', extra: 'fs-viewbtn' }), inlinePanel('view'))}</div>` : '',
     o.gen ? `<div class="fs-genwrap">${wrapped(btn({ size: 'vp-sm', icon: true, label: o.genLabel || '解读选择', disabled: !!o.genDisabled, labelClass: 'fs-btnlabel' }), inlinePanel('gen'))}</div>` : '',
     o.dirty ? '<span class="fs-dirty">● 未保存</span>' : '',
     // 编辑与保存是**同一个按钮**（`canSave = editMode || dirty` 驱动同一节点换态），复刻里
@@ -202,6 +205,10 @@ function scenario(o) {
     // 是「保存」，否则是「编辑」—— 与源码的 `canSave` 判据一致。
     // 两种文案都是两个汉字、图标都是 16px，几何等价，所以取哪一态不影响任何读数。
     o.edit ? tipwrap(btn({ size: 'vp-md', icon: true, label: o.editLabel || '编辑', labelClass: 'fs-btnlabel' })) : '',
+    // 分栏按钮带 `fs-splitbtn` 类名（与源码同一个）：样式表那条「窄档整块让位」的容器查询
+    // 用它当锚点（`.fs-hbar-right > .fs-tipwrap:has(.fs-splitbtn)`），复刻少了这个类名，
+    // 那条规则在探针里就匹配不到任何元素 —— 量到的会是「没做收纳」的另一个 DOM。
+    tipwrap(btn({ size: 'vp-sm', icon: true, label: '分栏', labelClass: 'fs-btnlabel', extra: 'fs-splitbtn' })),
   ].join('')
   return `<div class="fs-wrap">
   <div class="fs-hbar">
