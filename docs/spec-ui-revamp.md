@@ -166,7 +166,7 @@
 | 项 | 值 |
 |---|---|
 | 状态 | `const [splitTarget, setSplitTarget] = React.useState<SplitTarget \| null>(null)` + `const [splitRatio, setSplitRatio] = React.useState(SPLIT_RATIO_DEFAULT)`；`splitTarget === null` 即「关着」。R4 的 `splits: Record<path, SplitState>` 整个删除 |
-| 数据源两支 | 左右 path 相同 ⇒ 复用左侧 viewer（天然 live）；不同 ⇒ 渲染一个新子组件 `SplitPane({frozen, grow})`，它内部 `useOpenedViewer(frozen.opened, null)` 起**自己的一份**实例 |
+| 数据源两支 | 左右 path 相同 ⇒ 复用左侧 viewer（天然 live）；不同 ⇒ 渲染一个新子组件 `SplitPane({frozen, grow})`，它内部 `useOpenedViewer(frozen.opened, null)` 起**自己的一份**实例（**A 类修正（2026-09-13，本条之后补记）**：独立支改为渲染开启那一刻从左侧 viewer 拷来的**数据快照**，不再重读 host —— 见下面的「A 类修正」补记） |
 | 为什么用子组件 | hooks 规则禁止条件调用 hook，但**条件挂载子组件是允许的**：独立实例只在确实需要时挂载，不必为未开启态造占位对象（那会让 `useOpenedViewer` 的 `useEffect` 反复重读 host） |
 | 同一性判据 | `opened.path`（`/tree` 下发的**项目根相对路径**，根为 `.`、书库文档形如 `.book/note.md`）。用 `name` 不行（不同目录可同名），`TreeNode` 也没有别的稳定 id 字段。**B-3 修正（本表之后补记）**：切工作区后 path 命名空间换掉，同名 path 会误判同对象 ⇒ 判据改为「`frozen.curWsId === curWsId` **且** path 相同」，`SplitTarget` 加 `curWsId` 字段 |
 | key | 右侧窗格的 `key` 绑**冻结对象**的 path（不是左侧当前 path）：左侧每切一次对象，右侧都不该被卸载重建、重拉一遍数据 |
@@ -176,7 +176,7 @@
 **判据（逐条都钉在 `tests/client-view.spec.ts` 的 `split view: the frozen target (R4 → R6)` 里）**
 
 1. 冻结对象 + 视图类型 ⇒ `freezes the open object together with the view type`（并断言同对象支**不重复读**源文件）
-2. 左侧切对象右侧不动 ⇒ `keeps the frozen object on the right while the left switches objects`（断言右侧另起实例**多读一次**冻结对象）
+2. 左侧切对象右侧不动 ⇒ `keeps the frozen object on the right while the left switches objects`（**A 类修正**：右侧渲染数据快照，不重读 host ⇒ 断言冻结对象**不被多读一次**，即读次数保持不变）
 3. 左侧切视图右侧不动 ⇒ `freezes the view type: left-side view switches never touch the right pane`（正反各一次）
 4. 同对象时右侧 live ⇒ `keeps the right pane live while both sides show the same object`（左侧重新生成文件摘要 ⇒ 右侧同一帧变）
 5. 全局一份 ⇒ `keeps one global split: every object keeps the frozen right pane`（切文件、切目录都不关；关掉后切回原对象也**不**自动分栏）
@@ -196,6 +196,20 @@ R6 落地时的实现，随后被登记为已知边界 B-3：切工作区后 `pa
 可以各有一个同名 path，只比字符串会被误判成「同一个对象」而走复用支（右侧跟着跳到新工作区的同名
 对象）。2026-09-13 已修：`SplitTarget` 加 `curWsId` 字段（开启那一刻的工作区 id），判据改为
 **工作区相同且 path 相同**；右侧在切工作区后仍显示冻结那个工作区里的对象。
+
+**A 类修正（本条目之后补记，历史时态，2026-09-13 用户裁决要修）**：上文把独立支写成「另起一份
+`useOpenedViewer` 重读 host」—— R6 落地时的实现，随后被登记为已知边界 **A-1（邻居问题）** 与
+**B-2**：独立支照 `frozen.opened.path` / `docRel` 去 `/read`，而 host 的 `/read` 按**当前 root**
+解析相对路径 ⇒ 切工作区后新工作区存在同名路径时会读到**新工作区的内容**（A-1）；冻结对象在左侧
+被删 / 改名后该次 `/read` 直接失败 ⇒ 右侧显示读取失败文本、无自动处置（B-2）。2026-09-13 已修：
+`SplitPane` 不再调 `useOpenedViewer`，改为渲染**开启那一刻从左侧 viewer 拷来的数据快照**
+（`SplitTarget.snap`，字段 = `FsPane` 查看分支渲染所需的全部数据字段，不含任何方法）——
+不依赖当前 root（A-1 解）、不随对象删除消失（B-2 解），且**不再新增任何 host 调用**（反而消掉
+独立支原有的 `/read`）。快照在开启那一刻原样拷贝（数据可能仍在 loading，即 null，渲染显示
+loading 即可）。**固有代价（登记，不修）**：开启那一刻对象若正处于生成中（文件 `genState !==
+'idle'` 或目录 `fold.state === 'generating'`），右侧快照会把「生成中」定格住 —— 快照后右侧
+不再有轮询，左侧生成完成右侧也不会活过来，要关掉重开；用户场景（先等生成完再开分栏）不会触发。
+同对象支（左右同工作区同 path，复用左侧 viewer、live 跟刷新）**完全不动**。
 
 ---
 

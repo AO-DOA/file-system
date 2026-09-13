@@ -24,6 +24,7 @@
 | 五项门禁（**探针复刻 DOM 同步 + 保存判据收口后重测**） | **全绿**（2026-09-12 00:29:48 实测，工作树未提交）：范围守卫 **PASS**（改动面 = `src/client/index.tsx` / `tests/client-view.spec.ts` / `tools/ui-probe/` / `PROGRESS.md`，4 项全在授权面内、无越界）/ `npm run typecheck` exit 0 无输出 / `npm run lint` **0 错 0 警告**（48 files、80 rules）/ `npm test` **19 spec / 594 例** / `npx vitest run --coverage` = All files **100 / 100 / 100 / 100** + `node scripts/verify-coverage-scope.mjs` **19/19 ✓ 分母完整**。**`build` 未跑**（授权否决），故运行中的 `client/client.js` 仍是旧产物。**口径落差订正**：上一行记的 582 例是「四段 UI 改造后」那次的快照，其后 menu-clipping 段实测 **586 例**（见 §3 那节）、本段 **594 例**——三个数字分属三次不同的用例集快照，不是同一口径的漂移；引用门禁例数时以本行为最新。原始输出 `/tmp/verify-sync-a.txt`（运行产物，不进仓库） |
 | 五项门禁（**R5 视图选择器搬动 + 窄档收纳后重测**） | **全绿**（2026-09-13 实测，工作树未提交）：范围守卫 **PASS**（改动面 = `src/client/index.tsx` / `tests/client-view.spec.ts` / `tools/ui-probe/`（2 文件）/ `docs/spec-ui-revamp.md` / `PROGRESS.md` / 新增报告，6 改 + 1 新增，全在授权面内）/ `npm run typecheck` exit 0 无输出（4.8s）/ `npm run lint` **0 错 0 警告**（4.7s）/ `npm test` **19 spec / 597 例**全过（10.5s）/ coverage All files **100 / 100 / 100 / 100** + 分母守卫 PASS（11.9s）。**`build` 未跑**（授权否决），故运行中的 `client/client.js` 仍是旧产物。完整输出 `/tmp/lian3-verify.txt`。命令：`node scripts/verify-stage.mjs --allow 'src/client/index.tsx,tests/client-view.spec.ts,tools/ui-probe/,docs/spec-ui-revamp.md,PROGRESS.md,docs/agent/reports/2026-09-13-view-picker-to-right.md'` |
 | 五项门禁（**R6 分栏语义反转后重测**） | **全绿**（2026-09-13 实测，工作树未提交）：`npm run typecheck` exit 0 无输出 / `npm run lint` **0 错 0 警告**（48 files、80 rules）/ `npm test` **19 spec / 600 例**全过 / `npx vitest run --coverage` = All files **100 / 100 / 100 / 100** + `node scripts/verify-coverage-scope.mjs` **19/19 ✓ 分母完整**。几何：`--wsicon`（3857 档）与基线 `out-final-lian3.json` **逐档逐字段 0 差异**，分屏态同样 0 差异（产物 `out-split-freeze.json` / `out-split-freeze-sp.json`）。**`build` 未跑**（授权否决）⇒ 运行中的 `client/client.js` 仍是旧产物。改动面＝3 改 + 1 新增，全在授权面内；`src/host/**` 与 `tools/**` 一字未动。完整口径见 `docs/agent/reports/2026-09-13-split-freeze-target.md` |
+| 五项门禁（**A 类修正：独立支改数据快照后重测**） | **全绿**（2026-09-13 实测，工作树未提交）：范围守卫 **PASS**（改动面 = `src/client/index.tsx` / `tests/client-view.spec.ts` / `docs/spec-ui-revamp.md` / `PROGRESS.md` / 报告，5 项全在授权面内、无越界）/ `npm run typecheck` exit 0 无输出 / `npm run lint` **0 错 0 警告** / `npm test` **19 spec / 603 例**全过（client spec 156 → 158，+2）/ coverage **100×4** + 分母 19/19 ✓。几何：`--wsicon` 与 `--splitpane` 两条与 R6 基线 `out-split-freeze.json` / `out-split-freeze-sp.json` **逐档逐字段 0 差异**（3857 档；DOM 结构未动，探针逐档 0 差异，产物 `out-snap.json` / `out-snap-sp.json`）。**`build` 未跑**（授权否决）⇒ 页面看不到本单改动。完整口径见报告 §12 |
 | 技术栈 | TypeScript(strict) + vitest/jsdom + tsdown；产物 `lib/host/index.js` + `client/client.js` |
 | 功能基线 | 171 功能点（155 已迁移 / 10 不适用 / 6 有意保留）；11 条路由三方一致；135 例逐条对账矩阵 0 处待填 |
 
@@ -484,7 +485,7 @@ packages 会出现 packages 的目录概览在左侧，这样就是我的目标�
 | 处 | 之前 | 现在 |
 |---|---|---|
 | 状态 | `Record<path, {on, mode, ratio}>` | `splitTarget: SplitTarget \| null`（= 开关）+ `splitRatio: number`（全局单值，不持久化） |
-| 右侧数据源 | 无条件复用左侧 viewer | **两支**：左右同 path ⇒ 复用左侧 viewer（天然 live）；否则渲染新子组件 `SplitPane`，它内部另起一份 `useOpenedViewer(frozen.opened, null)` |
+| 右侧数据源 | 无条件复用左侧 viewer | **两支**：左右同 path ⇒ 复用左侧 viewer（天然 live）；否则渲染新子组件 `SplitPane({frozen, grow})` **渲染开启那一刻的数据快照**（A 类修正：R6 时是另起一份 `useOpenedViewer(frozen.opened, null)`，已废弃） |
 | 为什么用子组件 | —— | hooks 禁止条件调 hook，但**条件挂载子组件是允许的** ⇒ 独立实例只在需要时挂载，**不为未开启态造占位对象**（那会让 `useEffect` 按 `opened.path` 反复重读 host） |
 | 窗格 key | `'split-' + openedPath`（左侧当前 path） | `'split-' + frozen.opened.path`（**冻结对象**）—— 绑左侧 path 会让左侧每切一次对象都卸载重建右侧 |
 | 同一性判据 | —— | `opened.path`（`/tree` 的相对路径）。**不能用对象引用**：`onTrDone` 会 `setOpened(prev => ({...prev, hasDocTr:true}))` 造新引用，引用比较会在翻译成功时把「同对象」误判成「异对象」 |
@@ -493,10 +494,12 @@ packages 会出现 packages 的目录概览在左侧，这样就是我的目标�
 
 **判据与断言**（`tests/client-view.spec.ts` 的 `split view: the frozen target (R4 → R6)`，client spec
 152 → 155 例：删 1 例（`remembers the split per file…`）、改写 3 例、新增 4 例）：冻结对象（并断言同对象支**不重复读**源文件）/
-左侧切对象右侧不动（并断言异对象支**多读一次**，证明右侧有自己的一份活数据）/ 左侧切视图右侧不动
+左侧切对象右侧不动（**A 类修正：**断言异对象支渲染快照、**不再多读一次** host）/ 左侧切视图右侧不动
 （正反各一次）/ 同对象时左侧重新生成文件摘要 ⇒ 右侧同一帧刷新 / 全局一份（切文件切目录都不关、
 关掉后切回原对象也不自动分栏）/ 比例不按对象记 / 恒只读（`button` 与 `.fs-area` 计数）/ 边界①（点刷新
-清空 `opened` 后右侧仍在、按钮仍可用）。
+清空 `opened` 后右侧仍在、按钮仍可用）。**A 类修正新增 2 例**（156 → 158 例，2026-09-13）：切工作区后
+右侧不被新 root 同名路径带跑（A-1，mock 把同名 docRel 做成两工作区内容不同）/ 冻结对象被删改名后右侧
+仍显示快照、不显示读取失败文本且不新增 host 读（B-2）。
 
 **几何实测（0 差异）**：`--wsicon`、7 场景 × 551 档 = **3857 档**，与基线 `out-final-lian3.json`
 **逐档逐字段 0 差异**（跨列 0 / 同列 0 / 被裁 624 / 右列被整块裁 624、下界仍 **339** / `partRight`
@@ -507,10 +510,16 @@ packages 会出现 packages 的目录概览在左侧，这样就是我的目标�
 **`build` 未跑**（授权否决）⇒ 页面看不到本单改动。
 
 **边界（详见报告 §7）**：B-1 左侧对象被清空（已处理，见上表 `disabled` 一行）；B-2 冻结对象被删 / 改名
-（右侧显示 `/read` 失败文本，**不做自动处置**，且未在真实 host 复现）；B-3 切工作区后同 path 被判成
+—— **2026-09-13 已修**：独立支改渲染开启那一刻的数据快照（`SplitTarget.snap`），不再重读 host ⇒
+对象删了 / 改名后右侧仍显示冻结内容，不再出现读取失败文本（见 §5 #16）；B-3 切工作区后同 path 被判成
 「同对象」—— **2026-09-13 已修**：`SplitTarget` 加 `curWsId`，判据改为「工作区相同且 path 相同」（见 §5 #15）；
-B-4 异对象支首次挂载多读一次 host（有意为之、已钉成断言）；
-B-5 窄档 ≤648px 没有开关入口（R5.1 既有边界，本单未新增第二条入口，性质不变）。
+**A-1（邻居问题）—— 2026-09-13 已修**（与 B-2 同族，见 §5 #16）：切工作区后独立支不再按当前 root
+重读同名路径 —— 新 root 的同名路径带不走右侧，右侧始终显示冻结那一刻的内容；B-4 异对象支首次挂载
+多读一次 host —— **已随快照改造消失**：右侧不再发起任何 `/read`，原断言由「多读一次」改为「读次数
+保持不变」；B-5 窄档 ≤648px 没有开关入口（R5.1 既有边界，本单未新增第二条入口，性质不变）。
+**新登记边界（A 类修正的固有代价，不修）**：开启那一刻对象若正处于生成中（文件 `genState !== 'idle'`
+或目录 `fold.state === 'generating'`），右侧快照会把「生成中」定格住 —— 快照后右侧不再有轮询，
+左侧生成完成右侧也不会活过来，要关掉重开。用户场景（先等生成完再开分栏）不会触发。
 
 ## 4. 回滚
 
@@ -543,7 +552,8 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 | 12 | ~~顶栏的原生 `title` 气泡（挂在「解读选择」上的长条，文案即 `a11yGen`：`生成/重新生成：目录概览·文件摘要·源码注解·文章翻译`）~~ | ✅ **2026-09-12 已完成**（commit `8d5d591`；台账/探针收尾在本段工作树）：① 顶栏 **7 个按钮**的气泡统一改为 primitives 的 `Tooltip`，原生 `title` 全部撤除，并补齐 `aria-label`（`foldBtn` / `refreshBtn` 原先**只有** `title`）。锚点必须是**原生元素**——primitives 的 `Button` 在 React 18 下挂不上 ref、气泡永不渲染（经验卡 B-5）——所以每个挂气泡的按钮外面包了一层 `.fs-tipwrap`（实测几何中性，见 §3 探针那节）；② **视图选择器与解读选择两个按钮豁免不挂气泡**：它们的悬停手势已被下拉占用（`onMouseEnter` 开菜单），再挂气泡会同时弹两个浮层。**这是刻意的例外，不是遗漏**（源码注释与断言 `tooltipLabel(...) === null` 都钉住了它）。右格下面那条「反向风险」因此按「不加气泡」处置。以下是**裁决前的原始记录**（保留不改）：**待用户裁决**。它是**浏览器原生**气泡：宽度 / 深色底 / 位置 / 层级完全不受页面控制，表现为按钮下方一条又宽又扁的深色条、**压住正文**，且不受任何 `overflow` 裁剪（正是这一点让它比被裁的下拉更显眼）。**规格口径已订正（见 §3 末节「顶栏三个下拉被 `overflow` 裁剪」的末段「订正」）**：`Tooltip` 那要求写在 `docs/spec-ui-revamp.md` **§1 R2**，而 **§2 第 87 行已明文作废**该写法（`Button` 已透传 `title`，再包一层 `Tooltip` 会**出双气泡**）⇒ 待裁决的是「这条长条怎么处理」（缩短文案 / 只留 `aria-label` / 另设计气泡 / 维持原状），**不是**「按规格换 Tooltip」。同批一并裁决**可访问名缺口**：`foldBtn` / `refreshBtn` **只有 `title`、没有 `aria-label`**（实测 `src/client/index.tsx` 里 `IconPanelLeftOutline16` 与 `IconRefreshOutline16` 两个 `Button`），而规格 §2 现行口径要求纯图标按钮「`<Button size icon title>` + 补 `aria-label`」；`viewBtn` 只有 `title`（有可见文字，名字来自文字）；`edit` / `save` 只有 `aria-label`（无 `title`）；`genAnchor` / `wsAnchor` / `splitBtn` 两个都有。**反向风险**：`genAnchor` 悬停即开 Menu，若给它加气泡需决定关掉气泡（`disabled`）或留 `delayMs` 时差，否则悬停会同时出气泡与下拉 |
 | 13 | ~~R5 视图选择器搬进右列 ⇒ 右列整块裁下界 **307 → 389**（破门禁 ≤360）~~ | ✅ **2026-09-13 已裁决并修（候选 B ⇒ 下界 339）**：用户裁决「窄档把分栏按钮收起」，落地为**一条容器查询规则（阈值 620）+ 分栏按钮上的类名 `fs-splitbtn`**（不新增元素），右列整块裁下界 **389 → 339**（✓ 门禁 ≤360，余量 21px）、被裁合计 916 → **624 档**、右列部分裁切 1045 → **777 档**；跨列 / 同列仍 **0 档**、顶栏高恒 **{48}**；相对搬位置态**变差 0 档 / 变好 1184 档**、分屏态 0 差异。阈值论证（端点 573 × 8%）、生效边界（面板 648/649）与四条候选对照见 §3 本单小节、规格 §1 R5.1，产物 `out-final-lian3.json`。**R5 搬动本身相对基线的残留代价仍在**：下界 307 → 339、变差 509 档（全部落在 ≥210px 的档）—— 一句「已修」只针对破门禁，不等于回到基线读数 |
 | 14 | 窄档（面板 **≤648px**）没有开 / 关分屏的入口 | **已知边界，不修**（R5.1 收纳裁决的直接代价，写法与 #10 同源）。事实依据：`toggleSplit` 在 `src/client/index.tsx` 里的**唯一调用点**就是那个分栏按钮（**R6 订正**：这句话在 R6 之后**仍然成立** —— R6 只把拖拽改比例从 `setSplits` 换成了 `setSplitRatio`，那条路从来不碰开关；菜单与快捷键里都没有第二条路），而 `@container (max-width:620px)` 那条把整个 `.fs-tipwrap` 锚点层 `display:none`。后果：**面板已开着分屏时再把它拖到 ≤648px 就关不掉**（拖宽才回得来），这一档里也开不了新的分屏。不修的理由：门禁（右列被整块裁 ≤360）只能靠减少右列 min-content 过线，而右列每一项都是功能键或状态标记；四条候选里 B 的代价面已压到最小（并进 760 档会把失去入口的区间扩到 ≤788）。 |
-| 15 | ~~切工作区后**同名的相对 path 会被判成「同一个对象」**~~ | ✅ **2026-09-13 已修（B-3）**：`SplitTarget` 加 `curWsId` 字段（开启那一刻的工作区 id，随 `selectWs` 切换变化、刷新不动），`splitSameObj` 判据改为「`frozen.curWsId === curWsId` 且 path 相同」，测试新增 `treats a same-named path in another worktree as a different object (B-3)`（两个工作区各有同名 `packages`，冻结 A 的再切 B 点开 → 右侧仍显示 A 的）。选 `curWsId` 而非 `rootPath` 的理由：它只在 `selectWs` 里变、刷新与树操作都不动它，是「切工作区」这个动作的直接标识；`rootPath` 每次 `refreshRoot` 都会重新赋值（语义上是「当前根」而非「所选工作区」），同一工作区被外部重整路径时还会漂移。**未做**：切工作区后冻结对象数据**在哪个 root 下读取**仍按 `frozen.opened.path` 走（新 root 读同名路径）—— 属另一语义问题，与 B-2 同族，登记在报告「未做/边界」里，本单未动。详见 `docs/agent/reports/2026-09-13-split-freeze-target.md` §7 B-3 与「未做」节 |
+| 15 | ~~切工作区后**同名的相对 path 会被判成「同一个对象」**~~ | ✅ **2026-09-13 已修（B-3）**：`SplitTarget` 加 `curWsId` 字段（开启那一刻的工作区 id，随 `selectWs` 切换变化、刷新不动），`splitSameObj` 判据改为「`frozen.curWsId === curWsId` 且 path 相同」，测试新增 `treats a same-named path in another worktree as a different object (B-3)`（两个工作区各有同名 `packages`，冻结 A 的再切 B 点开 → 右侧仍显示 A 的）。选 `curWsId` 而非 `rootPath` 的理由：它只在 `selectWs` 里变、刷新与树操作都不动它，是「切工作区」这个动作的直接标识；`rootPath` 每次 `refreshRoot` 都会重新赋值（语义上是「当前根」而非「所选工作区」），同一工作区被外部重整路径时还会漂移。**未做**：切工作区后冻结对象数据**在哪个 root 下读取**仍按 `frozen.opened.path` 走（新 root 读同名路径）—— 属另一语义问题，与 B-2 同族，登记在报告「未做/边界」里，本单未动（**A 类修正后已解，见 #16**）。详见 `docs/agent/reports/2026-09-13-split-freeze-target.md` §7 B-3 与「未做」节 |
+| 16 | ~~切工作区后独立支按当前 root 重读同名路径（A-1 邻居问题）；冻结对象被删 / 改名后右侧显示读取失败文本（B-2）~~ | ✅ **2026-09-13 已修（A 类修正，快照方案）**：`SplitPane` 不再调 `useOpenedViewer` 重读 host，改为渲染**开启那一刻从左侧 viewer 拷来的数据快照**（`SplitTarget.snap`，字段 = `FsPane` 查看分支渲染所需的全部数据字段、不含方法；`toggleSplit` 拷，`editMode` 硬 false）。A-1（不依赖当前 root）与 B-2（快照不随对象删除消失）一次解掉，且**消掉独立支原有的 /read**、不新增任何 host 调用；同对象支（复用左侧 viewer、live 跟刷新）一字未动。测试：`…switching worktrees, even when the new root serves a same-named path (A-1)`（mock 把同名 docRel 做成两工作区内容不同，钉「右侧仍是冻结的 A」）+ `…after the frozen object is deleted or renamed (B-2)`（分栏后把该 path 的 /read 改 500，钉「右侧仍显示 # Full、无失败文本、读次数不变」）；B-4 旧断言由「多读一次」改为「读次数保持不变」。**固有代价（新登记边界）**：开启那一刻对象在生成中（文件 `genState !== 'idle'` / 目录 `fold.state === 'generating'`）则右侧把「生成中」定格，左侧生成完右侧也不活、要关掉重开 —— 「冻结那一刻」语义的固有代价，用户场景不触发，不修 |
 
 ## 6. 未做且明确不做的
 

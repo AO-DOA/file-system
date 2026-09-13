@@ -291,3 +291,93 @@ packages。断言左侧显示 `# B pk`、右侧仍显示 `# A pk`（**不**含 `
 **门禁**：typecheck / lint / test（client spec 155 → 156 例）/ coverage / 范围守卫全部复跑通过；
 几何探针与基线逐档 0 差异（本单只改判据与字段，DOM 结构与样式表一字未动）。实测数据见前节与
 PROGRESS.md §1。
+
+---
+
+## 12. A 类修正：独立支改数据快照，不再重读 host（2026-09-13，追加）
+
+**背景**：§7 与 §11 登记的 A-1 / B-2 两条边界被用户裁决要修（任务书 A 类）。主代理定案的修复方案
+（快照，纯 client 侧）：`SplitPane` 不再调 `useOpenedViewer` 去重读 host，而是渲染**开启分栏那一刻
+从 viewer 拷贝的数据快照**。一次解两条：A-1（快照不依赖当前 root）与 B-2（快照不随对象删除消失），
+且**不新增任何 host 调用**（反而消掉独立支原有的 `/read`）。
+
+### 12.1 快照字段清单
+
+`SplitTarget` 新增字段 `snap: SplitSnapshot`。`SplitSnapshot` 是 `Pick<ViewerState, …>`，只含
+`FsPane` **查看分支**渲染所需的全部数据字段，共 8 项：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `hasSource` | `boolean` | 目录 / 文件分支的开关（`fold` 或 `source` 侧） |
+| `fold` | `Fold` | 目录概览（`state` + `content`） |
+| `status` | `string` | 读取失败等状态文本（查看分支 `v.status && !v.source` 时显示） |
+| `genState` | `GenState` | 文件生成状态（`'idle' | 'file' | 'src'`），非 idle 时显示「生成中」 |
+| `docData` | `string \| null` | doc 视图正文 |
+| `annotData` | `string \| null` | annot 视图正文 |
+| `trData` | `string \| null` | tr 视图正文 |
+| `source` | `ReadResponse \| null` | 源码正文（默认视图） |
+
+`mode` 不拷（`frozen.mode` 已另有字段），`editMode` 恒为 false（不经快照）。**快照不携带任何
+方法**：`FsPane` 里调用方法的分支只有 `editMode === true` 的编辑区（`changeEdit`），而右侧
+`editMode` 恒 false，永远走不到 ⇒ 不需要 `setMode` / `save` / `runGen` / `runTranslate` /
+`changeEdit` 等任何方法字段。
+
+### 12.2 取值时机（复制语义）
+
+快照在 `toggleSplit` 里、从**当时在场的左侧 `viewer`** 逐字段拷贝。若开启那一帧 `viewer` 数据仍在
+loading（`source` / `docData` 等为 null），快照原样拷 null —— 渲染显示 loading 即可，**不**造
+「等加载完再快照」的异步逻辑（会引入竞态，且违背「冻结那一刻」的语义）。
+
+### 12.3 改动点
+
+| 处 | 改动 |
+|---|---|
+| `SplitTarget` 接口 | 新增 `snap: SplitSnapshot`（JSDoc 注明 A 类修正） |
+| `SplitSnapshot` 类型 | 新增，`Pick<ViewerState, 8 个数据字段>` |
+| `toggleSplit()` | `setSplitTarget({ …curWsId, snap: { source, docData, annotData, trData, status, fold, genState, hasSource } })` |
+| `SplitPane` | 删 `useOpenedViewer`，体变为纯渲染：`<FsPane opened={frozen.opened} viewer={{ ...frozen.snap, mode: frozen.mode, editMode: false }} />` |
+| `FsView` 注釋 | 数据源两支的描述改为「异对象支渲染快照」；`SplitPane` JSDoc 同步（含只读封死与生成中冻结边界） |
+
+`props.grow` / `.fs-splitpane` 外壳结构、同对象支（复用左侧 viewer、live 跟刷新）、开关、拖拽、
+判据（`frozen.curWsId === curWsId && path` 相同）、只读封死全部一字未动。
+
+### 12.4 新断言（client spec 156 → 158 例）
+
+| 用例 | 钉什么 | 手段 |
+|---|---|---|
+| `keeps showing the frozen content after switching worktrees, even when the new root serves a same-named path (A-1)` | 切工作区后右侧不被新 root 同名路径带跑 | mock 把**同名 docRel**（如两工作区都有 `pk.md`）做成内容不同（`/wa` → `# A pk`，`/wb` → `# B pk`）；切到 wB 后右侧必须仍是 `# A pk`。修复前（重读 host）此处红：右侧被带成 `# B pk` |
+| `keeps showing the frozen snapshot after the frozen object is deleted or renamed (B-2)` | 冻结对象被删 / 改名后右侧仍显示快照，不出失败文本、不新增 host 读 | 打开 full.md → 分栏冻结 → 把该 path 的 `/read` 改成 `{status:500}`（模拟对象没了）→ 左侧切走触发独立支挂载。断言右侧仍 `# Full`、不含 `errReadFail` 文本、`hits('/api/fs/read?path=full.md')` 不变。修复前此处红：右侧显示「读取失败」 |
+| `keeps the frozen object on the right while the left switches objects`（判据 2，**B-4 旧断言改**） | 独立支不再多读一次 host | 旧断言 `hits(...) === frozenReads + 1`（R6 钉「异对象支首次挂载多读一次 host」）改为 `hits(...) === frozenReads`（读次数保持不变），注释同步说明是 A 类修正 |
+
+**验证过测试真的能钉住缺陷**：临时把 `SplitPane` 改回 `useOpenedViewer(frozen.opened, null)`
+形态后，判据 2 与 A-1 / B-2 三条全部红（判据 2：`expected 2 to be 1`；A-1：
+`expected '# B pk' to contain '# A pk'`；B-2：`expected '读取失败: no such file' to contain '# Full'`），
+恢复快照形态后全绿。
+
+### 12.5 为什么不带方法（类型论证）
+
+`FsPane` 的 `viewer` prop 声明为 `ViewerState`，但它的**渲染分支**只消费 10 个字段
+（`hasSource` / `fold` / `status` / `genState` / `mode` / `docData` / `annotData` / `trData` /
+`source` / `editMode`）；唯一消费方法（`changeEdit`）与 `edit` 的分支 `v.editMode` 恒为 false 且右侧
+不开编辑 ⇒ 渲染时 `{ ...frozen.snap, mode: frozen.mode, editMode: false }` 展开后以 `as ViewerState`
+断言，类型上满足 prop，运行时不触碰任何缺失的方法字段。若未来 `FsPane` 新增消费字段，右侧快照
+可能缺 —— 已留注释说明快照字段面等于「当前 FsPane 查看分支渲染面」。
+
+### 12.6 固有代价（新登记边界，不修）
+
+开启那一刻对象若正处于生成中（文件 `genState !== 'idle'`，或目录 `fold.state === 'generating'`），
+右侧快照会把「生成中」定格住 —— 快照后右侧不再有轮询（独立支不再挂 `useOpenedViewer`，也就没有
+`pollTask`），左侧生成完成右侧也不会活过来，要关掉重开。这是「冻结那一刻」语义的固有代价；
+用户场景（先等生成完再开分栏）不会触发。源码注释与 PROGRESS.md §3 边界清单均写明。
+
+### 12.7 实测数据
+
+- **几何**：`node tools/ui-probe/probe.js --tag=snap --wsicon`（→ `/tmp/dsh-ui-probe/out-snap.json`）
+  与 `--tag=snap-sp --wsicon --splitpane`（→ `out-snap-sp.json`），各 3857 档，与 R6 基线
+  `out-split-freeze.json` / `out-split-freeze-sp.json` **逐档逐字段 0 差异**（key 数、布局、每档值
+  全部一致）。DOM 结构未动 ⇒ 几何不该变，实测确实没变。读数：跨列 0 / 同列 0 / 被裁 624 / 右列
+  整块裁 624（下界 339）/ 右列部分裁 777 / 顶栏高恒 `{48}`。
+- **门禁**（`node scripts/verify-stage.mjs --allow '…'`，2026-09-13 实测，完整输出
+  `/tmp/verify-snap.txt`）：范围守卫 **PASS**（5 项全在授权面内）/ typecheck exit 0 无输出 /
+  lint 0 错 0 警告 / `npm test` **19 spec / 603 例**全过（client spec 156 → 158，+2）/
+  coverage **100 × 4** + 分母守卫 **19/19 ✓**。**`build` 未跑**（授权否决）⇒ 页面看不到本单改动。

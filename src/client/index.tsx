@@ -821,13 +821,31 @@ function FsPane(props: FsPaneProps): React.JSX.Element {
  * 工作区后命名空间整体换掉，同名路径不再指向同一对象 —— 同一性判据于是从「只看 path」收紧为
  * 「工作区相同 **且** path 相同」（见 `FsView` 的 `splitSameObj`），钉住「切工作区后右侧仍显示
  * 冻结那一刻那个工作区里的那个对象」。
+ *
+ * `snap`（A 类修正，本注之后加入）是开启那一刻从左侧 `viewer` 拷贝的数据快照：异对象支渲染
+ * 它而不再重读 host，见 {@link SplitSnapshot} 与 {@link SplitPane}。
  */
 interface SplitTarget {
   opened: OpenedNode
   mode: ViewMode
   /** 开启那一刻的工作区 id（`curWsId`，随 `selectWs` 切换而变化、刷新不动）。 */
   curWsId: string
+  /** 开启那一刻从左侧 viewer 拷贝的渲染数据快照（A-1/B-2 修正，见 {@link SplitSnapshot}）。
+   * 异对象支直接渲染它，不再照 `opened.path` 去 `/read` —— 切工作区（新 root 同名路径）与
+   * 冻结对象被删 / 改名都不影响右侧。 */
+  snap: SplitSnapshot
 }
+
+/**
+ * 分栏右侧（异对象支）渲染所需的数据快照（A-1/B-2 修正后引入，取代独立支自己重读 host）。
+ *
+ * 字段 = `FsPane` 查看分支消费的全部数据字段（`hasSource` / `fold` / `status` / `genState` /
+ * `docData` / `annotData` / `trData` / `source`）。`mode` 从 `frozen.mode` 取、`editMode` 恒
+ * 为 `false`，都不进快照。**快照不携带任何方法**：右侧恒走查看分支，`FsPane` 里调用方法的分支
+ * （`editMode === true` 的编辑区）永不触发。
+ */
+type SplitSnapshot = Pick<ViewerState,
+  'source' | 'docData' | 'annotData' | 'trData' | 'status' | 'fold' | 'genState' | 'hasSource'>
 
 /** 分栏比例的初值与上下限。它们是**比例**不是像素阈值——分档阈值全部在样式表的容器查询里。 */
 const SPLIT_RATIO_DEFAULT = 0.5
@@ -843,34 +861,41 @@ interface SplitPaneProps {
 }
 
 /**
- * 右侧窗格（**异对象支**）：自己起一份 `useOpenedViewer`，数据与左侧互不影响。
+ * 右侧窗格（**异对象支**）：渲染**开启那一刻从左侧 viewer 拷来的数据快照**（A 类修正）。
  *
- * **为什么异对象时需要独立的一份数据**：判据「左侧切对象后右侧不动」要求右侧继续显示**冻结的
- * 那个对象**，而左侧那份 viewer 的数据此时已经换成新对象的内容了 —— 共用只在「左右是同一个
- * 对象」那一支成立（`FsView` 里的 `splitSameObj`），那里天然实时（判据「同对象时右侧跟着左侧
- * 刷新」）。**「同一个对象」自 B-3 起还要求工作区相同** —— 切工作区后同名 path 走的是这一支
- * （独立数据源），右侧因此不会跟着跳到新工作区的同名对象上。
+ * **为什么渲染快照而不是自己重读 host**：冻结对象的语义是「右侧显示开启那一刻那个对象的那份
+ * 内容」，但独立支若照 `frozen.opened.path` / `docRel` 再发一次 `/read`，读的是**当前** root
+ * 下的同名路径 —— 切工作区后（新工作区存在同名路径时）会读到新工作区的内容（A-1），对象被删 /
+ * 改名后整次读取失败（B-2）。两种都是往「冻结」里掺进「当前状态」。快照把**渲染所需的数据字段**
+ * 在开启那一刻定格（`toggleSplit` 拷贝），此后右侧与 host、与左侧 viewer 都无关：A-1 / B-2
+ * 一起解掉，且**不新增任何 host 调用**（反而消掉独立支原有的 `/read`）。
  *
  * **为什么做成子组件，而不是在 `FsView` 里条件调 hook**：hooks 规则禁止条件调用 hook，但
  * **条件挂载一个子组件是允许的** —— 于是「只在确实需要独立数据源时才挂载」不需要任何开关变量，
- * 也不会为未开启态造占位对象（那样 `useOpenedViewer` 的 `useEffect` 会按 `opened.path` 逐次
- * 重读 host，甚至反复重载）。挂载时机由父组件的分支决定，卸载时 hook 内的 `aliveRef` 短路
- * 掉所有在途回调，不会把上一个对象的数据写回来。
+ * 也不会为未开启态造占位对象。挂载时机由父组件的分支决定，卸载时不需要清理在途回调（本组件
+ * 不发起任何异步请求，也没有 hook）。
  *
- * **只读在这里封死**：`editMode` 硬为 `false`，`onTrDone` 传 `null`（右侧没有任何生成 /
- * 翻译入口，也就没有回调的去处）。`FsPane` 因此天然只走查看分支：无编辑区、无保存、
- * 无生成入口（那条常驻顶栏只有一份，且它绑的是左侧的 `viewer`）。
+ * **取值时机**：开启那一帧 `viewer` 的数据可能仍在 loading（`source` / `docData` 等为 null）——
+ * 快照原样拷 null，渲染显示 loading 即可，**不**造「等加载完再快照」的异步逻辑（那会引入竞态，
+ * 且违背「冻结那一刻」的语义）。
+ *
+ * **只读在这里封死**：`editMode` 硬为 `false`，快照里也没有任何方法可调。`FsPane` 因此天然只走
+ * 查看分支：无编辑区、无保存、无生成入口（那条常驻顶栏只有一份，且它绑的是左侧的 `viewer`）。
+ *
+ * **已知边界（登记，不修）**：开启那一刻对象若正处于生成中（文件 `genState !== 'idle'`，或目录
+ * `fold.state === 'generating'`），右侧快照会把「生成中」定格住 —— 快照后右侧不再有轮询，左侧
+ * 生成完成右侧也不会活过来，要关掉重开。这是「冻结那一刻」语义的固有代价；用户场景（先等生成
+ * 完再开分栏）不会触发。左侧 viewer 的循环轮询只属于左侧，快照与它再无关系。
  * @param props - 见 {@link SplitPaneProps}。
  * @returns 右侧窗格元素。
  */
 function SplitPane(props: SplitPaneProps): React.JSX.Element {
   const frozen = props.frozen
-  const own = useOpenedViewer(frozen.opened, null)
   return (
     <div className="fs-splitpane" style={{ flexGrow: props.grow }}>
       <FsPane
         opened={frozen.opened}
-        viewer={{ ...own, mode: frozen.mode, editMode: false }}
+        viewer={{ ...frozen.snap, mode: frozen.mode, editMode: false } as ViewerState}
       />
     </div>
   )
@@ -1350,8 +1375,9 @@ function FsView(props: FsViewProps): React.JSX.Element {
   //   * **左右是同一个对象**（`splitSameObj`，即刚点完分栏那段）：右侧沿用**左侧那一份 viewer**，
   //     于是天然实时 —— 左侧重新生成 / 保存后数据字段（source / docData / annotData / trData /
   //     fold）一变，右侧同一帧跟着变。它不是历史快照，右侧没有第二份数据副本。
-  //   * **左侧已切到别的对象**：右侧改由 {@link SplitPane} 自己起一份 `useOpenedViewer`，
-  //     两侧自此互不影响。
+  //   * **左侧已切到别的对象**：右侧改由 {@link SplitPane} 渲染**开启那一刻从左侧 viewer 拷来的
+  //     数据快照**（A-1/B-2 修正，见 `SplitSnapshot`）—— 不再照 `frozen.opened.path` 重读 host，
+  //     切工作区（新 root 同名路径）与冻结对象被删 / 改名都不影响右侧。两侧自此互不影响。
   // 两支都把 `editMode` 硬为 false ⇒ `FsPane` 天然只走查看分支（只读：无编辑区、无保存、
   // 无生成入口；那条顶栏只有一份，且它绑的是左侧的 viewer，右侧根本没有顶栏）。
   //
@@ -1395,11 +1421,29 @@ function FsView(props: FsViewProps): React.JSX.Element {
    * 与**当前视图类型**一起冻结成 {@link SplitTarget}；关闭只把它清空 —— 冻结对象与「按文件的
    * 记录」都不复存在（分栏状态本来就是全局一份）。
    * 没有打开对象时按钮是禁用的，所以这里的 `!opened` 只是防御性兜底。
+   *
+   * **快照在此拷贝（A-1/B-2 修正）**：`viewer` 正在手边，把 `FsPane` 渲染所需的数据字段逐项
+   * 拷进 `snap` —— 右侧异对象支从此只渲染这份快照，不再照 `frozen.opened.path` 重读 host。
+   * 拷贝的是数据字段本身（可能仍为 null，即开启那一帧还在 loading），不拷贝任何方法。
    */
   function toggleSplit(): void {
     if (splitTarget) { setSplitTarget(null); return }
     if (!opened) return
-    setSplitTarget({ opened, mode: viewer.mode, curWsId })
+    setSplitTarget({
+      opened,
+      mode: viewer.mode,
+      curWsId,
+      snap: {
+        source: viewer.source,
+        docData: viewer.docData,
+        annotData: viewer.annotData,
+        trData: viewer.trData,
+        status: viewer.status,
+        fold: viewer.fold,
+        genState: viewer.genState,
+        hasSource: viewer.hasSource,
+      },
+    })
   }
 
   /**

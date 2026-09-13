@@ -2872,6 +2872,8 @@ describe('unsaved-changes guard on page leave (C)', () => {
  *   判据 7（右侧恒只读）→ 判据 1/3 两条里各有 `button` / `.fs-area` 的计数断言
  *   判据 8（切工作区后同名 path 不算同一对象，B-3）→ `treats a same-named path in another worktree as a different object (B-3)`
  *   边界①（左侧对象被清空）→ `keeps the frozen pane after the left object is cleared`
+ *   边界 A-1（切工作区后右侧不被新 root 同名路径带跑）→ `keeps showing the frozen content after switching worktrees…`
+ *   边界 B-2（冻结对象被删 / 改名后右侧仍显示快照）→ `keeps showing the frozen snapshot after the frozen object is deleted…`
  */
 describe('split view: the frozen target (R4 → R6)', () => {
   afterEach(() => { vi.restoreAllMocks() })
@@ -2949,9 +2951,10 @@ describe('split view: the frozen target (R4 → R6)', () => {
     expect(leftText()).toContain('const a = 1')
     expect(rightText()).toContain('# Full')
     expect(rightText()).not.toContain('const a = 1')
-    // 异对象那一支给右侧起了**自己的一份**实例（数据与左侧互不影响）⇒ 冻结对象被重新读了一次；
-    // 若右侧只是「复用左侧 viewer 换个 mode」，这一次读取根本不会发生。
-    expect(hits('/api/fs/read?path=full.md')).toBe(frozenReads + 1)
+    // 异对象那一支渲染的是**开启那一刻拷来的数据快照**（A 类修正），不再重读 host ⇒
+    // 冻结对象的读次数保持不变。R6 时这里是 `frozenReads + 1`（右侧另起独立实例重读一次）；
+    // 快照改造后这个「多读一次」消失了，断言随之收掉。
+    expect(hits('/api/fs/read?path=full.md')).toBe(frozenReads)
   })
 
   it('keeps the frozen pane after the left object is cleared (边界①)', async () => {
@@ -3032,6 +3035,108 @@ describe('split view: the frozen target (R4 → R6)', () => {
     expect(leftText()).toContain('# B pk')
     expect(rightText()).toContain('# A pk')
     expect(rightText()).not.toContain('# B pk')
+  })
+
+  it('keeps showing the frozen content after switching worktrees, even when the new root serves a same-named path (A-1)', async () => {
+    // A-1（邻居问题）：B-3 只保证「不走复用支」，但修复前的独立支仍照 `frozen.opened.path` /
+    // docRel 重读 host，而 host 的 `/read` 按**当前 root** 解析相对路径 —— 切到新工作区后，
+    // 若新工作区存在**同名的 docRel**，右侧会读到**新工作区的内容**而不是冻结那一刻的内容。
+    // 本用例把 mock 做成「同名 docRel 在两个 root 下内容不同」来钉住这条：右侧必须仍是冻结的 A。
+    let root = '/wa'
+    wsSnapshot = {
+      items: [
+        { workspaceId: 'wA', path: '/wa', title: 'WsA' },
+        { workspaceId: 'wB', path: '/wb', title: 'WsB' },
+      ],
+    }
+    const treeWithPk = [
+      { type: 'directory', path: 'packages', name: 'packages', hasDoc: true, docRel: 'pk.md' },
+    ]
+    handler = (url, init) => {
+      if (url.startsWith('/api/fs/set-root')) {
+        const raw = init?.body
+        if (typeof raw === 'string') {
+          const body = JSON.parse(raw) as { path?: string }
+          if (body.path) root = body.path
+        }
+        return { body: { ok: true } }
+      }
+      if (url.startsWith('/api/fs/root')) return { body: { root } }
+      if (url.startsWith('/api/fs/tree?path=.')) {
+        return { body: { path: '.', list: treeWithPk } }
+      }
+      if (url.startsWith('/api/fs/read?path=')) {
+        const target = decodeURIComponent(url.slice('/api/fs/read?path='.length))
+        // 同一个 docRel `pk.md`：wA 下读 A 内容、wB 下读 B 内容 —— 模拟「新工作区存在同名路径
+        // 且内容不同」。修复前独立支按当前 root 重读会拿到 B（bug 可见）；修复后快照里是 A。
+        if (target === 'pk.md') {
+          return root === '/wb'
+            ? { body: { content: '# B pk', ext: 'md', size: 6 } }
+            : { body: { content: '# A pk', ext: 'md', size: 6 } }
+        }
+        return defaultHandler(url)
+      }
+      return defaultHandler(url)
+    }
+    mount({ workspaces: workspacesStub() })
+    await flush()
+    // 在 wA 打开 packages（读 pk.md → '# A pk'），点分栏冻结。
+    await click(byText('.fs-wsbtn', 'wa'))
+    await click(byText('.stub-menu-item', 'WsA' + L('wsItemSep') + '/wa'))
+    await click(row('packages'))
+    expect(leftText()).toContain('# A pk')
+    await click(splitBtn())
+    expect(rightText()).toContain('# A pk')
+    // 切到 wB：左侧 opened 被清空 ⇒ 右侧走 SplitPane 独立支。修复前此刻它重读 pk.md，
+    // 当前 root 已是 /wb ⇒ 读到 '# B pk'（右侧被新 root 的同名路径带跑）；修复后渲染快照，
+    // 仍是 '# A pk'。
+    await click(byText('.fs-wsbtn', 'WsA'))
+    await click(byText('.stub-menu-item', 'WsB' + L('wsItemSep') + '/wb'))
+    expect(rightText()).toContain('# A pk')
+    expect(rightText()).not.toContain('# B pk')
+    // 顺手确认 mock 的区分确实生效（左侧此刻点开同名 packages 读到的是 B）。
+    await click(row('packages'))
+    expect(leftText()).toContain('# B pk')
+    expect(rightText()).toContain('# A pk')
+    expect(rightText()).not.toContain('# B pk')
+  })
+
+  it('keeps showing the frozen snapshot after the frozen object is deleted or renamed (B-2)', async () => {
+    // B-2：冻结对象在左侧被删 / 改名后，修复前的独立支 /read 失败 ⇒ 右侧显示读取失败文本、
+    // 无自动处置；修复后右侧渲染开启那一刻的快照：不再发任何 /read，对象没了也不影响显示。
+    // 做法：打开 full.md → 分栏冻结 → 把 /read 对 full.md 改成 500（模拟对象此刻被删 / 改名）
+    // → 左侧切到 app.ts（触发独立支挂载）。修复前挂载时重读 full.md ⇒ 失败文本；修复后仍 '# Full'。
+    let fullGone = false
+    handler = (url) => {
+      if (url.startsWith('/api/fs/read?path=')) {
+        const target = decodeURIComponent(url.slice('/api/fs/read?path='.length))
+        if (target === 'full.md' && fullGone) {
+          return { status: 500, body: { error: 'no such file' } }
+        }
+        return defaultHandler(url)
+      }
+      return defaultHandler(url)
+    }
+    mount()
+    await flush()
+    await click(row('full.md'))
+    expect(leftText()).toContain('# Full')
+    await click(splitBtn())
+    const frozenReads = hits('/api/fs/read?path=full.md')
+    expect(rightText()).toContain('# Full')
+    // 「对象被删 / 改名」发生在分栏开启之后：此后对 full.md 的任何 /read 都是失败。
+    fullGone = true
+    // 左侧切到别的对象 ⇒ 独立支挂载。修复前它会重读 full.md（失败 ⇒ 读取失败文本）；
+    // 修复后渲染快照，显示冻结内容、不显示失败文本，且不新增任何 /read。
+    await click(row('app.ts'))
+    expect(leftText()).toContain('const a = 1')
+    expect(rightText()).toContain('# Full')
+    expect(rightText()).not.toContain(L('errReadFail'))
+    expect(hits('/api/fs/read?path=full.md')).toBe(frozenReads)
+    // 再切一个对象，右侧依旧不动。
+    await click(row('plain.py'))
+    expect(rightText()).toContain('# Full')
+    expect(rightText()).not.toContain(L('errReadFail'))
   })
 
   it('freezes the view type: left-side view switches never touch the right pane (判据 3 / 7)', async () => {
