@@ -790,7 +790,9 @@ describe('GET /tree', () => {
     for (const layer of ['目录概览', '文件摘要', '源码注解', '文章翻译']) {
       await mkdir(join(bucket, layer), { recursive: true })
     }
-    await writeFile(join(bucket, '目录概览', 'src.md'), '# 概览\n', 'utf8')
+    // 目录概览文档名 = folderDocStem（含父目录层级，与文件层同视角）：根下 src → <工作区名>-src。
+    const folderStem = basename(root) + '-src'
+    await writeFile(join(bucket, '目录概览', folderStem + '.md'), '# 概览\n', 'utf8')
     for (const layer of ['文件摘要', '源码注解', '文章翻译']) {
       await writeFile(join(bucket, layer, 'src-a.md'), '# 文档\n', 'utf8')
     }
@@ -801,9 +803,9 @@ describe('GET /tree', () => {
 
     const out = await call(fsTest, createReq('GET', '/api/fs/tree?path=.'), 'tree')
     const dirNode = nodeOf(out.json as TreeBody, 'src')
-    // 目录节点的 stem 就是目录名（folder-doc 命名），三个「源/译」位恒为 false + 空串
+    // 目录节点的 stem 含父目录层级（folder-doc 命名 = folderDocStem），三个「源/译」位恒为 false + 空串
     expect(dirNode.hasDoc).toBe(true)
-    expect(dirNode.docRel).toBe('@' + projectKey(root) + '/目录概览/src.md')
+    expect(dirNode.docRel).toBe('@' + projectKey(root) + '/目录概览/' + folderStem + '.md')
     expect(dirNode.hasDocSrc).toBe(false)
     expect(dirNode.docSrcRel).toBe('')
     expect(dirNode.hasDocTr).toBe(false)
@@ -844,16 +846,17 @@ describe('GET /tree', () => {
     const root = await newRoot('fs-p3-dual-')
     await mkdir(join(root, 'src'), { recursive: true })
     const ws = basename(root)
-    // 旧库（只读回退）：目录概览/src.md、文件摘要/x.md
+    const folderStem = ws + '-src'
+    // 旧库（只读回退）：目录概览/<ws>-src.md、文件摘要/x.md
     const legacy = join(root, '.book', ws + '-book')
     await mkdir(join(legacy, '目录概览'), { recursive: true })
-    await writeFile(join(legacy, '目录概览', 'src.md'), '# 旧库目录概览\n', 'utf8')
+    await writeFile(join(legacy, '目录概览', folderStem + '.md'), '# 旧库目录概览\n', 'utf8')
     await mkdir(join(legacy, '文件摘要'), { recursive: true })
     await writeFile(join(legacy, '文件摘要', 'x.md'), '# 旧库文件摘要\n', 'utf8')
-    // 新桶：放同名 目录概览/src.md（验证新桶优先读）
+    // 新桶：放同名 目录概览/<ws>-src.md（验证新桶优先读）
     const bucket = join(booksRoot(), projectKey(root))
     await mkdir(join(bucket, '目录概览'), { recursive: true })
-    await writeFile(join(bucket, '目录概览', 'src.md'), '# 新桶目录概览\n', 'utf8')
+    await writeFile(join(bucket, '目录概览', folderStem + '.md'), '# 新桶目录概览\n', 'utf8')
 
     const ctx = createCtx(root)
     apply(ctx)
@@ -865,7 +868,7 @@ describe('GET /tree', () => {
     const srcItem = nodeOf(out.json as TreeBody, 'src')
     expect(srcItem.type).toBe('directory')
     expect(srcItem.hasDoc).toBe(true)
-    expect(srcItem.docRel).toBe('@' + projectKey(root) + '/目录概览/src.md')
+    expect(srcItem.docRel).toBe('@' + projectKey(root) + '/目录概览/' + folderStem + '.md')
 
     // /read 带桶 docRel：按桶段定位（读新桶内容）
     const byRel = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent(srcItem.docRel)), 'read')
@@ -873,7 +876,7 @@ describe('GET /tree', () => {
     expect((byRel.json as ReadBody).content).toBe('# 新桶目录概览\n')
 
     // /read 新桶优先：同名文档读新桶内容
-    const fresh = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/src.md')), 'read')
+    const fresh = await call(fsTest, createReq('GET', '/api/fs/read?path=' + encodeURIComponent('目录概览/' + folderStem + '.md')), 'read')
     expect((fresh.json as ReadBody).content).toBe('# 新桶目录概览\n')
 
     // /read 旧库回退：新桶没有时读旧库内容
@@ -890,12 +893,12 @@ describe('GET /tree', () => {
     await writeFile(join(child, 'README.md'), '# Child\n', 'utf8')
     await mkdir(join(root, 'src'), { recursive: true })
     await writeFile(join(root, 'src', 'b.js'), 'const b = 2\n', 'utf8')
-    // child 桶：目录概览/src.md（child/src 的概览）+ 文件摘要/src-a.md（child/src/a.js 的摘要）
+    // child 桶：目录概览/<child>-src.md（child/src 的概览）+ 文件摘要/src-a.md（child/src/a.js 的摘要）
     const childBucketName = projectKey(child)
     const childBucket = join(booksRoot(), childBucketName)
     await mkdir(join(childBucket, '目录概览'), { recursive: true })
     await mkdir(join(childBucket, '文件摘要'), { recursive: true })
-    await writeFile(join(childBucket, '目录概览', 'src.md'), '# 跨根目录概览\n', 'utf8')
+    await writeFile(join(childBucket, '目录概览', basename(child) + '-src.md'), '# 跨根目录概览\n', 'utf8')
     await writeFile(join(childBucket, '文件摘要', 'src-a.md'), '# 跨根文件摘要\n', 'utf8')
     await writeFile(join(childBucket, 'index.json'), JSON.stringify({
       项目: 'child',
@@ -915,7 +918,7 @@ describe('GET /tree', () => {
     expect(childTree.status).toBe(200)
     const srcDir = nodeOf(childTree.json as TreeBody, 'src')
     expect(srcDir.hasDoc).toBe(true)
-    expect(srcDir.docRel).toBe('@' + childBucketName + '/目录概览/src.md')
+    expect(srcDir.docRel).toBe('@' + childBucketName + '/目录概览/' + basename(child) + '-src.md')
 
     // /tree 浏览 child/src：a.js 的文件摘要命中 child 桶（stem 按 child 根视角推导）
     const srcTree = await call(fsTest, createReq('GET', '/api/fs/tree?path=' + encodeURIComponent('plugins/child/src')), 'tree')
@@ -1358,8 +1361,8 @@ describe('POST /gen-doc', () => {
     expect(task.error).toMatch(/agentLoop/)
     // C 类诊断语上屏（第 3 批）：task.error 逐字取自 ZH.errAgentLoopUnavailable
     expectDictError(task.error)
-    // 任务记录目标文档路径：带桶格式 @<桶>/目录概览/<文件夹名>.md
-    expect(task.docRel).toBe('@' + projectKey(root) + '/目录概览/src.md')
+    // 任务记录目标文档路径：带桶格式 @<桶>/目录概览/<folderDocStem>.md（含父目录层级）
+    expect(task.docRel).toBe('@' + projectKey(root) + '/目录概览/' + basename(root) + '-src.md')
 
     const statusOut = await call(fsTest, createReq('GET', '/api/fs/gen-status?id=' + encodeURIComponent(taskId)), 'gen-status')
     expect(statusOut.status).toBe(200)
@@ -1382,7 +1385,7 @@ describe('POST /gen-doc', () => {
     const out = await pendingCall
     expect((out.json as StartedBody).taskId).toBe(placeholder.id)
     // 占位 → 补 docRel → setImmediate → 200：响应返回时 docRel 已算好（中间无 await 空隙）
-    expect(fsTest.genTasks.get(placeholder.id)?.docRel).toBe('@' + projectKey(root) + '/目录概览/src.md')
+    expect(fsTest.genTasks.get(placeholder.id)?.docRel).toBe('@' + projectKey(root) + '/目录概览/' + basename(root) + '-src.md')
     await waitTaskSettled(fsTest.genTasks, placeholder.id)
   })
 
@@ -1551,7 +1554,8 @@ describe('POST /gen-doc', () => {
     const taskId = (out.json as StartedBody).taskId ?? ''
     const task = fsTest.genTasks.get(taskId)
     expect(task?.rel).toBe('.')
-    expect(task?.docRel).toBe('@' + projectKey(root) + '/目录概览/' + basename(root) + '.md')
+    // 根目录（rel='.'）：folderDocStem 落到 computeDocStem(basename(root)) = '<工作区名>-<工作区名>'
+    expect(task?.docRel).toBe('@' + projectKey(root) + '/目录概览/' + basename(root) + '-' + basename(root) + '.md')
     await waitTaskSettled(fsTest.genTasks, taskId)
   })
 
@@ -1985,7 +1989,8 @@ describe('任务状态机（4 态 / 去重 / sweep 兜底）', () => {
     expect(typeof running.startedAt).toBe('number')
 
     // ③ success：子 agent 写出产物（宿主收尾 verify 通过）→ 置 success + finishedAt 打点
-    const docAbs = join(booksRoot(), projectKey(root), '目录概览', 'src.md')
+    // 产物文件名按当前命名规则 folderDocStem：根下 src → <工作区名>-src。
+    const docAbs = join(booksRoot(), projectKey(root), '目录概览', basename(root) + '-src.md')
     await mkdir(dirname(docAbs), { recursive: true })
     await writeFile(docAbs, '---\n源码路径: x\n层级: 目录\n---\n\n# src\n\n> 该目录放示例源码。\n', 'utf8')
     loop.releaseIdle()

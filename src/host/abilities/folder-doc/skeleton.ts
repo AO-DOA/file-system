@@ -1,6 +1,7 @@
 // L1 目录概览 — 确定性骨架渲染（宿主内置，2026-09-10 去技能化）。
 // 等价 skills/folder-doc/scripts/gen-tree.sh 与 skills/folder-doc/templates/folder.md；
 // 该技能保留仅供会话内人工调用，宿主不再依赖它。
+import { basename } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { ZH } from '../../../shared/locale.ts'
 
@@ -118,15 +119,18 @@ export function renderFolderDocSkeleton({ relPath, name, layer, generatedAt, tre
 }
 
 // 读取目标文件夹第一层并渲染骨架。目标不是可读目录时抛错（路由层已预检，这里是兜底）。
-export async function buildFolderSkeleton({ abs, targetKey, docStem, layer, generatedAt }: FolderSkeletonTarget): Promise<string> {
+// 标题与目录树第一行用 basename(abs)（真实目录名）——注意 docStem 自 2026-09-13 起含父目录
+// 层级（与文件层 computeDocStem 同视角），不能再拿 docStem 当目录名展示。
+export async function buildFolderSkeleton({ abs, targetKey, layer, generatedAt }: FolderSkeletonTarget): Promise<string> {
   const entries = await readdir(abs, { withFileTypes: true }).catch(() => null)
   if (!entries) throw new Error(ZH.errUnreadableDir + abs)
+  const dirName = basename(abs)
   return renderFolderDocSkeleton({
     relPath: targetKey,
-    name: docStem,
+    name: dirName,
     layer,
     generatedAt,
-    tree: renderFolderTree(docStem, entries.map(e => ({ name: e.name, isDirectory: e.isDirectory(), isFile: e.isFile() }))),
+    tree: renderFolderTree(dirName, entries.map(e => ({ name: e.name, isDirectory: e.isDirectory(), isFile: e.isFile() }))),
   })
 }
 

@@ -250,8 +250,16 @@ describe('folder-doc 能力描述符', () => {
     expect(typeof folderDoc.verify).toBe('function')
   })
 
-  it('docStem 取目标文件夹名（basename）', () => {
-    expect(folderDoc.docStem({ abs: join(tmpdir(), 'proj', 'src') })).toBe('src')
+  it('docStem 与文件层 computeDocStem 同视角：含父目录层级，同名目录不同层级不撞车', () => {
+    const root = join(tmpdir(), 'proj')
+    // 顶层目录（无父目录）：工作区名兜底（与文件层 computeDocStem 语义一致）。
+    expect(folderDoc.docStem({ relP: 'src', bookRoot: { projectRoot: root } })).toBe('proj-src')
+    // 多层目录：父目录路径连字符前缀（与文件层同规则）。
+    expect(folderDoc.docStem({ relP: 'a/b', bookRoot: { projectRoot: root } })).toBe('a-b')
+    // 撞车回归：同名目录（packages）在不同父层级下 stem 不同，不再共用一个文档文件。
+    const harness = join('/home/xuepeng/DSH', 'deepseekHARNESS')
+    expect(folderDoc.docStem({ relP: 'native/system/packages', bookRoot: { projectRoot: harness } })).toBe('native-system-packages')
+    expect(folderDoc.docStem({ relP: 'packages', bookRoot: { projectRoot: harness } })).toBe('deepseekHARNESS-packages')
   })
 
   it('skeleton 走 buildFolderSkeleton（真实临时目录）', async () => {
@@ -263,12 +271,16 @@ describe('folder-doc 能力描述符', () => {
     const out = await folderDoc.skeleton({
       abs,
       targetKey: 'ws/doc',
-      docStem: 'doc',
+      docStem: 'parent-doc',
       layer: '目录',
       generatedAt: '2026-09-10 04:00',
     })
     expect(out).toContain('源码路径: ws/doc')
-    expect(out).toContain('└── a.js  # <作用>')
+    // 标题与目录树第一行显示真实目录名（basename），不是含层级的 docStem。
+    expect(out).toContain('# doc')
+    expect(out).toContain('```\ndoc/\n└── a.js  # <作用>\n```')
+    expect(out).not.toContain('# parent-doc')
+    expect(out).not.toContain('parent-doc/')
   })
 
   it('verify：产物不存在（readFile 拒绝回落到空串）→ 抛「产物为空」', async () => {

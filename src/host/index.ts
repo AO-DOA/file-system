@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto'
 import { resolve, dirname, extname, join } from 'node:path'
 import { type IncomingMessage, type ServerResponse } from 'node:http'
 import {
-  normRel, relToSrcKey, computeDocStem, isMdPath, isBookPath, isBookDocRel, resolveIn,
+  normRel, relToSrcKey, computeDocStem, folderDocStem, isMdPath, isBookPath, isBookDocRel, resolveIn,
   bookBucketValid, docRelBookIn, legacyBookDir, booksRoot, GEN_CWD_SEG, READ_LIMIT, genScopeAllow,
   BOOK_REL_LAYERS,
 } from './fs-utils.ts'
@@ -238,7 +238,7 @@ export function apply(ctx: FsHostContext): void {
   }
 
   // 生成/翻译任务的文档逻辑路径（docRel）：一律用能力描述符的 sub 与 docStem 推导，
-  // 与 /tree 下发的 docRel/docSrcRel 同一命名规则（folder → basename，其余 → computeDocStem）。
+  // 与 /tree 下发的 docRel/docSrcRel 同一命名规则（folder → folderDocStem，其余 → computeDocStem）。
   function trDocRelFor(t2: BookTarget): string {
     return docRelBookIn(t2.bookRoot.bucket, TRANSLATE_ABILITY.sub, TRANSLATE_ABILITY.docStem(t2))
   }
@@ -595,8 +595,11 @@ export function apply(ctx: FsHostContext): void {
           // 归属兜底与源同序：bestRootFor（遍历的 roots 即视图条目，返回的就是归属条目）→ 当前根条目。
           const home: BookViewEntry = bestRootFor(nodeAbs, view) || selfHome
           if (e.isDirectory()) {
-            // 目录概览文档名 = 目标文件夹 basename（folder-doc 命名；与根视角无关）。
-            const stem = e.name
+            // 目录概览文档名 = folderDocStem（与 folder-doc 能力 docStem 同函数、与文件层
+            // computeDocStem 同视角：含父目录层级）。旧规则取 basename 导致不同层级同名目录
+            // （如 native/system/packages 与根下 packages）共用同一文档文件，2026-09-13 修复。
+            const relHome = normRel(nodeAbs.slice(home.projectRoot.length)) || '.'
+            const stem = folderDocStem(relHome, home.projectRoot)
             const hasDoc = home.sets['目录概览'].has(stem)
             return {
               name: e.name, type: 'directory', path: nodePath,

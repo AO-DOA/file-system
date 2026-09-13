@@ -28,7 +28,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, readFile, readdir, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { computeDocStem } from '../src/host/fs-utils.ts'
 import type { GenExecutorDeps } from '../src/host/gen-executor.ts'
 
@@ -111,7 +111,8 @@ const TEMPLATE = [
 
 /** 三个真实目标的描述（sub/stem 与各自能力描述符逐字一致）。 */
 const TARGETS: Record<'folder' | 'file' | 'src', TargetSpec> = {
-  folder: { kind: 'folder', rel: 'src', key: 'src', sub: '目录概览', stem: 'src' },
+  // folder 的 stem 现在是 folderDocStem('src', <proj>)=proj-src（与文件层同视角，含工作区名/父层级）。
+  folder: { kind: 'folder', rel: 'src', key: 'src', sub: '目录概览', stem: 'proj-src' },
   file: { kind: 'file', rel: 'src/a.js', key: 'src/a.js', sub: '文件摘要', stem: computeDocStem('src/a.js') },
   src: { kind: 'src', rel: 'src/a.js', key: 'src/a.js', sub: '源码注解', stem: computeDocStem('src/a.js') },
 }
@@ -310,7 +311,7 @@ describe('L1（folder）成功路径', () => {
     const text = promptOf()
     expect(text).toContain('target=' + h.abs)
     expect(text).toContain('docPath=' + h.docAbs)
-    expect(text).toContain('docStem=src')
+    expect(text).toContain('docStem=proj-src')
     expect(text).toContain('srcName=src')
     expect(text).toContain('cwd=' + h.cwd)
     expect(text).toContain('mode=首次')
@@ -351,7 +352,7 @@ describe('L1（folder）成功路径', () => {
     const idx = JSON.parse(await readFile(join(h.bucketDir, 'index.json'), 'utf8')) as {
       目录层: Array<Record<string, string>>
     }
-    expect(idx.目录层).toEqual([{ 源码路径: 'src', 文档: '目录概览/src.md' }])
+    expect(idx.目录层).toEqual([{ 源码路径: 'src', 文档: '目录概览/proj-src.md' }])
   })
 
   it('更新模式：产物已存在时 mode=更新，且 modeHint 走 hostIndex 分支', async () => {
@@ -641,7 +642,9 @@ describe('能力自带钩子的缺席路径（注入假描述符触达）', () =
     layer: '目录',
     scope: 'folder',
     promptFile: 'prompt.md',
-    docStem: (target: { abs: string }): string => basename(target.abs),
+    // 假描述符只覆盖「钩子缺席路径」，docStem 对齐真实 folder docStem（proj-src），
+    // 否则 docAbs 与 h.docAbs（按 TARGETS.folder.stem 算）对不上。
+    docStem: (): string => TARGETS.folder.stem,
   }
 
   it('无 skeleton / 无 skeletonFile / 无 hostIndex：跳过骨架、校验与索引，modeHint 走末支', async () => {

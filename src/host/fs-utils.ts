@@ -67,6 +67,23 @@ export function relToSrcKey(nodePath: string | null | undefined, root: string): 
   return normRel(name + '/' + p)
 }
 
+// 目录层（folder-doc 目录概览）文档 stem：与文件层 computeDocStem 同一「含父目录层级」视角，
+// 避免不同目录同名时互相覆盖（如 deepseekHARNESS/native/system/packages 与 deepseekHARNESS/packages
+// 的 basename 同为 packages——旧规则只取文件夹名，两者落在同一 docAbs，见
+// docs/agent/reports/2026-09-13-folder-doc-stem-collision.md）。
+// 入参 relP 为相对归属根（projectRoot）的节点路径：/tree 目录分支用 normRel(nodeAbs.slice(root.length))，
+// folder-doc 能力用 BookTarget.relP——两处经本函数收敛到与文件层完全相同的命名。
+// 例：native/system/packages（归属根 deepseekHARNESS）→ deepseekHARNESS-native-system-packages 展开为
+// computeDocStem 视角的 native-system-packages；根下 packages → deepseekHARNESS-packages（顶层工作区名兜底）。
+// ⚠ 命名规则联动（改本函数必须三处同步，否则「UI 圆点判定」与「落盘文件名」漂移）：
+//   ① 本函数（目录层 stem 唯一真源）
+//   ② src/host/index.ts /tree 目录分支（hasDoc/docRel 判定）
+//   ③ src/host/abilities/folder-doc/index.ts docStem（写盘文件名）
+// computeDocStem 本身不动：文件层三层（文件摘要/源码注解/文章翻译）历史文档命名依赖它。
+export function folderDocStem(relP: string | null | undefined, root: string): string {
+  return computeDocStem(relToSrcKey(relP, root))
+}
+
 // 文件/源码层文档 stem，复现 file-doc/source-doc 的 computeName：
 // 文件名前缀 = 文件相对工作区根的完整父目录路径（原样保留层级，用 - 连），
 // 顶层（无父目录）用工作区名做前缀。rel 含工作区名前缀（宿主契约）。

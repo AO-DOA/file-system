@@ -400,7 +400,8 @@ it('gen-doc：cwd 固定 books/session、无 subagent 标、工具面收敛、�
   const sec = followupText(captured)
   expect(sec).toMatch(/【模式】首次/)
   // 产物路径由宿主算好落地，不让模型按「命名规则」自行推导
-  expect(sec).toMatch(/产物文档 DOC = \S+目录概览\/src\.md/)
+  // 目录概览文档名 = folderDocStem（根下 src → <工作区名>-src，与文件层同视角）。
+  expect(sec).toMatch(new RegExp('产物文档 DOC = \\S+目录概览/' + basename(root).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-src\\.md'))
   // 骨架由宿主渲染后注入：frontmatter 三行 + 目录树围栏（本目录为空，只有目录名一行）
   expect(sec).toMatch(/源码路径: \S+\/src/)
   expect(sec).toMatch(/层级: 目录/)
@@ -428,10 +429,10 @@ it('gen-doc：产物已存在时自动进入「更新」模式，规范段要求
   const ctx = createCtx(root, captured)
   apply(ctx)
   const { handle } = handleOf(ctx)
-  // 预置产物：模拟该文件夹此前已生成过文档
+  // 预置产物：模拟该文件夹此前已生成过文档（文件名按当前命名规则 folderDocStem：<工作区名>-src）
   const docDir = join(booksRoot(), projectKey(root), '目录概览')
   await mkdir(docDir, { recursive: true })
-  await writeFile(join(docDir, 'src.md'), '---\n源码路径: x\n层级: 目录\n---\n', 'utf8')
+  await writeFile(join(docDir, basename(root) + '-src.md'), '---\n源码路径: x\n层级: 目录\n---\n', 'utf8')
 
   const out = await call(handle, createReq('POST', '/api/fs/gen-doc', { kind: 'folder', path: 'src' }), 'gen-doc')
   expect(out.status).toBe(200)
@@ -870,8 +871,9 @@ it('gen-doc（L1）：成功后宿主写入 index.json「目录层」条目，�
   expect(task.status).toBe('success')
 
   const idx = await readJson(join(booksRoot(), projectKey(root), 'index.json'))
-  // 条目结构对齐 folder-doc.mjs：{'源码路径','文档'}，键为工作区名 + 相对路径
-  expect(idx['目录层']).toEqual([{ '源码路径': basename(root) + '/src', '文档': '目录概览/src.md' }])
+  // 条目结构对齐 folder-doc.mjs：{'源码路径','文档'}，键为工作区名 + 相对路径；
+  // 文档名 = folderDocStem（根下 src → <工作区名>-src）。
+  expect(idx['目录层']).toEqual([{ '源码路径': basename(root) + '/src', '文档': '目录概览/' + basename(root) + '-src.md' }])
   // 其它数组与项目根字段保留（确定性 upsert 不改动它们）
   expect(idx['文件层']).toEqual([])
   expect(idx['源码层']).toEqual([])

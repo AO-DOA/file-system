@@ -14,6 +14,7 @@ import {
   bookDocRelValid,
   booksRoot,
   computeDocStem,
+  folderDocStem,
   docRelBook,
   docRelBookIn,
   docRelPath,
@@ -166,6 +167,28 @@ describe('computeDocStem', () => {
   it('空串与 null 输入保持源语义（parts 为空 → undefined-）', () => {
     expect(computeDocStem('')).toBe('undefined-')
     expect(computeDocStem(null)).toBe('undefined-')
+  })
+})
+
+describe('folderDocStem（目录层 stem，与 computeDocStem 同视角）', () => {
+  it('顶层目录用工作区名做前缀（与文件层语义一致）', () => {
+    expect(folderDocStem('src', join(tmpdir(), 'proj'))).toBe('proj-src')
+    // 根目录（rel='.'）→ relToSrcKey 回退工作区名，computeDocStem 单段语义 → '<工作区名>-<工作区名>'
+    expect(folderDocStem('.', join(tmpdir(), 'proj'))).toBe('proj-proj')
+  })
+
+  it('多层目录用父目录路径连字符前缀', () => {
+    expect(folderDocStem('a/b', join(tmpdir(), 'proj'))).toBe('a-b')
+    expect(folderDocStem('native/system/packages', join('/home/xuepeng/DSH', 'deepseekHARNESS'))).toBe('native-system-packages')
+  })
+
+  it('同名目录不同父层级 → stem 不同（撞车回归：旧规则只取 basename 会共用一个文档文件）', () => {
+    const root = join('/home/xuepeng/DSH', 'deepseekHARNESS')
+    const deep = folderDocStem('native/system/packages', root)
+    const top = folderDocStem('packages', root)
+    expect(deep).not.toBe(top)
+    expect(deep).toBe('native-system-packages')
+    expect(top).toBe('deepseekHARNESS-packages')
   })
 })
 
