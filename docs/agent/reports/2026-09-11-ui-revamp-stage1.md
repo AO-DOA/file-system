@@ -2,7 +2,7 @@
 
 # UI 改造第一段（R3 视图选择器 / R1 解读选择 / 文件树 Tag）交付报告
 
-- 插件：`dsh-plugin-file-system-zc`（工作目录 `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc`）
+- 插件：`dsh-plugin-file-system`（工作目录 `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system`）
 - 基线提交：`d5a852f`（工作树干净起步）
 - 规格：`docs/spec-ui-revamp.md`（R3 / R1 与「其它」三项；不做 R2/R4）
 - 收尾状态：`npm run typecheck` / `npm run lint` / `npm test` / 覆盖率门禁全绿；改动只落在 5 个声明过的文件，未 `git add`/`commit`，未跑 `npm run build`。

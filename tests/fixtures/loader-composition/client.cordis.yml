@@ -7,4 +7,4 @@
   name: '@dsh-test/fs-slots'
 
 - id: fs
-  name: dsh-plugin-file-system-zc/client
+  name: dsh-plugin-file-system/client

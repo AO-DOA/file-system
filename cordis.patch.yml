@@ -1,10 +1,10 @@
-# dsh-plugin-file-system-zc — 文件系统文件查看器 bundle patch 层。
+# dsh-plugin-file-system — 文件系统文件查看器 bundle patch 层。
 #
 # 挂载本行后：host 端注册为 loader 条目（读磁盘 + webServer /api/fs/* 路由），
-# client 端经 exports["./client"] 在 /plugins/dsh-plugin-file-system-zc/client.js 被 web 壳加载，
+# client 端经 exports["./client"] 在 /plugins/dsh-plugin-file-system/client.js 被 web 壳加载，
 # 在对话页签行（conversation.view）渲染「文件系统」页签。
 #
 # `insert` 是必需的：loader patch 以 id 定位配置覆盖，新增行必须用 insert 列表。
 - insert:
     - id: fs
-      name: dsh-plugin-file-system-zc
+      name: dsh-plugin-file-system

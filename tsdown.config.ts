@@ -1,5 +1,5 @@
 /**
- * Browser client bundle for dsh-plugin-file-system-zc.
+ * Browser client bundle for dsh-plugin-file-system.
  *
  * Mirrors the harness client preset (packages/client/tsdown.client.ts) for a
  * tree-outside package: a closure-factory artifact that calls
@@ -13,7 +13,7 @@
  */
 import { defineConfig } from 'tsdown'
 
-const id = 'dsh-plugin-file-system-zc'
+const id = 'dsh-plugin-file-system'
 
 /**
  * Externals answered by the web shell's frozen module table. Everything else

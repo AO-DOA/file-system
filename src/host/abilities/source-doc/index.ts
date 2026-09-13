@@ -1,6 +1,6 @@
 // L3 源码注解 — 能力描述符（宿主内置，2026-09-10 去技能化）。
 // 确定性工作（单元划分 / 骨架渲染 / 行号 / 排版 / frontmatter / 命名 / index.json「源码层」/ 产物自检）
-// 全部由宿主完成，模型只写中文语义；技能 skills/source-doc 保留，仅供会话内人工调用。
+// 全部由宿主完成，模型只写中文语义。
 // 与 L1/L2 的关键差别在骨架体量：L3 骨架 ≈ 源码全文 ×1.5（482 行源码 ≈ 40KB），注入提示词会挤占
 // 上下文、模型也无法分段读——故骨架落盘到子 agent 的 cwd（skeletonFile），模型用 read 分段读、
 // 用 edit 分批填空；产物不由模型写，由宿主收尾解析骨架并构建（hostBuild）。
@@ -50,7 +50,7 @@ export default {
     const text = await readFile(skeletonPath, 'utf8')
     const { units, summary } = parseFilledSkeleton(text)
     // 行号权威源是源码本身（骨架里的 code 仅在缺源码时兼容用）：模型改坏骨架也不至于错位。
-    // split('\n') 与技能脚本一致，行号口径（1 起）不变。
+    // split('\n') 与源码行口径一致，行号口径（1 起）不变。
     const srcLines = (await readFile(abs, 'utf8')).split('\n')
     const { doc, problems } = renderAnnotatedDoc({ units, summary, srcLines, rel: targetKey, layer, generatedAt })
     // 源写 `problems && problems.length > 0`；`problems` 运行时恒为数组（checkHealth 恒返回数组），

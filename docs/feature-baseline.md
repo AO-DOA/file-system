@@ -1,17 +1,11 @@
-# 功能基线总表 — dsh-plugin-file-system → dsh-plugin-file-system-zc
+# 功能基线总表 — dsh-plugin-file-system
 
-> **本文是 P2–P5 的派发依据与「功能不遗失」的验收清单。** 三份分项基线的汇总，不含全文（全文见各分项文件）。
-> 汇总日期：2026-09-11 · 迁移源冻结于 `3a3f89e`
+> **本文是功能不遗失的验收清单。**
+> 汇总日期：2026-09-11
 
-## 1. 分项基线索引
+## 1. 功能点合计（可核对）
 
-| 分项 | 文件 | 规模 | 覆盖 |
-|---|---|---|---|
-| host 侧 | `docs/baseline/host.md` | — | 11 条路由全表、任务状态机 4 态/11 迁移点、四层能力对照、书库模型、副作用 9 类、18 项迁移风险 |
-| client 侧 | `docs/baseline/client.md` | 261 行 | 槽位注册、UI 树与 28 个状态字段、18 项交互、持久化、72 个 i18n key 全清单、10 项不一致 |
-| 契约与构建 | `docs/baseline/contracts.md` | — | package.json 逐字段、装载三件套、build.mjs 输出契约、测试基线 135 例、纯逻辑导出面 25+8+3、lint 配置 |
-
-**功能点合计（可核对）**：路由 11 条 + 能力 4 个 + 状态机 11 迁移点 + 组件/钩子 9 个 + 状态字段 28 个 + 条件分支 15 条 + 交互 18 项 + i18n 72 键 + client 端点 8 个 + 内存缓存 5 组。
+路由 11 条 + 能力 4 个 + 状态机 11 迁移点 + 组件/钩子 9 个 + 状态字段 28 个 + 条件分支 15 条 + 交互 18 项 + i18n 72 键 + client 端点 8 个 + 内存缓存 5 组。
 
 ---
 
@@ -21,22 +15,22 @@
 
 ### 2.1 身份与装载
 
-| 项 | 值 | 出处 |
-|---|---|---|
-| 槽位 key / entry id / order | `conversation.view` / `'fs'` / `12` | `src/client/index.js:766-768` |
-| 槽位 label | 惰性 `() => t('slotLabel')` | `src/client/index.js:769` |
-| host 导出 | `name = 'fs'`；`inject = ['webServer','sandboxPolicy','sessions','agentLoop']` | `src/host/index.js:27-28` |
-| client 导出 | `name = 'fs'`；`inject = ['slots']`；`apply` | `src/client/index.js:24-25,755` |
-| 路由前缀 | `/api/fs`（prefix 语义：`=== p` 或 `startsWith(p + '/')`） | `src/host/index.js:470-478` |
-| patch 行 | `- insert: - id: fs` + `name: <包名>` | `cordis.patch.yml:8-10` |
-| client 产物包装 | `window.__ModuleLoader__.load({ id: "<包名>", factory: (require) => {` | `scripts/build.mjs:55-62` |
-| 测试钩子 | `ctx.__fsTest` **仅** `NODE_ENV === 'test'` 挂载 | `src/host/index.js:482-494` |
+| 项 | 值 |
+|---|---|
+| 槽位 key / entry id / order | `conversation.view` / `'fs'` / `12` |
+| 槽位 label | 惰性 `() => t('slotLabel')` |
+| host 导出 | `name = 'fs'`；`inject = ['webServer','sandboxPolicy','sessions','agentLoop']` |
+| client 导出 | `name = 'fs'`；`inject = ['slots']`；`apply` |
+| 路由前缀 | `/api/fs`（prefix 语义：`=== p` 或 `startsWith(p + '/')`） |
+| patch 行 | `- insert: - id: fs` + `name: <包名>` |
+| client 产物包装 | `window.__ModuleLoader__.load({ id: "<包名>", factory: (require) => {` |
+| 测试钩子 | `ctx.__fsTest` **仅** `NODE_ENV === 'test'` 挂载 |
 
-> **包名替换**：新插件包名为 `dsh-plugin-file-system-zc`，故 `cordis.patch.yml` 的 `name`、`build.mjs` 的 id、`__ModuleLoader__.load` 的 id、`exports` 全部改用新包名；**但槽位 id `fs`、order `12`、路由前缀 `/api/fs` 保持不变**（否则前端页签位置与既有调用方漂移）。
+> **包名**：`cordis.patch.yml` 的 `name`、构建产物的注册 id、`exports` 全部用包名 `dsh-plugin-file-system`；**槽位 id `fs`、order `12`、路由前缀 `/api/fs` 保持不变**（否则前端页签位置与既有调用方漂移）。
 
 ### 2.2 行为契约
 
-- **11 条路由的入参校验、出参形状、错误码**（含 `{ok:false,error}` 形状、`/gen-status` 未命中仍是 HTTP 200、`GET /root|/tree` **无 `ok` 字段**）——逐条对照 `docs/baseline/host.md` §A。
+- **11 条路由的入参校验、出参形状、错误码**（含 `{ok:false,error}` 形状、`/gen-status` 未命中仍是 HTTP 200、`GET /root|/tree` **无 `ok` 字段**）。
 - **任务状态机**：4 态（`pending`/`running`/`success`/`error`）、2 终态、11 个迁移点；去重键（gen 用 `kind+rel`、translate 用 `translate+rel`）；`reused:true` 语义。
 - **超时四口径**：任务 10min（`withTimeout` 竞速 + sweep 兜底）、sweep 阈值 10min、任务记录 TTL 10min、前端轮询上限 5min（首轮延迟 800ms、之后 1500ms）。
 - **上限五项**：body 10MB→413、read 2MB、源文 2MB、语种采样 8192B、任务容量 100、`/gen-status` 列表 20。
@@ -45,8 +39,8 @@
 - **client 侧**：28 个状态字段语义、18 项交互（含「● 未保存」的出现/消失/不清除条件）、localStorage 键 `fs.ui.v1` 与 6 个落盘字段、5 组内存缓存与其失效条件。
 - **i18n**：`ZH` **72 个键**的 key 与**文案值**逐字保留；host 侧 7 处直取 `ZH[key]` 亦保留。
 - **`resolveIn` 越权语义**：越界抛 `statusCode 400`，`abs === root` 合法通过（**含其副作用，见 §4**）。
-- **命名规则三处同步**：`computeDocStem`（`fs-utils.js:77-83`）与 `skills/file-doc/scripts/file-doc.mjs`、`skills/source-doc/scripts/source-annotate.mjs` 的 `computeName`。
-- **相对路径推导层级不变**：`issues.js:21-24`、`prompt-loader.js:26-29`、`gen-executor.js:20-22` 均按「本文件所在目录」推导；`lib/` 与 `dsh/` 同为包根下一级 → 层级不变。**产物目录不得改成更深层级**（如 `dist/lib/`）。
+- **命名规则**：文档命名（docStem）由 `computeDocStem`（`src/host/fs-utils.ts`）计算。
+- **相对路径推导层级不变**：`issues.ts`、`prompt-loader.ts`、`gen-executor.ts` 均按「本文件所在目录」推导；产物目录与包根同为一层 → 层级不变。**产物目录不得改成更深层级**（如 `dist/lib/`）。
 
 ---
 
@@ -83,7 +77,7 @@
 | G-8 | sweep 无定时器，孤立 `running` 任务兜底可能永不触发 | `src/host/index.js:52-54,290,328` | 依赖 `withTimeout` 与前端 5min 上限收尾 |
 | G-9 | 任务表为进程内 `Map`，重启即丢 | `src/host/index.js:37` | 前端收到 `task not found` |
 | G-10 | 未消费 `conversation.view` owner props（`viewRequest`/`openView`/`completeViewRequest`） | `src/client/index.js:770` | 不参与 View 焦点协议 |
-| G-11 | `AGENTS.md` §6 冒烟第 2 条「悬停可打开」在代码中无对应实现 | 文档与代码不符 | 迁移后应更新该文档表述，而非造一个实现 |
+| G-11 | 「悬停可打开」在代码中无对应实现（蓝点与树节点实为点击打开） | 文档与代码不符 | 更新文档表述，而非造一个实现 |
 | G-12 | `CodeBlock` 的 `copyLabel`/`copiedLabel` 自上游 0.1.5 起为必填，而源只传 `{code, lang}`（纯 JS 无类型检查故从未暴露） | 源 `src/client/index.js:110`；迁移版 `src/client/index.tsx:276-289`（`CodeBlockCall` 类型窄化） | 按 D-8/D-9 逐字保留：**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到源实现真正传递的两个字段，运行时调用与源一致 |
 
 **可按 D-8 例外删除的死代码**（无任何引用，删除不改行为）：`cardDismissed`/`setCardDismissed`、`genStatus`、`picker`、4 个无 JS 引用的 CSS 类（`.fs-card-actions`/`.fs-card-src`/`.fs-card-err`/`.fs-folder-gen`）、`docRelPath`（仅测试用）。
@@ -94,35 +88,9 @@
 
 ---
 
-## 5. 迁移映射表（P2–P5 派发依据）
-
-> **本表是迁移映射（旧仓 → 本仓），不是本仓现状清单**：`迁移前文件` 列的行数与该列的 `.js`/`.jsx` 路径**全部指旧仓 `dsh-plugin-file-system`**（冻结于 commit `3a3f89e`）；本仓 `src/` 已全部为 `.ts`/`.tsx`，无任何 `.js`/`.jsx` 残留。
-
-| 迁移前文件（旧仓 dsh-plugin-file-system） | 行数 | 目标 | 阶段 |
-|---|---|---|---|
-| `src/host/fs-utils.js` | 238 | `src/host/fs-utils.ts` | P2 |
-| `src/host/book-store.js` | — | `src/host/book-store.ts` | P2 |
-| `src/host/book-index.js` | — | `src/host/book-index.ts` | P2 |
-| `src/host/issues.js` | — | `src/host/issues.ts` | P2 |
-| `src/host/task-utils.js` | — | `src/host/task-utils.ts` | P2 |
-| `src/host/prompt-loader.js` | — | `src/host/prompt-loader.ts` | P2 |
-| `src/host/abilities/**` | 4 能力 | `src/host/abilities/**`（描述符/skeleton/doc-render 转 TS；`prompt.md` **原样保留**） | P2 |
-| `src/host/gen-executor.js` / `translate-executor.js` | — | `.ts` | P3 |
-| `src/host/index.js` | 494 | `src/host/index.ts` | P3 |
-| `src/client/md-utils.js` | 83 | `src/client/md-utils.ts` | P4 |
-| `src/client/index.js` | 771 | `src/client/index.tsx` | P4 |
-| `src/shared/locale.js` | 100 | `src/shared/locale.ts` | P2 |
-| `tests/*.js`（8 文件 135 例） | 2446 | `tests/*.spec.ts` | P5 |
-| `skills/`（13 文件 1632 行） | — | **原样保留**（非 JS 产物，随包分发） | — |
-
-**迁移原则**：只换语言与类型，**不拆分文件、不重命名导出、不调整内部结构**；文件行数应大致相当。任何结构性改动单独开账目。
-
----
-
-## 6. 未决事项
+## 5. 未决事项
 
 | # | 事项 | 归属 |
 |---|---|---|
-| 1 | patch 行 id 是否沿用 `fs`（旧插件卸载后无冲突） | P1-B 决定 |
+| 1 | patch 行 id 是否沿用 `fs` | P1-B 决定 |
 | 2 | client 是否改用 `.tsx` + JSX（主仓风格）还是保留 `React.createElement` | P4 决定 |
-| 3 | 插件显示名与 README 品牌表述（`preset.yml` 的「文件系统」是否沿用） | P6 决定 |

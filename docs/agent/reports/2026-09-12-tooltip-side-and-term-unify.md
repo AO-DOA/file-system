@@ -1,7 +1,7 @@
 # 顶栏气泡方向 / 文案缩短 / 术语统一「分栏」/ 悬停延迟 — 实施报告
 
 > 日期：2026-09-12（实测 00:46–00:55）
-> 仓库：`/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc`，基线 HEAD `cb9a5cd`（工作树干净）
+> 仓库：`/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system`，基线 HEAD `cb9a5cd`（工作树干净）
 > 状态：**四件事全部落地，均在工作树、未提交**（用户约束：不许 `git add/commit`；未 build；未重启 `dsh web`）
 > 任务书原文（授权记录）：`<WS>/agent/sessions/session-927b055f-e595-44c2-aacb-d2de7145c227/briefs/2026-09-12-tooltip-side-and-term-unify.md`
 

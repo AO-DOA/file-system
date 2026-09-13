@@ -1,6 +1,5 @@
 // L1 目录概览 — 确定性骨架渲染（宿主内置，2026-09-10 去技能化）。
-// 等价 skills/folder-doc/scripts/gen-tree.sh 与 skills/folder-doc/templates/folder.md；
-// 该技能保留仅供会话内人工调用，宿主不再依赖它。
+// 目录树与模板渲染全部由宿主内置实现，不依赖外部技能目录。
 import { basename } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { ZH } from '../../../shared/locale.ts'
@@ -79,7 +78,7 @@ export function renderFolderTree(dirName: string, entries?: readonly (FolderTree
   return lines.join('\n')
 }
 
-// 渲染 L1 骨架（等价 skills/folder-doc/templates/folder.md）：frontmatter 三行、标题、
+// 渲染 L1 骨架：frontmatter 三行、标题、
 // 路径、目录树围栏由宿主写死，三处语义占位留给模型替换（占位文本也是收尾校验的判据）。
 export function renderFolderDocSkeleton({ relPath, name, layer, generatedAt, tree }: FolderDocSkeletonInput): string {
   return [

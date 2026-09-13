@@ -1,11 +1,10 @@
 // L3 源码注解 — 产物侧确定性逻辑（宿主内置，2026-09-10 去技能化）。
 // 本文件职责：解析模型填好的骨架、按源码真实行号取码、排版成逐行注解正文、做落盘前的
 // 健康自检，并拼出产物 Markdown（模型不写 DOC，产物由宿主 finalize 落盘）。
-// 迁自 skills/source-doc/scripts/source-annotate.mjs 的 parseSkeleton() / langOf() /
-// LANG_BY_EXT / checkHealth() 与 build 段的取码、排版、产物渲染，逻辑与文案逐字等价；
+// 原由独立技能脚本实现，2026-09-10 迁入宿主，逻辑与文案逐字等价；
 // 差异仅两处，均为宿主装配所需：① checkHealth 返回问题描述数组而不写 stderr 退出进程
 // （由调用方决定失败方式）；② 产物文本渲染与落盘解耦，frontmatter 的「层级」「生成时间」
-// 由调用方传入（脚本里写死为「源码」与当前时刻）。该技能与脚本保留，仅供会话内人工调用。
+// 由调用方传入（原先写死为「源码」与当前时刻）。
 // 只依赖 Node 内置模块与共享文案字典（第 3 批 C 类字典化后，诊断文案取自 src/shared/locale.ts）。
 import { ZH } from '../../../shared/locale.ts'
 

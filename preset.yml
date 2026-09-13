@@ -1,3 +1,0 @@
-name: 文件系统
-description: 文件系统（file-system）Agent 预设：随包携带并复用文件系统三个生成技能 folder-doc / file-doc / source-doc（目录层 / 文件层 / 源码层），由插件包 dsh-plugin-file-system-zc 作为载体分发。
-order: 5

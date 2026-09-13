@@ -1,4 +1,4 @@
-// dsh-plugin-file-system-zc — 书库定位（Host 侧基础设施）。
+// dsh-plugin-file-system — 书库定位（Host 侧基础设施）。
 // 从 index.ts 的 apply 闭包抽出：已知项目根注册表、最近根定向、桶目录幂等创建、
 // /tree 文档集合缓存。只依赖 node fs 与 fs-utils 的通用纯逻辑，不 import index.ts，
 // 也不感知具体能力（能力描述符另见 abilities/registry.ts，本模块不 import 它）。

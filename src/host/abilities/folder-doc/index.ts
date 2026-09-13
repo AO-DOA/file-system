@@ -1,6 +1,6 @@
 // L1 目录概览 — 能力描述符（宿主内置，2026-09-10 去技能化）。
 // 确定性工作（frontmatter / 命名 / 第一层目录树 / index.json「目录层」）全部由宿主完成；
-// 模型只读子文件、填三处语义后整篇写回。技能 skills/folder-doc 保留，仅供会话内人工调用。
+// 模型只读子文件、填三处语义后整篇写回。
 import { readFile } from 'node:fs/promises'
 import { buildFolderSkeleton, folderPlaceholderLeft } from './skeleton.ts'
 import { folderDocStem } from '../../fs-utils.ts'

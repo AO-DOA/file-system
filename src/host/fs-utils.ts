@@ -1,4 +1,4 @@
-// dsh-plugin-file-system-zc — Host 侧纯工具函数。
+// dsh-plugin-file-system — Host 侧纯工具函数。
 // 这些函数不依赖 DSH ctx，便于单元测试；宿主入口 lib/host/index.js 直接 import 使用。
 import { resolve, basename, extname, join } from 'node:path'
 import { homedir } from 'node:os'
@@ -88,10 +88,7 @@ export function folderDocStem(relP: string | null | undefined, root: string): st
 // 文件名前缀 = 文件相对工作区根的完整父目录路径（原样保留层级，用 - 连），
 // 顶层（无父目录）用工作区名做前缀。rel 含工作区名前缀（宿主契约）。
 // 例：ws/src/client/index.js → src-client-index；ws/README.md → ws-README。
-// ⚠ 命名规则三处实现，改动必须三处同步，否则宿主 hasDoc 判定与技能落盘文件名漂移：
-//   ① 本函数（src/host/fs-utils.js computeDocStem）
-//   ② skills/file-doc/scripts/file-doc.mjs computeName
-//   ③ skills/source-doc/scripts/source-annotate.mjs computeName
+// ⚠ 命名规则唯一真源：文件/源码层文档 stem 只此一处实现，改动即全部影响面。
 export function computeDocStem(rel: string | null | undefined): string {
   const parts = String(rel || '').split('/').filter(Boolean)   // [工作区名, ...父目录, 文件名]
   const relParents = parts.slice(1, -1)

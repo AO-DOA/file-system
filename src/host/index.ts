@@ -1,4 +1,4 @@
-// dsh-plugin-file-system-zc — Host half.
+// dsh-plugin-file-system — Host half.
 // 文件系统：宿主(Node)侧直接用 node fs 读写删文件，经 webServer.register
 // 暴露 /api/fs/* HTTP 路由，浏览器 client 用 fetch 调用（不依赖 host builtin）。
 // 这样打包插件形态下也能持久常驻并对宿主文件做查看/编辑/删除。

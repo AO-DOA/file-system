@@ -1,4 +1,4 @@
-# P1 骨架执行规格 — dsh-plugin-file-system-zc
+# P1 骨架执行规格 — dsh-plugin-file-system
 
 > 本文件是 P1 阶段（T-10 ~ T-16）的**派发依据**。子智能体按此实施；主智能体按「验收标准」验收。
 > 制定日期：2026-09-11。依据的官方锚点见 §2，全部经本机 checkout 实测。
@@ -49,16 +49,16 @@ tsconfig.tests.json    tests 面：extends host、noEmit、rootDir "."、include
 - host：`tsc -b tsconfig.host.json` → `lib/`
 - client：`tsdown`（对齐 `<checkout>/packages/client/tsdown.client.ts`）→ `client/client.js`
 - 产出**不入库**（`.gitignore` 含 `lib/`、`client/`），与主仓「源平面 vs 产物平面不混」（`AGENTS.md:120`）一致
-- **构建后必须自检**：产物头部前缀为 `window.__ModuleLoader__.load({ id: "dsh-plugin-file-system-zc", factory: (require) => {`，否则视为构建失败
+- **构建后必须自检**：产物头部前缀为 `window.__ModuleLoader__.load({ id: "dsh-plugin-file-system", factory: (require) => {`，否则视为构建失败
 
 ### 3.3 包契约
 
 ```
-name: dsh-plugin-file-system-zc      （非 scoped，见 P1 决策 D-1）
+name: dsh-plugin-file-system      （非 scoped，见 P1 决策 D-1）
 type: module
 main: lib/host/index.js
 exports: "." → lib/host/index.js；"./client" → client/client.js；"./package.json"
-files: lib, client, src, cordis.patch.yml, agent.cordis.yml, preset.yml, README.md, LICENSE
+files: lib, client, src, cordis.patch.yml, README.md, LICENSE
 dsh.bundle.patch: ./cordis.patch.yml
 dsh.client.platform: web
 engines.node: >=22.19
@@ -86,15 +86,14 @@ engines.node: >=22.19
 5. `npm run test:coverage` 的 per-file 100%（含分支）门槛**已配置**（此阶段无源码可覆盖，允许显式豁免并在台账记账，P2 起生效）
 6. 提交信息 `feat(scaffold): ...`
 
-**禁止**：写任何业务逻辑；改迁移源；提交 `lib/`、`client/` 产物。
+**禁止**：写任何业务逻辑；提交 `lib/`、`client/` 产物。
 
 ### P1-B 装载与挂载（子任务 2）
 
 **目标**：骨架能过**真 Loader** 挂载（这是现插件待办 #19 在迁移版的正面解决）。
 
 **产出**：
-- `cordis.patch.yml`（`- insert: - id: <稳定id> / name: 'dsh-plugin-file-system-zc'`）
-- `agent.cordis.yml`、`preset.yml`（按迁移源 T-03 基线搬，路径引用改新包）
+- `cordis.patch.yml`（`- insert: - id: <稳定id> / name: 'dsh-plugin-file-system'`）
 - host 桩注册一个占位路由 + client 桩注册 conversation.view 槽（id `fs`，order 12）
 - `tests/real-composition.spec.ts`：boot test-only `cordis.yml` 过真 Loader，断言插件被挂载
 

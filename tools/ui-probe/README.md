@@ -248,7 +248,7 @@ node tools/ui-probe/probe.js --tag=d400 --dumpW=400
 
 | id | 工作区名 | 中列 | 右列 | 用途 |
 |---|---|---|---|---|
-| `S0-empty` | 中（`dsh-plugin-file-system-zc`） | 无 | 只有分栏按钮（没有打开对象 ⇒ 视图选择器不渲染） | 最空形态；基线在面板 200–209 有 10 档右列部分裁切 —— 分栏让位档（620）落地后**归零**（那 10 档整个按钮都收起了） |
+| `S0-empty` | 中（`dsh-plugin-file-system`） | 无 | 只有分栏按钮（没有打开对象 ⇒ 视图选择器不渲染） | 最空形态；基线在面板 200–209 有 10 档右列部分裁切 —— 分栏让位档（620）落地后**归零**（那 10 档整个按钮都收起了） |
 | `S1-source` | 中 | 中路径 | 视图「源码」+ 解读选择 + 未保存 + 保存（合并按钮） | 主力场景 |
 | `S2-trlong` | **长** | 长路径 | 视图「文章翻译」+ 重新翻译 + 未保存 + 保存（合并按钮） | 最坏场景之一，下界通常由它决定 |
 | `S3-dir` | 中 | 中路径 | 视图「目录概览」+ 解读选择 | 右列最简，用来对照 |
@@ -256,7 +256,7 @@ node tools/ui-probe/probe.js --tag=d400 --dumpW=400
 | `S5-short` | 短（`dsh-fs`） | 短路径 | 视图「源码」+ 解读选择 + 编辑（合并按钮，无 `dirty`） | 其它维度的最短组合 |
 | `S6-wsxlong` | **超长**（89 字符） | 同 S2 | 同 S2 | 补实测：超长名不会进一步抬高下界（`max-width:220px` 钳制） |
 
-- 路径三档：`src/index.tsx`（短）/ `dsh-plugin-file-system-zc/src/client/index.tsx`（中）/
+- 路径三档：`src/index.tsx`（短）/ `dsh-plugin-file-system/src/client/index.tsx`（中）/
   `deepseekHARNESS/packages/client/ui-primitives/src/components/very/deep/nested/folder/with-a-really-long-file-name.module.tsx`（长）。
 - **S6 的名称长度按实测记：`String.length === 89`**。第三段 a 报告与派单书写「79 字符」，与实测
   不符（差 10），此处按实测值记；两个数的口径差异未核实（不排除当时只数了前半段）。

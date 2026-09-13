@@ -127,13 +127,13 @@ const ICON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-h
 const iconSpan = `<span class="vp-icon">${ICON}</span>`
 const WS = {
   short: 'dsh-fs',
-  mid: 'dsh-plugin-file-system-zc',
-  long: 'dsh-plugin-file-system-zc-超长工作区名称压力测试-0123456789',
-  xlong: 'dsh-plugin-file-system-zc-更长的超长工作区名称压力测试-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789-abcdefghij',
+  mid: 'dsh-plugin-file-system',
+  long: 'dsh-plugin-file-system-超长工作区名称压力测试-0123456789',
+  xlong: 'dsh-plugin-file-system-更长的超长工作区名称压力测试-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789-abcdefghij',
 }
 const PATHS = {
   short: 'src/index.tsx',
-  mid: 'dsh-plugin-file-system-zc/src/client/index.tsx',
+  mid: 'dsh-plugin-file-system/src/client/index.tsx',
   long: 'deepseekHARNESS/packages/client/ui-primitives/src/components/very/deep/nested/folder/with-a-really-long-file-name.module.tsx',
 }
 

@@ -1,9 +1,8 @@
 // L3 源码注解 — 确定性骨架渲染（宿主内置，2026-09-10 去技能化）。
 // 本文件职责：把目标源码切分成「可注解单元」并渲染成一张填空题骨架（模型只写中文语义，
 // 行号、代码原文、排版、产物与自检全由宿主保证）。
-// 迁自 skills/source-doc/scripts/source-annotate.mjs 的 buildUnits() + renderSkeleton()
-// 与 skeleton 命令入口，逻辑与文案逐字等价，仅把 CLI 形态换成可 import 的纯函数。
-// 该技能与脚本保留，仅供会话内人工调用；宿主不再依赖它。只依赖 Node 内置模块。
+// 原由独立技能脚本实现，2026-09-10 迁入宿主成为纯函数，逻辑与文案逐字等价，
+// 仅把 CLI 形态换成可 import 的模块。只依赖 Node 内置模块。
 import { readFile } from 'node:fs/promises'
 import { ZH } from '../../../shared/locale.ts'
 

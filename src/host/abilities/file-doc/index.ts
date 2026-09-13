@@ -1,6 +1,6 @@
 // L2 文件摘要 — 能力描述符（宿主内置，2026-09-10 去技能化）。
 // 确定性工作（frontmatter / 命名 / 骨架结构 / index.json「文件层」）由宿主完成；
-// 模型读目标文件 + 检索引用关系后写五段正文。技能 skills/file-doc 保留，仅供会话内人工调用。
+// 模型读目标文件 + 检索引用关系后写五段正文。
 import { basename } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { computeDocStem } from '../../fs-utils.ts'

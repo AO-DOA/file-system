@@ -1,14 +1,13 @@
-# dsh-plugin-file-system-zc — 文件系统（DSH 打包插件）
+# dsh-plugin-file-system — 文件系统（DSH 打包插件）
 
-DSH 打包插件（bundle）：为 DSH web 装载「文件」页签（插件名 `dsh-plugin-file-system-zc`）——浏览工作区文件、查看与编辑文件，
+DSH 打包插件（bundle）：为 DSH web 装载「文件」页签（插件名 `dsh-plugin-file-system`）——浏览工作区文件、查看与编辑文件，
 并为项目生成与阅读**四层书库文档**（目录概览 / 文件摘要 / 源码注解 / 文章翻译）；
 全部文档集中存放于 `$DSH_HOME/books/`，跨工作区共享。
 
-本仓是 `dsh-plugin-file-system` 的主仓模式重写版：行为契约保持一致，工程栈改为
-TypeScript（strict）+ vitest/jsdom + tsdown，覆盖率按 per-file 100% 要求。重写已完成并上线运行，
-真实路由、四层能力与页签界面均已交付（见「实现进度」）。
+本插件以 TypeScript（strict）+ vitest/jsdom + tsdown 实现，覆盖率按 per-file 100% 要求。
+真实路由、四层能力与页签界面均已交付并上线运行（见「实现进度」）。
 
-**安全加固（相对上一版唯一的有意差异）**：`POST /api/fs/delete` 两条通往「递归删除整个工作区根」的路径均已封死，详见「安全提示」。
+**安全加固**：`POST /api/fs/delete` 两条通往「递归删除整个工作区根」的路径均已封死，详见「安全提示」。
 
 ## 目录
 
@@ -27,11 +26,11 @@ TypeScript（strict）+ vitest/jsdom + tsdown，覆盖率按 per-file 100% 要�
 
 profile 是安装单位，本插件声明 `dsh.bundle.patch`（`cordis.patch.yml`），由 profile 引用后插入 cordis 行。
 
-1. profile 的 `package.json` 依赖加 `"dsh-plugin-file-system-zc": "link:<本插件目录>"`；
-2. 同一个 `package.json` 的 `dsh.profile.bundles` 加 `dsh-plugin-file-system-zc`；
+1. profile 的 `package.json` 依赖加 `"dsh-plugin-file-system": "link:<本插件目录>"`；
+2. 同一个 `package.json` 的 `dsh.profile.bundles` 加 `dsh-plugin-file-system`；
 3. 重启 dsh web。
 
-插件自身的 `cordis.patch.yml` 已插入 cordis 行（`- insert: - id: fs` + `name: dsh-plugin-file-system-zc`），
+插件自身的 `cordis.patch.yml` 已插入 cordis 行（`- insert: - id: fs` + `name: dsh-plugin-file-system`），
 profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 profile 可跳过本节。
 
 ## 功能
@@ -67,15 +66,12 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 - **翻译要求**：符合原文——不增删内容、不改义；特殊名词（专有名词/技术术语/产品名/API/命令/包名）
   首次出现保留原文并就地写 `原文（中文解释）`（如 `CRLF（回车换行）`），再次出现直接用原文；
   代码块、行内代码、路径、URL 保留原文不翻译。
-- **随包技能**：插件同时兼作 agent 预设，随包分发 `folder-doc`（L1）/ `file-doc`（L2）/
-  `source-doc`（L3）/ `translate-doc`（文章翻译）/ `session-review`（复盘评分）五个技能，
-  经 `agent.cordis.yml` 的 `customSkillDirs` 挂载，可在任意会话中复用。
 
 ## 安全提示
 
-**已加固（相对上一版唯一的有意差异）**：`POST /api/fs/delete` 曾存在两条通往「递归删除整个工作区根」的路径，现已各加一道闸门。
+**已加固**：`POST /api/fs/delete` 曾存在两条通往「递归删除整个工作区根」的路径，现已各加一道闸门。
 
-| 情形 | 上一版行为 | 现在 |
+| 情形 | 加固前行为 | 现在 |
 |---|---|---|
 | 缺少 `path`（或非字符串 / 空串） | `abs === root` 从越权检查里通过 → `rm(root, {recursive, force})`，**整个工作区根连同内容被删**，返回 200 | 400 `path required` |
 | `path` 合法但解析回工作区根（`'.'`、`'./'`、`'sub/..'`） | 同上（200，全损） | 400 `refusing to delete the workspace root` |
@@ -86,11 +82,11 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 
 **影响面**：`/mkdir`、`/delete` 没有任何前端调用；`/write` 有一处（源码保存），其 `path` 恒非空 ⇒ **页签界面行为零变化**。改动只影响直接向这三条路由发请求的脚本与集成。
 
-> 这是本项目**唯一**有意偏离「与上一版行为等价」的地方。决策、运行时证据与逐条差异见 [`PROGRESS.md`](PROGRESS.md) 与 [`docs/feature-baseline.md`](docs/feature-baseline.md) 的 G-1 登记。
+> 这是本项目**唯一**有意的行为差异。决策、运行时证据与逐条差异见 [`PROGRESS.md`](PROGRESS.md) 与 [`docs/feature-baseline.md`](docs/feature-baseline.md) 的 G-1 登记。
 
 ## 已知行为
 
-以下条目同样从上一版逐字保留，属行为等价的组成部分，按迁移决策本轮不修；逐条出处见
+以下条目为已知缺陷登记，本轮不修；逐条出处见
 [`docs/feature-baseline.md`](docs/feature-baseline.md) §4「已知行为与缺陷登记」（编号 G-1~G-12，G-1 见上节）。
 
 - **`gen-doc` 的 kind 白名单过宽**（G-2）：`{kind:'translate', path:'<非 md>'}` 会被接受。
@@ -102,15 +98,13 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 - **sweep 无定时器**（G-8）：孤立的 `running` 任务兜底可能永不触发，收尾依赖任务超时与前端 5 分钟上限。
 - **任务表是进程内 Map**（G-9）：宿主重启即丢，前端随后收到 `task not found`。
 - **未消费 View 焦点协议**（G-10）：`conversation.view` 的 owner props（`viewRequest`/`openView`/`completeViewRequest`）未被使用。
-- **「悬停可打开」无对应实现**（G-11）：源仓 `AGENTS.md` §6 冒烟第 2 条的这一表述与代码不符——蓝点与树节点实为**点击**打开（`onOpen` 挂在节点行与蓝点的 `onClick` 上）；按迁移决策更新文档表述，而非为它造一个实现（本文件「功能」表原写的「悬停可直接打开」已据此订正为「点击」）。
-- **`CodeBlock` 的 `copyLabel`/`copiedLabel` 未传**（G-12）：这两字段自上游 primitives 0.1.5 起为必填，而源插件只传 `{code, lang}`（纯 JS 无类型检查，故从未暴露）；按 D-8/D-9 逐字保留——**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到源真正传递的两个字段，运行时调用与源一致。
+- **「悬停可打开」无对应实现**（G-11）：蓝点与树节点实为**点击**打开（`onOpen` 挂在节点行与蓝点的 `onClick` 上），文档原写的「悬停可直接打开」与实际不符——按既定决策订正文档表述为「点击」，而非为它造一个实现。
+- **`CodeBlock` 的 `copyLabel`/`copiedLabel` 未传**（G-12）：这两字段自上游 primitives 0.1.5 起为必填，而原实现只传 `{code, lang}`（纯 JS 无类型检查，故从未暴露）；按 D-8/D-9 逐字保留——**不补** `t('mdCopy')`（补值会改变高亮区复制按钮的可见文案，属行为变化），仅在类型层窄化到原实现真正传递的两个字段，运行时调用与之一致。
 
-其中 G-6、G-7 属资源泄漏：按迁移决策（D-8 例外 b）它们是「可经例外修正、但**本次迁移决定不修**」的泄漏，与源逐字保留——`pollTask` 无 `clearTimeout`、拖拽 `document` 监听无 cleanup，仅靠 `aliveRef` 短路达到可观察等价（`src/client/index.tsx:538-539` 注释明写「不新增清理」；该口径登记于 `docs/feature-baseline.md` §4 与交付摘要）。其余条目保持原样。
+其中 G-6、G-7 属资源泄漏：按 D-8 例外 b，它们是「可经例外修正、但**本轮决定不修**」的泄漏，逐字保留——`pollTask` 无 `clearTimeout`、拖拽 `document` 监听无 cleanup，仅靠 `aliveRef` 短路达到可观察等价（`src/client/index.tsx:538-539` 注释明写「不新增清理」；该口径登记于 `docs/feature-baseline.md` §4）。其余条目保持原样。
 
 ## 模型可见面
 
-- **随包技能**：五个技能经 `agent.cordis.yml` 的 `customSkillDirs` 注册进该预设层的技能表，
-  在启用本预设的会话中对模型可见（`skills/` 已随仓分发，`package.json` 的 `files` 含 `skills`）。
 - **生成/翻译子会话**：宿主把 `src/host/abilities/<能力>/prompt.md` 的文本逐字注入子 agent 的
   user message，并按层限定模型可用工具。
 
@@ -121,7 +115,7 @@ profile 的 `cordis.patch.yml` **不要**再 insert fs。已挂载本插件的 p
 | 阶段 | 状态 |
 |---|---|
 | P0 功能基线清点与汇总 | 完成 |
-| P1 骨架与装载（工程基础、三件套与占位挂载、`skills/` 迁移） | 完成 |
+| P1 骨架与装载（工程基础、三件套与占位挂载） | 完成 |
 | P1 陈旧引用修正 | 完成 |
 | P2 host 纯逻辑（`fs-utils` / `locale` / 书库层 / 任务与提示词 / 能力目录） | 完成 |
 | P3 host 路由与状态机（11 条 `/api/fs/*`、任务状态机、执行器） | 完成 |
@@ -156,9 +150,7 @@ npm run build          # tsc -b tsconfig.host.json && tsdown + client banner 归
 
 ## 相关文档
 
-- [`PROGRESS.md`](PROGRESS.md)：迁移进度与决策记录的唯一权威。
+- [`PROGRESS.md`](PROGRESS.md)：项目台账与决策记录的唯一权威。
 - [`docs/feature-baseline.md`](docs/feature-baseline.md)：功能基线、逐字保留清单、已知行为登记（G-1~G-12）。
-- [`docs/baseline/host.md`](docs/baseline/host.md)、[`docs/baseline/client.md`](docs/baseline/client.md)、
-  [`docs/baseline/contracts.md`](docs/baseline/contracts.md)：host 路由与状态机、client 功能点与 i18n、契约与构建基线。
-- [`docs/spec-p1-skeleton.md`](docs/spec-p1-skeleton.md) 等 `docs/spec-*.md`：各阶段执行规格与验收标准。
-- 迁移源（只读）：`../dsh-plugin-file-system`。
+- [`docs/spec-p1-skeleton.md`](docs/spec-p1-skeleton.md)、[`docs/spec-p5-tests-detail.md`](docs/spec-p5-tests-detail.md)、
+  [`docs/spec-ui-revamp.md`](docs/spec-ui-revamp.md)：阶段执行规格与验收标准。

@@ -1,22 +1,19 @@
 // 问题台账（src/host/issues.ts）单元测试。
 //
-// 迁移自迁移源 tests/issues.test.js（node:test → vitest），并把分支口径补到 100%：
+// 本仓不再携带受版本控制的 issues/ 目录（2026-09-15 整理后），故台账目录默认解析为空串：
 //   · 台账目录的推导——环境变量覆盖 / 包根 issues 存在 / 包根没有 issues 目录（返回空串）；
 //   · syncIssueIndex 读-改-写的四条早退路径（无目录 / 无 README / 无匹配文件 / 无缺失行）
 //     与五个字段的「正则命中」与「回退默认值」两条取值路径。
 //
-// 台账目录默认按本文件位置推导到插件根/issues，而 syncIssueIndex() 是 read-modify-write：
-// 生成/翻译任务收尾都会调用它，测试用例因此会走到，一旦 issues/ 里出现未登记索引的台账文件
-// 就会改写受版本控制的 issues/README.md。故每个写用例都把 DSH_FS_ISSUES_DIR 指向临时目录，
-// 并在 afterEach 统一断言工作树文件既没改内容、也没被重写（mtime 变化同样算污染）。
+// 部署可用 DSH_FS_ISSUES_DIR 把台账指向插件根之外；测试的写用例一律指向临时目录，不触碰工作树。
 //
-// 「包根没有 issues 目录」这条分支在本仓无法自然构造（仓库里就有 issues/），而 vitest 不把
+// 「包根 issues 存在」这条分支在本仓无法自然构造（仓库里没有 issues/），而 vitest 不把
 // 被测试模块对 node:fs 的导入交给 mock 表（实测：vi.mock / vi.doMock 的工厂从未被调用）。
 // 故改从模块对象侧注入：node:fs 的 default 导出就是 CJS 的 module.exports，其 existsSync
-// 属性可写，且与 issues.ts 用的是同一个对象；注入范围被限制成「只否认包根 issues 这一个路径」，
+// 属性可写，且与 issues.ts 用的是同一个对象；注入范围被限制成「只认可包根 issues 这一个路径」，
 // 其余路径透传真实实现。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import nodeFs, { promises as fsp, readFileSync, statSync } from 'node:fs'
+import nodeFs, { promises as fsp } from 'node:fs'
 import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -28,20 +25,15 @@ import { issuesDir, nextIssueNoFromDisk, syncIssueIndex } from '../src/host/issu
 // dirname(fileURLToPath(import.meta.url)) would throw otherwise.
 const REPO_ROOT = process.cwd()
 
-// 受版本控制的真台账：以下每个用例都必须证明它一个字节都没变。
-const REPO_README = join(REPO_ROOT, 'issues', 'README.md')
 const REPO_ISSUES_DIR = join(REPO_ROOT, 'issues')
 
-const repoReadmeBefore = readFileSync(REPO_README, 'utf8')
-const repoReadmeMtimeBefore = statSync(REPO_README).mtimeMs
-
-/** 让包根 issues 目录「不存在」，返回恢复函数。 */
-function hideRepoIssuesDir(): () => void {
+/** 让包根 issues 目录「存在」，返回恢复函数。 */
+function showRepoIssuesDir(): () => void {
   // 形参沿用 existsSync 自身的参数类型：写 unknown 会因参数逆变不兼容而无法赋回
   // nodeFs.existsSync（TS2322）；本函数只做 String(p) 的比较与转交，无需放宽类型。
   const orig: typeof nodeFs.existsSync = nodeFs.existsSync
   nodeFs.existsSync = (p: Parameters<typeof nodeFs.existsSync>[0]): boolean =>
-    resolve(String(p)) !== REPO_ISSUES_DIR && orig(p)
+    resolve(String(p)) === REPO_ISSUES_DIR || orig(p)
   return (): void => { nodeFs.existsSync = orig }
 }
 
@@ -54,9 +46,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
-  // 工作树的受版本控制文件既没改内容、也没被重写。
-  expect(readFileSync(REPO_README, 'utf8')).toBe(repoReadmeBefore)
-  expect(statSync(REPO_README).mtimeMs).toBe(repoReadmeMtimeBefore)
 })
 
 describe('issuesDir', () => {
@@ -70,25 +59,25 @@ describe('issuesDir', () => {
     expect(issuesDir()).toBe(join(tmpRoot, 'b'))
   })
 
-  it('未设覆盖变量时落到插件根 issues（源码与产物形态深度一致）', () => {
+  it('未设覆盖变量且包根没有 issues 目录时返回空串（调用方据此跳过台账步骤）', () => {
     vi.stubEnv('DSH_FS_ISSUES_DIR', undefined)
-    expect(issuesDir()).toBe(REPO_ISSUES_DIR)
+    expect(issuesDir()).toBe('')
   })
 
   it('空串覆盖值等同未设（不把空路径当目录）', () => {
     vi.stubEnv('DSH_FS_ISSUES_DIR', '')
-    expect(issuesDir()).toBe(REPO_ISSUES_DIR)
+    expect(issuesDir()).toBe('')
   })
 
-  it('包根没有 issues 目录时返回空串（调用方据此跳过台账步骤）', () => {
+  it('包根 issues 目录存在时落到该目录（源码与产物形态深度一致）', () => {
     vi.stubEnv('DSH_FS_ISSUES_DIR', undefined)
-    const restore = hideRepoIssuesDir()
+    const restore = showRepoIssuesDir()
     try {
-      expect(issuesDir()).toBe('')
+      expect(issuesDir()).toBe(REPO_ISSUES_DIR)
     } finally {
       restore()
     }
-    expect(issuesDir()).toBe(REPO_ISSUES_DIR)
+    expect(issuesDir()).toBe('')
   })
 })
 
@@ -111,24 +100,14 @@ describe('nextIssueNoFromDisk', () => {
 
   it('台账目录解析为空串时直接返回 01，不触碰文件系统', async () => {
     vi.stubEnv('DSH_FS_ISSUES_DIR', undefined)
-    const restore = hideRepoIssuesDir()
-    try {
-      expect(await nextIssueNoFromDisk()).toBe('01')
-    } finally {
-      restore()
-    }
+    expect(await nextIssueNoFromDisk()).toBe('01')
   })
 })
 
 describe('syncIssueIndex', () => {
   it('台账目录解析为空串时直接返回（不抛、不创建任何文件）', async () => {
     vi.stubEnv('DSH_FS_ISSUES_DIR', undefined)
-    const restore = hideRepoIssuesDir()
-    try {
-      await expect(syncIssueIndex()).resolves.toBeUndefined()
-    } finally {
-      restore()
-    }
+    await expect(syncIssueIndex()).resolves.toBeUndefined()
   })
 
   it('隔离目录没有 README.md 时直接返回，不凭空创建索引表', async () => {

@@ -5,7 +5,7 @@
 左树侧原来那条 1px 的 `border-right` 一并删掉，让接缝只剩**一条**线。悬停时可见的「带」由
 **6 设备像素收窄到 1 设备像素**，命中区由 **5px 放宽到 8px**；探针 3857 档读数**逐字段不变**。
 
-- 仓库：`/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc`（改动前 HEAD `f5c4559`）
+- 仓库：`/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system`（改动前 HEAD `f5c4559`）
 - 改动面：**只有 `src/client/index.tsx`**（+24 / −3）。`tests/client-view.spec.ts` **未改**（理由见 §6）
 - 报告路径：本文件 ｜ 任务书原文落盘：`agent/sessions/session-927b055f-…/briefs/2026-09-12-split-divider-compact.md`
 

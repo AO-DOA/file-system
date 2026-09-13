@@ -1,7 +1,7 @@
 # 2026-09-12 让分栏分隔条的常态竖线消失，只留悬停提示线
 
 任务书原文：`agent/sessions/session-927b055f-e595-44c2-aacb-d2de7145c227/briefs/2026-09-12-hide-idle-divider-line.md`
-仓库 `plugins/dsh-plugin-file-system-zc`，起点 HEAD `d99eae4`。本单**未提交**、**未重启 `dsh web`**。
+仓库 `plugins/dsh-plugin-file-system`，起点 HEAD `d99eae4`。本单**未提交**、**未重启 `dsh web`**。
 
 ## 一句话
 `.fs-split::before`（常态那条 0.5px 发丝线）**整条规则删掉**，8px 命中区、悬停/拖拽渐隐提示线、`cursor:col-resize` 与拖拽交互（`startDrag` / `startSplitDrag` / `.active`）全数保留；两处复用（左树↔内容、分屏两窗格）共用同一条规则，观感一致 —— 用户要的是「都别有线」，两条接缝的职责也完全相同，没有分叉理由。

@@ -30,7 +30,7 @@ import {
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => import('./fixtures/primitives-stub'))
 
 /** Package name the Loader must resolve for the row `cordis.patch.yml` inserts. */
-const PACKAGE_NAME = 'dsh-plugin-file-system-zc'
+const PACKAGE_NAME = 'dsh-plugin-file-system'
 
 // Vitest resolves `import.meta.url` to a non-file URL, so the fixture root is
 // taken from the project root vitest runs in (the package root).
@@ -258,20 +258,5 @@ describe('装配契约：package.json / 入口导出面 / 装载三件套', () =
     } finally {
       process.env.NODE_ENV = previous
     }
-  })
-
-  it('agent.cordis.yml 技能桥接行存在（源 :142）', () => {
-    const text = readFileSync(join(process.cwd(), 'agent.cordis.yml'), 'utf8')
-    expect(text).toMatch(/id: skill-filesystem/)
-    expect(text).toMatch(/id: tool-skill/)
-    expect(text).toMatch(/customSkillDirs/)
-    expect(text).toMatch(/skills\//)
-  })
-
-  it('preset.yml 元信息与插件身份对应（源 :150）', () => {
-    const text = readFileSync(join(process.cwd(), 'preset.yml'), 'utf8')
-    expect(text).toMatch(/name: 文件系统/)
-    expect(text).toMatch(/description:/)
-    expect(text).toMatch(/order: \d+/)
   })
 })

@@ -19,4 +19,4 @@
   name: '@dsh-test/fs-agent-loop'
 
 - id: fs
-  name: dsh-plugin-file-system-zc
+  name: dsh-plugin-file-system

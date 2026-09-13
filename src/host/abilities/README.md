@@ -42,10 +42,10 @@
 | 变量 | 含义 | 示例 |
 |---|---|---|
 | `${skill}` | 技能名（**已弃用**：四层均宿主内置、无模板引用；渲染变量保留仅为兼容旧模板） | `folder-doc` |
-| `${target}` | 目标绝对路径（文件夹或文件） | `/…/dsh-plugin-file-system-zc/scripts` |
+| `${target}` | 目标绝对路径（文件夹或文件） | `/…/dsh-plugin-file-system/scripts` |
 | `${bookDir}` | 书库根绝对路径 | `/home/xuepeng/.dsh/books/--home-xuepeng-…--` |
-| `${projectRoot}` | 目标归属的项目根绝对路径 | `/…/plugins/dsh-plugin-file-system-zc` |
-| `${targetKey}` | 源码路径键（工作区名 + `/` + 相对工作区根路径） | `dsh-plugin-file-system-zc/scripts` |
+| `${projectRoot}` | 目标归属的项目根绝对路径 | `/…/plugins/dsh-plugin-file-system` |
+| `${targetKey}` | 源码路径键（工作区名 + `/` + 相对工作区根路径） | `dsh-plugin-file-system/scripts` |
 | `${docPath}` | 产物文档绝对路径 | `/…/目录概览/scripts.md` |
 | `${docStem}` | 产物文档名（不含 `.md`；L2 由宿主 `computeDocStem()` 命名、L3 即技能脚本 `--name` 的值，L1 由宿主直接命名） | `scripts` |
 | `${skeleton}` | 宿主渲染好的骨架全文（**仅 L1/L2 注入**）：L1 目录骨架（frontmatter「源码路径 / 层级: 目录 / 生成时间」+ 标题 + 路径 + 三处语义占位 + `## 目录树` 围栏，**每个节点后带 `# <作用>` 占位**，模型逐项替换为「是做什么的」一句话）；L2 文件骨架（frontmatter「源码路径 / 层级: 文件 / 生成时间」+ 标题 + 路径 + 四个章节标题 + 导出表头）。**L3 该变量为空**——骨架体量大，改为落盘（见下两行） | （整篇骨架文本） |
@@ -58,8 +58,8 @@
 | `${arr}` | index.json 数组名 | `目录层` |
 | `${mode}` | 首次 / 更新（宿主按产物是否已存在**自动判定**） | `更新` |
 | `${modeHint}` | 随模式变化的一句执行提示 | 见下 |
-| `${skillsRoot}` | 技能根绝对路径 | `/…/dsh-plugin-file-system-zc/skills` |
-| `${issueDir}` | 问题台账目录绝对路径（`<插件根>/issues`，子 agent 出问题时自己建档用） | `/…/dsh-plugin-file-system-zc/issues` |
+| `${skillsRoot}` | 技能根绝对路径 | `/…/dsh-plugin-file-system/skills` |
+| `${issueDir}` | 问题台账目录绝对路径（`<插件根>/issues`，子 agent 出问题时自己建档用） | `/…/dsh-plugin-file-system/issues` |
 | `${issueDate}` | 台账日期 `YYYY-MM-DD` | `2026-09-09` |
 | `${issueNo}` | 台账下一个序号（宿主读目录算好，两位补零） | `12` |
 

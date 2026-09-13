@@ -54,7 +54,7 @@
 1. **旧文档孤儿化（必须告知用户）**：按旧规则已生成的目录概览——典型就是 deepseekHARNESS 桶里现存那本 `目录概览/packages.md`（frontmatter「源码路径: deepseekHARNESS/native/system/packages」，是 native/system 包最后生成占位）——**不再被任何目录匹配**：`/tree` 圆点消失，文件成为书库孤儿。这次**不做迁移脚本**（主代理倾向与任务书一致）：旧文档语义本就不全（一本 `packages.md` 讲不清是哪个 packages），留在书库里不碍事；**用户可操作提示**：在 UI 里对 `native/system/packages` 与根下 `packages` 分别点「重新生成」目录概览，新文档会以 `native-system-packages.md` / `deepseekHARNESS-packages.md` 落盘并重新点亮圆点。
 2. **`skills/folder-doc` 未改（不在授权面，按任务书停下报告）**：`skills/folder-doc/scripts/folder-doc.mjs` 的 `--name` 默认值（`folder-doc.mjs:160`）与 `gen-tree.sh` 仍按 basename 命名。宿主已去技能化（`hostIndex: true`，确定性逻辑全在宿主侧），技能仅供会话内人工调用——人工用技能生成的目录概览会落 basename 文件名，与宿主 `/tree` 判定（folderDocStem 视角）对不上（成孤儿）。宿主流程不受影响。**建议主代理决定**：下轮是否把技能 `--name` 默认值也切到 folderDocStem 视角。
 3. **理论边界（与文件层同源，非本单引入）**：`computeDocStem` 用 `-` 扁平化层级，理论上 `a-b/c` 与 `a/b-c` 等病态目录名同 stem——这是文件层三层沿用已久的既有属性，目录层与其对称后继承同一边界；真实目录名碰撞概率极低，任务书核心关切（同名目录跨层级）已消除。未采取进一步消歧（会动 `computeDocStem`，被禁止）。
-4. 未核实：`docs/p5-migration-matrix.md` 与 `docs/spec-p5-tests-detail.md` 中「folder 取 basename」的迁移对照行号（历史迁移记录，描述迁移时点快照，未改动；如需订正请主代理指示）。
+4. 未核实：`docs/spec-p5-tests-detail.md` 中「folder 取 basename」的迁移对照行号（历史迁移记录，描述迁移时点快照，未改动；如需订正请主代理指示）。
 5. 旧「目录概览」本身的 `index.json`「目录层」条目仍指向旧文件名——孤儿化清理不做（同 1）。
 
 ## 需主代理裁决的点

@@ -1,8 +1,7 @@
 # P5 执行细则 — 135 例 `node:test` → vitest 迁移
 
-> 本文是 `docs/spec-p5-p6-tests-and-cutover.md` §P5 的**细化**（不改变其任何结论），面向 T-50 / T-51 的执行者，目标是「照着做即可」。
-> 制定：2026-09-11 · 上游：`PROGRESS.md` §1（T-50/T-51）、§2（D-2 / D-8）、`docs/spec-p5-p6-tests-and-cutover.md`、`docs/baseline/contracts.md` §D、`vitest.config.ts`
-> 迁移源冻结于 `3a3f89e`，全程只读。
+> 本文是 P5 执行规格的**细化**（不改变其任何结论），面向 T-50 / T-51 的执行者，目标是「照着做即可」。
+> 制定：2026-09-11 · 上游：`PROGRESS.md` §1（T-50/T-51）、§2（D-2 / D-8）、`vitest.config.ts`
 
 ---
 
@@ -15,11 +14,9 @@
 | **静态推断** | 只读扫描源码分支后给出的判断，**未经覆盖率实测**（本任务禁止跑 `npm`），执行者须自行复验 |
 | **未核实** | 本次没查到权威出处，**不得直接照抄**，执行者必须先验证 |
 
-凡本文与 `docs/spec-p5-p6-tests-and-cutover.md` 冲突，以该规格为准，并把冲突回报主智能体。
-
 ---
 
-## 1. 源测试清单（实测）
+## 1. 原测试清单（实测）
 
 ### 1.1 获取方式（本次实际执行的命令）
 
@@ -30,7 +27,6 @@ grep -cE "^(test|it)\(" tests/*.test.js                # 每文件顶层用例�
 grep -nE "^\s*(test|it)\(" tests/*.test.js | wc -l     # 全部 test/it 行（含嵌套）
 grep -cE "^describe\(" tests/*.test.js                 # describe 数
 grep -nE "^\s*(await )?t\.test\(" tests/*.test.js | wc -l  # node:test subtest 数
-git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230fc0eb049b717881e2c
 ```
 
 ### 1.2 合计（实测）
@@ -45,7 +41,7 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 | `await test(...)` 形式 | **0** | 同上 |
 | 顶层 `test()` 数 vs 全量 `test()/it()` 数 | 135 vs 135 | 两者相等 ⇒ **无嵌套用例**，全部扁平 |
 
-> 与 `docs/spec-p5-p6-tests-and-cutover.md` §2 的转述表格（2446 行 / 135 例）**逐项吻合**，本节的数字独立复现了它。这与 `contracts.md` §D1 的 `tests 135 / pass 135 / fail 0 / suites 0` 也一致（`suites 0` 正是「无 `describe`」的佐证）。
+> 与迁移台账的转述表格（2446 行 / 135 例）**逐项吻合**，本节的数字独立复现了它。这与 `contracts.md` §D1 的 `tests 135 / pass 135 / fail 0 / suites 0` 也一致（`suites 0` 正是「无 `describe`」的佐证）。
 
 ### 1.3 逐文件清单
 
@@ -57,7 +53,7 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 | `tests/gen-scope.test.js` | 703 | 24 | 扁平 `test()`；含 5 个模块级辅助 | `createCtx(root, captured)` `:66`、`createReq` `:106`、`createRes` `:117`、`call` `:126`、`waitSettled` `:137`、`skeletonPathFrom` `:150`、`runSrcTask` `:316`、`docAbsFrom` `:536`、`runFolderTask` `:538`、`runFileTask` `:644`；常量 `FILLED_SKELETON` `:325` | `host/index.js`（`apply`）、`host/fs-utils.js`、`abilities/file-doc/skeleton.js` |
 | `tests/host-routes.test.js` | 638 | 21 | 扁平 `test()` | `createCtx` `:21`、`createRes` `:31`、`createReq` `:42`、`call` `:58`、`waitTaskRegistered` `:66`、`waitTaskSettled` `:79` | `host/index.js`（`apply`）、`host/fs-utils.js` |
 | `tests/issues.test.js` | 78 | 6 | 扁平 `test()`；**模块顶层 `await import()`** `:22` | `testIssuesDir` `:15`、`REPO_README` `:19`、`REPO_ISSUES_DIR` `:20` | `host/issues.js` |
-| `tests/real-composition.test.js` | 155 | 8 | 扁平 `test()`；**唯一用到测试上下文 `t` 的文件**（`:43` 签名、`:50` `t.skip`） | `createCtxStub(root)` `:62` | `src/host/index.js`、`package.json`、`cordis.patch.yml`、`agent.cordis.yml`、`preset.yml` |
+| `tests/real-composition.test.js` | 155 | 8 | 扁平 `test()`；**唯一用到测试上下文 `t` 的文件**（`:43` 签名、`:50` `t.skip`） | `createCtxStub(root)` `:62` | `src/host/index.js`、`package.json`、`cordis.patch.yml` |
 | `tests/task-timeout.test.js` | 121 | 2 | 扁平 `test()` | `createCtx` `:26`、`createRes` `:36`、`createReq` `:46`、`call` `:54`、`stalledTask` `:64` | `host/index.js`（`apply`）、`shared/locale.js` |
 | **合计** | **2446** | **135** | | | |
 
@@ -152,8 +148,7 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 **`real-composition.test.js`（8，`:24-154`）**
 `:24` package.json 声明 loader 契约：exports[.]/main 指向 dsh/index.js 产物 · `:33` host 模块真实形态（源码入口 src/host/index.js）：无 default、name=fs、inject 齐备、apply 可执行 ·
 `:43` loader 解析路径（exports[.] 自引用）与源码入口契约一致（产物存在时核对） · `:93` apply 装配：webServer.register 收到 /api/fs 前缀路由，effect 清理可执行 ·
-`:116` NODE_ENV !== test 时生产 ctx 不挂 __fsTest（条件化验证：生产不挂） · `:133` cordis.patch.yml 插件行：id=fs 且 name 与包名一致（与模块 name 相互印证） ·
-`:142` agent.cordis.yml 技能桥接行存在（skill-filesystem / tool-skill / customSkillDirs→skills/） · `:150` preset.yml 元信息存在且身份与插件对应
+`:116` NODE_ENV !== test 时生产 ctx 不挂 __fsTest（条件化验证：生产不挂） · `:133` cordis.patch.yml 插件行：id=fs 且 name 与包名一致（与模块 name 相互印证）
 
 **`task-timeout.test.js`（2，`:74-120`）**
 `:74` sweepGenTasks 淘汰超时 running：置 error + 字典文案 + finishedAt 打点；未超时不动 ·
@@ -165,61 +160,61 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 
 ### 2.1 导入与运行器
 
-| # | `node:test` 用法（源仓 `文件:行号`） | vitest 目标写法 | 说明 / 陷阱 |
+| # | `node:test` 用法（原实现 `文件:行号`） | vitest 目标写法 | 说明 / 陷阱 |
 |---|---|---|---|
 | A1 | `import { test } from 'node:test'`（8/8 文件；`abilities.test.js:5`、`client-md-utils.test.js:3`、`fs-utils.test.js:1`、`gen-scope.test.js:10`、`host-routes.test.js:5`、`issues.test.js:8`、`real-composition.test.js:16`、`task-timeout.test.js:13`） | `import { describe, expect, it } from 'vitest'`，用例改写为 `it(...)` | 全仓 8 文件均无 `describe`，**禁止为迁移而新增 `describe` 改动语义**；若要分组，须保证 `describe` 只做组织、不改变共享状态时机 |
 | A2 | 扁平 `test('中文标题', fn)`（135/135） | `it('中文标题', fn)` | 目标仓 `tests/fs-utils.spec.ts:1-4`、`locale.spec.ts`、`real-composition.spec.ts` 已是该风格，**照抄这个先例** |
-| A3 | `await test('…', async () => {…})` | — | **源仓 0 处**（实测），无需处理 |
-| A4 | `node:test` subtest `t.test(...)` | — | **源仓 0 处**（实测），无需处理 |
+| A3 | `await test('…', async () => {…})` | — | **原实现 0 处**（实测），无需处理 |
+| A4 | `node:test` subtest `t.test(...)` | — | **原实现 0 处**（实测），无需处理 |
 | A5 | 测试上下文 `async (t) =>`（`real-composition.test.js:43`） | `it('…', async (ctx) => {…})` | vitest 的 `TestContext`。`ctx.skip()` 已在 vitest 4 类型里定义（源码核实：`node_modules/vitest/dist/chunks/reporters.d.DtoKVV2s.d.ts:180` 与 `:398`） |
 | A6 | `t.skip('原因')`（`real-composition.test.js:50`） | `ctx.skip()`（**动态跳过**，保留运行期判据）或 `it.skip(...)`（**静态跳过**） | **必须选动态 `ctx.skip()`**：该用例的跳过条件是运行期探测（构建产物存在与否），静态 `it.skip` 会把「永远不跑」写死。vitest 允许在用例体内调用 `ctx.skip()` 并标记为 skipped |
 
 ### 2.2 断言
 
-源仓 `import assert from 'node:assert/strict'` 分布在全 8 文件。实测调用次数（读源码逐文件统计的静态数，见 §8 未核实 2）：`equal` 约 360、`match` 约 97、`deepEqual` 约 56、`ok` 约 38、`throws` 5、`doesNotMatch` 5、`rejects` 4、`notEqual` 4。
+原实现 `import assert from 'node:assert/strict'` 分布在全 8 文件。实测调用次数（读源码逐文件统计的静态数，见 §8 未核实 2）：`equal` 约 360、`match` 约 97、`deepEqual` 约 56、`ok` 约 38、`throws` 5、`doesNotMatch` 5、`rejects` 4、`notEqual` 4。
 
 > **裁决**：`node:assert/strict` 在 vitest 下**技术上可原样保留**（vitest 跑在 Node 上），但**本仓不作为目标形态** —— 理由有两条硬依据：① 目标仓既有三个 spec（`fs-utils.spec.ts`、`locale.spec.ts`、`real-composition.spec.ts`）**全部**已用 `expect`，混用会造成同一仓两套断言风格；② `expect` 的失败信息带 diff，`assert` 不带。**故全部映射为 `expect`。**
 
-| # | `assert` 用法（源仓样例） | vitest 目标写法 | 陷阱 |
+| # | `assert` 用法（原实现样例） | vitest 目标写法 | 陷阱 |
 |---|---|---|---|
-| B1 | `assert.equal(a, b)`（`fs-utils.test.js:28`） | `expect(a).toBe(b)` | `toBe` 用 `Object.is`；对字符串/数字/布尔等价。**对对象/数组会失败** —— 那种情况源仓用的是 `deepEqual` |
-| B2 | `assert.deepEqual(a, b)`（`fs-utils.test.js:107`、`abilities.test.js:196`、`fs-utils.spec.ts` 已用 `toEqual`） | `expect(a).toEqual(b)` | `toEqual` 递归宽松比较（忽略 `undefined` 属性）；`assert.deepEqual` 也是宽松的。若原意是严格结构，用 `toStrictEqual` —— **源仓语义是宽松**，故用 `toEqual` |
+| B1 | `assert.equal(a, b)`（`fs-utils.test.js:28`） | `expect(a).toBe(b)` | `toBe` 用 `Object.is`；对字符串/数字/布尔等价。**对对象/数组会失败** —— 那种情况原实现用的是 `deepEqual` |
+| B2 | `assert.deepEqual(a, b)`（`fs-utils.test.js:107`、`abilities.test.js:196`、`fs-utils.spec.ts` 已用 `toEqual`） | `expect(a).toEqual(b)` | `toEqual` 递归宽松比较（忽略 `undefined` 属性）；`assert.deepEqual` 也是宽松的。若原意是严格结构，用 `toStrictEqual` —— **原实现语义是宽松**，故用 `toEqual` |
 | B3 | `assert.notEqual(a, b)`（`host-routes.test.js:184`、`gen-scope.test.js:433`、`gen-scope.test.js:445`） | `expect(a).not.toBe(b)` | — |
 | B4 | `assert.ok(x)` / `assert.ok(x, '消息')`（`abilities.test.js:66`、`host-routes.test.js:200`；带消息：`abilities.test.js:93`、`issues.test.js:61`） | `expect(x).toBeTruthy()`；带消息 → `expect(x, '消息').toBeTruthy()` | vitest 的消息参数是 `expect(actual, message)`，第 2 参即 message |
-| B5 | `assert.equal(f(x), false)` 形式的布尔断言（`abilities.test.js:101`、`client-md-utils.test.js:79`） | `expect(f(x)).toBe(false)` | **不要**改写成 `toBeFalsy()`：源仓断言的是**严格 `false`**，改弱即为放宽断言（`dsh-ci-test-reliability/SKILL.md:104-113` 明令禁止） |
+| B5 | `assert.equal(f(x), false)` 形式的布尔断言（`abilities.test.js:101`、`client-md-utils.test.js:79`） | `expect(f(x)).toBe(false)` | **不要**改写成 `toBeFalsy()`：原实现断言的是**严格 `false`**，改弱即为放宽断言（`dsh-ci-test-reliability/SKILL.md:104-113` 明令禁止） |
 | B6 | `assert.match(str, /re/)`（`abilities.test.js:65`、`gen-scope.test.js:179`） | `expect(str).toMatch(/re/)` | — |
 | B7 | `assert.doesNotMatch(str, /re/)`（`gen-scope.test.js:189`、`:268`、`:307`） | `expect(str).not.toMatch(/re/)` | — |
 | B8 | `assert.throws(fn, /re/)`（`fs-utils.test.js:80`、`:171`、`:176`、`:183`；`abilities.test.js:300`） | `expect(fn).toThrow(/re/)` | 传**函数**而非调用结果 |
 | B9 | `assert.throws` 后**读错误对象属性**（P2-A 先例 `tests/fs-utils.spec.ts:38-46` 的 `caughtError`） | 用 try/catch 收下错误：`expect((err as {statusCode?: number}).statusCode).toBe(400)` | vitest 的 `toThrow` 只给消息，**拿不到自定义属性**。`resolveIn` 的 `err.statusCode = 400`（`src/host/fs-utils.js:153`）只能这样观察 —— P2-A 已给出可直接照抄的范式 |
-| B10 | `await assert.rejects(promise, /re/)`（`abilities.test.js:324`、`gen-scope.test.js:371`、`:387`、`:412`） | `await expect(promise).rejects.toThrow(/re/)` | `assert.rejects` 接受 promise **或**返回 promise 的函数；vitest 的 `rejects` 需要 promise 值。源仓 4 处都是「值」形式，安全 |
+| B10 | `await assert.rejects(promise, /re/)`（`abilities.test.js:324`、`gen-scope.test.js:371`、`:387`、`:412`） | `await expect(promise).rejects.toThrow(/re/)` | `assert.rejects` 接受 promise **或**返回 promise 的函数；vitest 的 `rejects` 需要 promise 值。原实现 4 处都是「值」形式，安全 |
 | B11 | `assert.ok(a \|\| b)` 之类复合（`gen-scope.test.js:499`） | 拆成 `expect(...)` 两条，或保留布尔表达式 + `toBe(true)` | 改写成两个更细的断言**不算放宽**；但不得删条件 |
 
 ### 2.3 钩子（`before` / `after` / `beforeEach` / `afterEach`）
 
-| # | `node:test` | vitest | 源仓现状 |
+| # | `node:test` | vitest | 原实现现状 |
 |---|---|---|---|
-| C1 | `before` / `after` / `beforeEach` / `afterEach` | **同名，`import { before, after, beforeEach, afterEach } from 'vitest'`** | **源仓 0 处**（实测 `grep -nE "after\(|before\("` 只命中 `readFile`/`describe` 等词，无钩子导入）。故本节为「新增能力」而非「映射」 |
-| C2 | 无对应物（源仓靠模块顶层 `await mkdtemp` + 顶层 `process.env` 赋值） | `beforeAll` / 顶层 await | vitest **支持** spec 顶层 await（等价于 `beforeAll`）—— 目标仓 `real-composition.spec.ts` 已用 `afterEach` 清理 fiber（`:46-49`）作为先例 |
+| C1 | `before` / `after` / `beforeEach` / `afterEach` | **同名，`import { before, after, beforeEach, afterEach } from 'vitest'`** | **原实现 0 处**（实测 `grep -nE "after\(|before\("` 只命中 `readFile`/`describe` 等词，无钩子导入）。故本节为「新增能力」而非「映射」 |
+| C2 | 无对应物（原实现靠模块顶层 `await mkdtemp` + 顶层 `process.env` 赋值） | `beforeAll` / 顶层 await | vitest **支持** spec 顶层 await（等价于 `beforeAll`）—— 目标仓 `real-composition.spec.ts` 已用 `afterEach` 清理 fiber（`:46-49`）作为先例 |
 
-> **建议**（不强制，但能直接降低 §4 风险）：把源仓的「模块顶层 `mkdtemp` + 顶层 `process.env` 赋值」改为 `beforeAll` + `afterAll`，把临时目录改动收进 `afterAll` 还原。这样即使用例失败也能还原全局状态，符合 `dsh-ci-test-reliability/SKILL.md:45-55`「register restoration immediately」。
+> **建议**（不强制，但能直接降低 §4 风险）：把原实现的「模块顶层 `mkdtemp` + 顶层 `process.env` 赋值」改为 `beforeAll` + `afterAll`，把临时目录改动收进 `afterAll` 还原。这样即使用例失败也能还原全局状态，符合 `dsh-ci-test-reliability/SKILL.md:45-55`「register restoration immediately」。
 
 ### 2.4 模拟（`t.mock` / `mock.method`）
 
-| # | `node:test` | vitest | 源仓现状 |
+| # | `node:test` | vitest | 原实现现状 |
 |---|---|---|---|
-| D1 | `t.mock.fn()` / `t.mock.method(obj, 'm')` | `vi.fn()` / `vi.spyOn(obj, 'm')` | **源仓 0 处**（`grep -nE "mock\." tests/*.test.js` 无命中）。源仓一律用**手写替身**（`createCtx` 的 `webServer: { register() {} }`、`fakeAgentLoop`） |
+| D1 | `t.mock.fn()` / `t.mock.method(obj, 'm')` | `vi.fn()` / `vi.spyOn(obj, 'm')` | **原实现 0 处**（`grep -nE "mock\." tests/*.test.js` 无命中）。原实现一律用**手写替身**（`createCtx` 的 `webServer: { register() {} }`、`fakeAgentLoop`） |
 | D2 | `mock.method` 的自动还原 | `vi.spyOn` + `afterEach(() => vi.restoreAllMocks())` | P2-A 已给出范式：`tests/fs-utils.spec.ts:40-43` |
-| D3 | 模块级 mock（`node:test` 无直接对应） | `vi.mock('…')` + `vi.hoisted` | **源仓 0 处**。目标仓 `real-composition.spec.ts:63-72` 走的是「只替换模块解析一道缝」的真 Loader 路线，**比 `vi.mock` 更强**，P5 应沿用 |
+| D3 | 模块级 mock（`node:test` 无直接对应） | `vi.mock('…')` + `vi.hoisted` | **原实现 0 处**。目标仓 `real-composition.spec.ts:63-72` 走的是「只替换模块解析一道缝」的真 Loader 路线，**比 `vi.mock` 更强**，P5 应沿用 |
 | D4 | 环境变量改写 | `vi.stubEnv(k, v)` + `vi.unstubAllEnvs()` | **未核实**（本仓未见先例）。P2-A 的 `fs-utils.spec.ts:42` 已调用 `vi.unstubAllEnvs()`，说明该 API 在本版本存在但**尚无 spec 实际使用** —— 执行者若采用，须先跑一次确认 |
 
 ### 2.5 覆盖率与命令行
 
-| # | 源仓（`package.json:24`） | 目标仓 | 说明 |
+| # | 原实现（`package.json:24`） | 目标仓 | 说明 |
 |---|---|---|---|
-| E1 | `NODE_ENV=test node --test` | `vitest run` | vitest 自身会把 `NODE_ENV` 置为 `test`（**未核实**具体时机）。源仓 `process.env.NODE_ENV ??= 'test'` 的兜底**建议保留**（`??=` 幂等，零成本） |
+| E1 | `NODE_ENV=test node --test` | `vitest run` | vitest 自身会把 `NODE_ENV` 置为 `test`（**未核实**具体时机）。原实现 `process.env.NODE_ENV ??= 'test'` 的兜底**建议保留**（`??=` 幂等，零成本） |
 | E2 | `--experimental-test-coverage` | `vitest run --coverage` + `vitest.config.ts` 的 `coverage` 块 | 目标仓已配好 |
-| E3 | `--test-coverage-include=src/host/fs-utils.js`（3 个白名单） | `coverage.include: ['src/**/*.ts']`（**已扩大，不是白名单**） | **这是一处实质差异**：源仓只统计 3 个纯逻辑文件；目标仓统计 `src/**` 下**除两个入口外的一切**。T-51 的范围因此远大于源仓的已知缺口 —— 见 §5 |
-| E4 | `--test-coverage-lines=100 --test-coverage-functions=100` | `thresholds: { perFile: true, statements: 100, branches: 100, functions: 100, lines: 100 }` | 目标仓已配（`vitest.config.ts`）。**源仓无 branches 阈值**（`contracts.md` §D4 已核）—— 这是 D-2 新增的严格项 |
+| E3 | `--test-coverage-include=src/host/fs-utils.js`（3 个白名单） | `coverage.include: ['src/**/*.ts']`（**已扩大，不是白名单**） | **这是一处实质差异**：原实现只统计 3 个纯逻辑文件；目标仓统计 `src/**` 下**除两个入口外的一切**。T-51 的范围因此远大于原实现的已知缺口 —— 见 §5 |
+| E4 | `--test-coverage-lines=100 --test-coverage-functions=100` | `thresholds: { perFile: true, statements: 100, branches: 100, functions: 100, lines: 100 }` | 目标仓已配（`vitest.config.ts`）。**原实现无 branches 阈值**（`contracts.md` §D4 已核）—— 这是 D-2 新增的严格项 |
 | E5 | 无 `--test-concurrency` / `--test-timeout` | `test.pool`（默认 `forks`）、`test.isolate`（默认 `true`）、`test.fileParallelism`（默认 `true`） | 三个默认值**已从本仓 `node_modules` 源码核实**：`node_modules/vitest/dist/chunks/reporters.d.DtoKVV2s.d.ts:2842`（pool）、`:2817`（isolate）、`:2853`（fileParallelism）、`:2805`（environment 默认 `'node'`） |
 | E6 | 无（node:test 无 per-file 环境概念） | 文件顶部 `// @vitest-environment node` | **已从源码核实**：`node_modules/vitest/dist/chunks/cli-api.CnMVyzaz.js:100` 的 `detectCodeBlock()` 用 `/@(?:vitest\|jest)-environment\s+([\w-]+)\b/` 解析该 docblock，默认回落到 `project.config.environment`。**本仓 `vitest.config.ts` 全局设了 `environment: 'jsdom'`**，故 host 侧 spec 若不加 pragma 就会跑在 jsdom 下 —— 见 §4.4 |
 
@@ -233,7 +228,7 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 | V2 | `coverage.include: ['src/**/*.ts']` 下**未被任何 spec 导入**的文件是否报 0% 并触发 `perFile` 失败 | `PROGRESS.md` T-10 已记「measured: one uncovered file exits 1」——**这是本仓实测证据，可直接引用**；若要复核，临时新增一个未被导入的 `src/x.ts` 跑 `test:coverage` | 决定 T-51 是否必须为「零引用文件」补测试 |
 | V3 | `process.env` 的修改在 `pool: 'forks'` + `isolate: true` 下是否**跨 spec 文件**可见 | 两个 spec：A 改 `process.env.DSH_HOME`，B 在用例里读并断言 | 决定 §4.2 是否必须逐文件还原 env |
 | V4 | jsdom 环境下 host 侧 spec 里 `setImmediate` / `process` / `node:fs` 是否可用 | 在 jsdom 默认环境下跑一个用 `setImmediate` 的最小 spec | 决定 §4.4 是「必须加 pragma」还是「建议加 pragma」 |
-| V5 | vitest 4 是否在 spec 执行前把 `process.env.NODE_ENV` 设为 `'test'` | 在一个 spec 顶部 `expect(process.env.NODE_ENV).toBe('test')` | 决定源仓 `NODE_ENV ??= 'test'` 兜底是否仍必要 |
+| V5 | vitest 4 是否在 spec 执行前把 `process.env.NODE_ENV` 设为 `'test'` | 在一个 spec 顶部 `expect(process.env.NODE_ENV).toBe('test')` | 决定原实现 `NODE_ENV ??= 'test'` 兜底是否仍必要 |
 | V6 | oxlint 的 `typescript/no-unsafe-member-access` 等规则是否会因 spec 访问 `ctx.__fsTest`（当前无类型声明）而报错 | P3 落地 `src/host/index.ts` 后跑 `npm run lint` | 决定 spec 是否需要为测试句柄补类型断言 |
 
 ---
@@ -247,7 +242,7 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 - `src/host/index.js:294` `genTasks.set(taskId, { … })` → `src/host/index.js:308` `setImmediate(() => { runGenDoc(rel, kind, taskId).catch(…) })`
 - `src/host/index.js:331` `genTasks.set(taskId, { … })` → `src/host/index.js:347` `setImmediate(() => { runTranslate(rel, taskId).catch(…) })`
 
-因此测试可观察到的「任务刚建好」与「任务已跑完」之间存在**一段由事件循环调度决定的窗口**。源仓在 2026-09-11 已把固定 `sleep(50)` 全部替换为「等可观测信号」（`AGENTS.md` §1「测试可靠性」、§2 缺陷 C），实测 12 并发 × 3 轮 = 36 次 0 失败。
+因此测试可观察到的「任务刚建好」与「任务已跑完」之间存在**一段由事件循环调度决定的窗口**。原实现在 2026-09-11 已把固定 `sleep(50)` 全部替换为「等可观测信号」（`AGENTS.md` §1「测试可靠性」、§2 缺陷 C），实测 12 并发 × 3 轮 = 36 次 0 失败。
 
 **P5 铁律**：迁移后这 5 个辅助函数的**等待对象与超时用途必须逐字保持**。禁止退化为 `setTimeout(r, N)`、`vi.advanceTimersByTime` 或任何固定睡眠 —— 依据 `docs/testing.zh.md:21` 与 `.agents/skills/dsh-ci-test-reliability/SKILL.md:77`（原文见 §9）。
 
@@ -287,9 +282,9 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 
 ## 4. 隔离与副作用（多 worker 下的加强项）
 
-### 4.1 源仓现有的隔离手段（实测清单）
+### 4.1 原实现现有的隔离手段（实测清单）
 
-| # | 手段 | 位置（源仓） | 迁到 vitest 后是否够 |
+| # | 手段 | 位置（原实现） | 迁到 vitest 后是否够 |
 |---|---|---|---|
 | I1 | `process.env.DSH_HOME = <mkdtemp>` 顶层赋值 | `gen-scope.test.js:25-26`、`host-routes.test.js:15-16`、`task-timeout.test.js:23-24` | **够，但建议改 `beforeAll`+`afterAll` 还原**（§4.2） |
 | I2 | `process.env.DSH_FS_ISSUES_DIR = <临时目录>` 顶层赋值 | `gen-scope.test.js:29`、`host-routes.test.js:19`、`issues.test.js:16` | 同上。这是缺陷 D 的修复（防改写受版本控制的 `issues/README.md`） |
@@ -306,11 +301,11 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 | # | 加强项 | 现状 | 建议做法 | 依据 |
 |---|---|---|---|---|
 | M1 | **可预测路径命名** | `host-routes.test.js` 有 **20 处** `join(tmpdir(), 'fs-route-xxx-' + Date.now())`（`:90, 98, 155, 177, 189, 219, 234, 248, 260, 279, 291, 313, 329, 345, 386, 417, 437, 469, 503, 555`）；`task-timeout.test.js:75, 105`；`real-composition.test.js:94, 120` 同形 | **全部改为 `await mkdtemp(join(tmpdir(), 'fs-route-xxx-'))`**。理由：`Date.now()` 只有毫秒精度，vitest `fileParallelism: true` 下两个不同 spec 文件在同一毫秒里可能取到同一路径；`SKILL.md:27` 明写「Process isolation does not isolate … predictable filesystem paths」，`:36` 要求「use `mkdtemp`; do not acquire predictable shared paths」 | `SKILL.md:27, 36` |
-| M2 | **临时目录不清理** | 源仓无任何 `after`/`afterAll` 删除临时目录 | 每个 spec 加 `afterAll` 用 `rm(dir, { recursive: true, force: true })`。**注意**：这不是正确性要求，是避免长跑 CI 上 `/tmp` 累积；`SKILL.md:84-88` 要求「Dispose to quiescence」 | `SKILL.md:84-88` |
-| M3 | **env 还原注册时机** | 源仓在模块顶层直接赋值，无还原（`I1`/`I2`） | 改为 `beforeAll` 赋值 + `afterAll` 还原（先记 `const prev = process.env.X`，还原时区分 `undefined` 与有值 —— 照抄 `fs-utils.test.js:100-101` 的写法） | `SKILL.md:45-55`（「capture whether the original value was absent or present; restore that exact state; register restoration immediately」） |
+| M2 | **临时目录不清理** | 原实现无任何 `after`/`afterAll` 删除临时目录 | 每个 spec 加 `afterAll` 用 `rm(dir, { recursive: true, force: true })`。**注意**：这不是正确性要求，是避免长跑 CI 上 `/tmp` 累积；`SKILL.md:84-88` 要求「Dispose to quiescence」 | `SKILL.md:84-88` |
+| M3 | **env 还原注册时机** | 原实现在模块顶层直接赋值，无还原（`I1`/`I2`） | 改为 `beforeAll` 赋值 + `afterAll` 还原（先记 `const prev = process.env.X`，还原时区分 `undefined` 与有值 —— 照抄 `fs-utils.test.js:100-101` 的写法） | `SKILL.md:45-55`（「capture whether the original value was absent or present; restore that exact state; register restoration immediately」） |
 | M4 | **`process.env` 修改前先记录原值是否存在** | `fs-utils.test.js:100-101` 已做对；`gen-scope.test.js:527` 用 `delete` 直接删（未区分「原本不存在」与「原本有值」） | 统一成「保存 → 还原」；`delete` 只在确认原值确实不存在时使用 | 同上 |
 | M5 | **jsdom 默认环境** | `vitest.config.ts` 全局 `environment: 'jsdom'`，但 host 侧 spec 是纯 Node 代码 | 每个 host 侧 spec 顶部加 `// @vitest-environment node`（该 docblock 已源码核实支持，见 §2.5 E6）；client 组件测试保持 jsdom | 源码核实 `cli-api.CnMVyzaz.js:100`；`SKILL.md:65`（平台语义差异） |
-| M6 | **模块级缓存跨用例残留** | `src/host/book-store.js` 的 `rootsCache`（TTL 5s）、`docCache`（TTL 1.5s）；`src/host/prompt-loader.js:22` 的 `dirCache`（Map，**无 TTL**） | 这些缓存在**同一 spec 文件内的多个用例间共享**（同一模块实例）。若某用例改了 `DSH_HOME`/`DSH_FS_ISSUES_DIR` 再断言缓存行为，必须用**独立的 `apply(ctx)`**（每次新建 ctx）而非依赖模块被重载 —— 源仓已经这么做（每个用例都 `apply(ctx)` 新建） | 静态推断 + 源码阅读 |
+| M6 | **模块级缓存跨用例残留** | `src/host/book-store.js` 的 `rootsCache`（TTL 5s）、`docCache`（TTL 1.5s）；`src/host/prompt-loader.js:22` 的 `dirCache`（Map，**无 TTL**） | 这些缓存在**同一 spec 文件内的多个用例间共享**（同一模块实例）。若某用例改了 `DSH_HOME`/`DSH_FS_ISSUES_DIR` 再断言缓存行为，必须用**独立的 `apply(ctx)`**（每次新建 ctx）而非依赖模块被重载 —— 原实现已经这么做（每个用例都 `apply(ctx)` 新建） | 静态推断 + 源码阅读 |
 | M7 | **port 分配** | 目标仓 `tests/fixtures/loader-stubs.ts:58` 已用 `server.listen(0, '127.0.0.1', …)` 读内核分配的端口 | **保持**；若 P5 新增需要监听端口的用例，**禁止**「先扫空闲端口再 bind」 | `SKILL.md:34-36` |
 
 ### 4.3 跨文件污染源清单
@@ -320,16 +315,16 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 | P1 | `process.env.DSH_HOME` | 进程级环境变量 | `pool: 'forks'` + `isolate: true`（**源码核实** `reporters.d.DtoKVV2s.d.ts:2842` / `:2817`）下每个 spec 文件独立进程，理论上不跨文件 | **仍须实测确认（V3）**；即便隔离成立，也要按 M3 还原，不依赖 runner 实现细节 |
 | P2 | `process.env.DSH_FS_ISSUES_DIR` | 同上 | 同上 | 同上 |
 | P3 | `process.env.NODE_ENV` | vitest 自身与插件都读它 | `real-composition.test.js:119` 会临时置 `production` | 该用例若与同文件其它用例并行会串 —— vitest 同文件内**默认串行**（`SKILL.md:29` 提醒 sequential 无法保护跨进程资源，但**同文件内串行是默认**），风险可控 |
-| P4 | `process.env.FS_GEN_PRESET` | 同 P1 | `gen-scope.test.js:519` 置 `standard` 后到 `:527` 删除 | **风险最高的一处**：它是「插件读 env 决定预设」的开关，若该 spec 文件内两处用例并行（`it.concurrent`）会互串。源仓全部用例串行，故当前安全；**迁移时禁止把用例改成 `it.concurrent`** |
-| P5 | 模块级可变状态（`rootsCache`/`docCache`/`dirCache`） | 同一 spec 文件内的所有用例共享同一模块实例 | 源仓通过「每用例新建 ctx」规避了业务状态，但 `dirCache` **没有任何失效入口** | 迁移时不得新增「同文件内先跑 A 建立缓存、再让 B 断言缓存」的耦合用例；若必须，用 `vi.resetModules()` + 动态 `import()`（**未核实**：`vi.resetModules` 对 vite-node 模块图的确切效果） |
+| P4 | `process.env.FS_GEN_PRESET` | 同 P1 | `gen-scope.test.js:519` 置 `standard` 后到 `:527` 删除 | **风险最高的一处**：它是「插件读 env 决定预设」的开关，若该 spec 文件内两处用例并行（`it.concurrent`）会互串。原实现全部用例串行，故当前安全；**迁移时禁止把用例改成 `it.concurrent`** |
+| P5 | 模块级可变状态（`rootsCache`/`docCache`/`dirCache`） | 同一 spec 文件内的所有用例共享同一模块实例 | 原实现通过「每用例新建 ctx」规避了业务状态，但 `dirCache` **没有任何失效入口** | 迁移时不得新增「同文件内先跑 A 建立缓存、再让 B 断言缓存」的耦合用例；若必须，用 `vi.resetModules()` + 动态 `import()`（**未核实**：`vi.resetModules` 对 vite-node 模块图的确切效果） |
 | P6 | 全局临时目录命名 | 不同 spec 文件可能取到同名路径 | 见 M1 | 见 M1 |
 | P7 | 计时器 | `src/host/task-utils.js:36` 的 `timer.unref()`；`withTimeout` 的竞速计时器 | 进程退出前不会被计时器拖住（已 `unref`），跨文件无影响 | 无需改动；**但禁止**在 spec 里开 fake timers 修轮询 |
 | P8 | 监听端口 | 目标仓 loader stub | `listen(0)` | 保持 |
-| P9 | `process.cwd()` | 目标仓 `real-composition.spec.ts:30` 用 `process.cwd()` 推 fixture 目录 | vitest 的 `process.cwd()` 是**项目根**（已由该 spec 注释确认）；源仓用 `import.meta.url` | 源仓 8 文件都在用 `new URL('../package.json', import.meta.url)` / `fileURLToPath(new URL(…))`（`real-composition.test.js:25, 134, 143, 151`；`issues.test.js:19-20`）。**迁移后 `import.meta.url` 在 vitest 里解析到的是源文件路径而非非 file URL**（`real-composition.spec.ts:28-30` 的注释说「Vitest resolves `import.meta.url` to a non-file URL」）—— **未核实**该说法是否对 `fileURLToPath` 同样成立；执行者必须实测，若失败则改用 `process.cwd()`（已有先例） |
+| P9 | `process.cwd()` | 目标仓 `real-composition.spec.ts:30` 用 `process.cwd()` 推 fixture 目录 | vitest 的 `process.cwd()` 是**项目根**（已由该 spec 注释确认）；原实现用 `import.meta.url` | 原实现 8 文件都在用 `new URL('../package.json', import.meta.url)` / `fileURLToPath(new URL(…))`（`real-composition.test.js:25, 134, 143, 151`；`issues.test.js:19-20`）。**迁移后 `import.meta.url` 在 vitest 里解析到的是源文件路径而非非 file URL**（`real-composition.spec.ts:28-30` 的注释说「Vitest resolves `import.meta.url` to a non-file URL」）—— **未核实**该说法是否对 `fileURLToPath` 同样成立；执行者必须实测，若失败则改用 `process.cwd()`（已有先例） |
 
 ### 4.4 jsdom 对 host 侧 spec 的影响（必须处理）
 
-`vitest.config.ts` 里 `environment: 'jsdom'` 是**全局**默认。源仓的 host 测试全部是纯 Node 代码（`node:fs`、`node:path`、`EventEmitter`、`setImmediate`）。给出两条并行措施：
+`vitest.config.ts` 里 `environment: 'jsdom'` 是**全局**默认。原实现的 host 测试全部是纯 Node 代码（`node:fs`、`node:path`、`EventEmitter`、`setImmediate`）。给出两条并行措施：
 
 1. **文件级 pragma**：在每个 host 侧 spec 第一行加 `// @vitest-environment node`（支持性已源码核实，§2.5 E6）。
 2. **若 pragma 不便**（例如同一文件里 host 与 client 混测）：在 `vitest.config.ts` 用 `test.environmentMatchGlobs` —— **未核实**该选项在 vitest 4 是否仍存在（本仓 `grep -rn "environmentMatch" vitest/dist` **无命中**，疑似已移除）。**故不要采用第 2 条**，一律用文件级 pragma。
@@ -340,7 +335,7 @@ git -C . rev-parse HEAD                                 # 3a3f89eaeda73dd355e230
 
 1. `issues.spec.ts` 复现 `issues.test.js:54-67` 的**双证据**：工作树 `issues/README.md` 内容 + mtime 均未变。
 2. 新增一条「env 还原自证」：在某 spec 里改 `DSH_HOME` 后 `afterAll` 还原，并在别的 spec 断言读到的 `DSH_HOME` 不是前者设的值（若 V3 实测证明隔离成立，则这条改为断言「同文件内跨用例已还原」）。
-3. 并发证据：**连跑 3 轮 `npm test` 全绿**（`docs/spec-p5-p6-tests-and-cutover.md` §6.3 已要求），并额外做 12 并发 × 3 轮（对齐源仓缺陷 C 的回归口径）。
+3. 并发证据：**连跑 3 轮 `npm test` 全绿**（P5 并发门禁已要求），并额外做 12 并发 × 3 轮（对齐原实现缺陷 C 的回归口径）。
 
 ---
 
@@ -357,9 +352,9 @@ coverage: {
 }
 ```
 
-**四项 100%、per-file**。这与源仓口径有两处实质差异，必须先认清：
+**四项 100%、per-file**。这与原实现口径有两处实质差异，必须先认清：
 
-| 差异 | 源仓 | 目标仓 |
+| 差异 | 原实现 | 目标仓 |
 |---|---|---|
 | 统计范围 | 3 个纯逻辑文件白名单 | `src/**` 除两个入口外**全部** |
 | 分支阈值 | **无** | **100%** |
@@ -370,7 +365,7 @@ coverage: {
 
 以下为**静态推断**（只读扫描源码分支），执行者须先跑一次 `npm run test:coverage` 拿到真实缺口表，再按本表补齐。
 
-| # | 未覆盖点（源仓 `文件:行号`） | 为什么难 | 用真实用例覆盖的思路 |
+| # | 未覆盖点（原实现 `文件:行号`） | 为什么难 | 用真实用例覆盖的思路 |
 |---|---|---|---|
 | U1 | `src/host/fs-utils.js:149` `process.platform === 'win32' ? '\\' : '/'` 的 win32 支 | POSIX 上永不执行 | **已解决**：P2-A 在 `tests/fs-utils.spec.ts:319-326` 用 `vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')` 覆盖，并配 `afterEach(() => vi.restoreAllMocks())`（`:40-43`）。**照抄这个范式** |
 | U2 | `src/host/book-store.js:103`（`bestRootFor` 的 `sep`）与 `:163`（`cachedBookView` 的 `sep`）的两处 win32 支 | 同上 | 同 U1 的 `vi.spyOn(process, 'platform', 'get')`。**注意**：`bestRootFor` 在 `:103` 之后才被用于 `abs.startsWith(p + sep)` 判定，win32 用例必须构造 `C:\...` 形式的字符串路径（**纯字符串，不落地**），并断言「父根 + `\` 前缀命中、父根 + `/` 前缀不误命中」 |
@@ -385,10 +380,10 @@ coverage: {
 | U11 | `src/host/prompt-loader.js:31` `.catch(() => null)` 与 `:32` `st && st.isDirectory()` 的 **false 支**（候选存在但不是目录） | 需要构造「存在但非目录」 | 用 `vi.spyOn(fsp, 'stat').mockResolvedValue({ isDirectory: () => false } as Stats)` → 断言 `loadAbilityPrompt` 返回 `null`（而不是抛错） |
 | U12 | `src/host/prompt-loader.js:41` `if (!ability \|\| !ability.dir) return null` 的**两个**子支 | 需要 `null` 与 `{}` 两种入参 | 两条用例：`loadAbilityPrompt(null)`、`loadAbilityPrompt({})` → 都断言 `null` |
 | U13 | `src/host/prompt-loader.js:47-49` `if (err.code !== 'ENOENT') console.warn(...)` 的**两个**分支 | 需要两种读失败 | ① `mockRejectedValue(Object.assign(new Error('x'), { code: 'ENOENT' }))` → 断言返回 `null` 且 **warn 未被调用**（`vi.spyOn(console, 'warn')`）；② `code: 'EACCES'` → 断言返回 `null` 且 warn **被调用一次**。同时断言 `loadAbilityPrompt` **不抛**（这是「提示词不可用不应让整次生成任务失败」的契约） |
-| U14 | `src/host/index.js:43-53` `sweepGenTasks` 的 **TTL 删除支**（`t.finishedAt && now - t.finishedAt > GEN_TASK_TTL`，`:44-47`） | 需要「完成超过 10 分钟」的任务 | 经 `ctx.__fsTest.genTasks` 塞一条 `{ finishedAt: Date.now() - 10*60*1000 - 1000 }` 的记录，调 `sweepGenTasks()`，断言**该记录被删除**（源仓 `task-timeout.test.js:74` 只覆盖了 running 超时支与「未超时不动」支，**没覆盖这条**） |
+| U14 | `src/host/index.js:43-53` `sweepGenTasks` 的 **TTL 删除支**（`t.finishedAt && now - t.finishedAt > GEN_TASK_TTL`，`:44-47`） | 需要「完成超过 10 分钟」的任务 | 经 `ctx.__fsTest.genTasks` 塞一条 `{ finishedAt: Date.now() - 10*60*1000 - 1000 }` 的记录，调 `sweepGenTasks()`，断言**该记录被删除**（原实现 `task-timeout.test.js:74` 只覆盖了 running 超时支与「未超时不动」支，**没覆盖这条**） |
 | U15 | `src/host/index.js:53-60` `GEN_TASK_CAP = 100` 的**超容量删除支** | 需要塞 > 100 条已完成任务 | `genTasks` 里塞 101 条带 `finishedAt` 的记录，调 `sweepGenTasks()`，断言 `size === 100` 且**删的是 `finishedAt` 最小的那条**（`[...values()].sort((a,b) => a.finishedAt - b.finishedAt)` 的语义） |
-| U16 | `src/host/index.js:482` `process.env.NODE_ENV === 'test' && ctx && typeof ctx === 'object'` 的 `ctx` **非对象**支 | 需要传非法 ctx | 源仓 `real-composition.test.js:116` 已覆盖 `NODE_ENV !== 'test'` 支；`ctx` 非对象支需新增：`apply(null)` 或 `apply('x')` 断言**不抛**（**注意**：这可能与 P3 的防御设计冲突，须先确认 `apply` 对非法入参的既定行为） |
-| U17 | `src/host/gen-executor.js`（6 处 `catch`）与 `src/host/translate-executor.js`（5 处 `catch`） | 需要触发子 agent 失败路径 | 源仓 `gen-scope.test.js` 已覆盖：无 `agentLoop`（→ error）、`whenIdle` 空转（→ error）、骨架未填（→ error）、注解率过低（→ error）、产物为空/仍是骨架（→ error）。**静态推断**仍缺：`dispose` 抛错（走 `onDisposeFailure` 只 warn）、`whenIdle` 超时（走 `withTimeout` 的 `ETASK_TIMEOUT`）。两者都可直接构造（`dispose: async () => { throw new Error('boom') }`；`whenIdle()` 返回永不 settle 的 promise 时**必须给 `withTimeout` 注入小时长的 ms**，否则用例要真等 10 分钟 —— **建议**改用可注入的 `ms` 参数或直接单测 `withTimeout`） |
+| U16 | `src/host/index.js:482` `process.env.NODE_ENV === 'test' && ctx && typeof ctx === 'object'` 的 `ctx` **非对象**支 | 需要传非法 ctx | 原实现 `real-composition.test.js:116` 已覆盖 `NODE_ENV !== 'test'` 支；`ctx` 非对象支需新增：`apply(null)` 或 `apply('x')` 断言**不抛**（**注意**：这可能与 P3 的防御设计冲突，须先确认 `apply` 对非法入参的既定行为） |
+| U17 | `src/host/gen-executor.js`（6 处 `catch`）与 `src/host/translate-executor.js`（5 处 `catch`） | 需要触发子 agent 失败路径 | 原实现 `gen-scope.test.js` 已覆盖：无 `agentLoop`（→ error）、`whenIdle` 空转（→ error）、骨架未填（→ error）、注解率过低（→ error）、产物为空/仍是骨架（→ error）。**静态推断**仍缺：`dispose` 抛错（走 `onDisposeFailure` 只 warn）、`whenIdle` 超时（走 `withTimeout` 的 `ETASK_TIMEOUT`）。两者都可直接构造（`dispose: async () => { throw new Error('boom') }`；`whenIdle()` 返回永不 settle 的 promise 时**必须给 `withTimeout` 注入小时长的 ms**，否则用例要真等 10 分钟 —— **建议**改用可注入的 `ms` 参数或直接单测 `withTimeout`） |
 | U18 | `src/client/index.js`（20 处 `catch`，771 行） | P4 尚未落地 | P4 会拆成多个 `.tsx` 文件；**除 `src/client/index.ts` 外的每个新文件**都在 100% 门槛内。归 P4/P5 交界，见 §8 未解问题 1 |
 
 ### 5.2.1 「逻辑都覆盖了、分支却不满」——先怀疑 `??` 的右侧 block（P4-A 实测，2026-09-11）
@@ -412,11 +407,11 @@ coverage: {
 
 1. 拿到 `test:coverage` 缺口表后，若某文件「行覆盖 100%、分支不满」，**第一件事是检查该文件里的 `??`**，尤其是「右侧是字面常量」的写法。
 2. 改写必须**运行时等价** —— 改完要能通过原有的全部断言；`??` 与 `||` **不等价**（`??` 只对 `null`/`undefined` 回退，`||` 对一切假值回退），**禁止**为了覆盖率把 `??` 无脑换成 `||`。正确方向是「先取局部变量 + 显式 `undefined` 判定」，如上。
-3. 三文件历史对照：迁移源 `fs-utils` 的**分支覆盖仅 88.75%**（`contracts.md` §D4 实测），迁移后**真补到 100%** —— 靠的是 `tests/fs-utils.spec.ts:319` 的 win32 真实用例等手段，**不是靠任何豁免指令**。这说明本仓的 100% 分支目标是可达的，`??` 口径问题也应按同一思路解决（真写用例或做等价改写），**绝不**用 `v8 ignore` / `istanbul ignore` / `c8 ignore` / 删逻辑绕过。
+3. 三文件历史对照：原实现 `fs-utils` 的**分支覆盖仅 88.75%**（`contracts.md` §D4 实测），迁移后**真补到 100%** —— 靠的是 `tests/fs-utils.spec.ts:319` 的 win32 真实用例等手段，**不是靠任何豁免指令**。这说明本仓的 100% 分支目标是可达的，`??` 口径问题也应按同一思路解决（真写用例或做等价改写），**绝不**用 `v8 ignore` / `istanbul ignore` / `c8 ignore` / 删逻辑绕过。
 
 ### 5.3 明令禁止的回避手段
 
-以下手段**一律禁止**，出现即视为 T-51 未完成（依据：`docs/spec-p5-p6-tests-and-cutover.md` §5、`PROGRESS.md` D-2、`docs/testing.zh.md:10`）：
+以下手段**一律禁止**，出现即视为 T-51 未完成（依据：`PROGRESS.md` D-2、`docs/testing.zh.md:10`）：
 
 | 禁止项 | 为什么禁止 |
 |---|---|
@@ -450,7 +445,7 @@ coverage: {
 | `client-md-utils.test.js` 的 **locale 部分**（`:198`、`:204` 两例） | **已完成**（P2-A） | `tests/locale.spec.ts`（154 行 / 9 例，含 72 键全量比对） |
 | `real-composition.test.js` 的**真 Loader 形态**（约 3 例的语义） | **已完成且更强**（P1-B） | `tests/real-composition.spec.ts`（178 行 / 3 例，真过 Loader） |
 
-> **估算**：135 例中已有约 **23 例**（21 + 2）以更强的形式落地。**剩余待迁约 112 例**（real-composition 的 8 例中被 zc 版 3 例覆盖了一部分，故是「约」）。
+> **估算**：135 例中已有约 **23 例**（21 + 2）以更强的形式落地。**剩余待迁约 112 例**（real-composition 的 8 例中被 本仓版 3 例覆盖了一部分，故是「约」）。
 
 ### 6.2 分批（按依赖，不按文件顺序）
 
@@ -458,31 +453,29 @@ coverage: {
 |---|---|---|---|
 | **W1 — 零依赖，随时可做** | `tests/issues.spec.ts`（6 例，源自 `issues.test.js`） | `src/host/issues.ts`（P2-B） | 依赖 P2-B 落地；**不依赖 P3/P4** |
 | **W1** | `tests/abilities.spec.ts`（27 例，源自 `abilities.test.js`） | 四能力 `skeleton.ts`/`doc-render.ts` + `registry.ts`（P2-D） | 依赖 P2-D；**不依赖 P3/P4** |
-| **W1** | `tests/task-utils.spec.ts`（源仓无对应文件，**新增**：`TASK_TIMEOUT_MS`、`withTimeout`、`genAgentPreset`、`errTaskTimeout`、`onDisposeFailure`） | `src/host/task-utils.ts`（P2-C） | **不依赖 P3/P4**；是 U4/U5/U17 的主要落点 |
+| **W1** | `tests/task-utils.spec.ts`（原实现无对应文件，**新增**：`TASK_TIMEOUT_MS`、`withTimeout`、`genAgentPreset`、`errTaskTimeout`、`onDisposeFailure`） | `src/host/task-utils.ts`（P2-C） | **不依赖 P3/P4**；是 U4/U5/U17 的主要落点 |
 | **W2 — 等 P3** | `tests/host-routes.spec.ts`（21 例，源自 `host-routes.test.js`） | P3-A 路由 + P3-B 状态机 | **必须等 P3**（需要 11 条 `/api/fs/*` 与 `ctx.__fsTest` 句柄） |
 | **W2** | `tests/task-timeout.spec.ts`（2 例，源自 `task-timeout.test.js`） | P3-B 的 `sweepGenTasks` + `__fsTest` | **必须等 P3** |
 | **W2** | `tests/gen-scope.spec.ts`（24 例，源自 `gen-scope.test.js`） | P3-A/B/C（`gen-executor`、`translate-executor`、提示词加载） | **必须等 P3 全绿**；其中 3 例（`:33/:45/:56` 的纯逻辑）其实可在 W1 先做 |
 | **W3 — 等 P4** | `tests/md-utils.spec.ts`（24 例，源自 `client-md-utils.test.js` 的非 locale 部分） | `src/client/md-utils.ts`（P4-A） | **必须等 P4-A** |
-| **W3** | client 组件/交互 spec（**源仓没有**，属新增） | P4-B~E | 必须等 P4 |
+| **W3** | client 组件/交互 spec（**原实现没有**，属新增） | P4-B~E | 必须等 P4 |
 | **W4 — 收口** | `tests/real-composition.spec.ts` **补齐 5 例**（见 §6.3） | P3+P4 全落地 | 最后 |
 | **W5 — T-51** | 全量 `test:coverage` 缺口补齐（§5） | 以上全部 | 最后 |
 
 ### 6.3 `real-composition` 的合并细则（**最容易做错的一处**）
 
-zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-composition.test.js`（155 行）**不是替换关系**，必须逐例裁决：
+本仓已有的 `tests/real-composition.spec.ts`（178 行）与原实现 `tests/real-composition.test.js`（155 行）**不是替换关系**，必须逐例裁决：
 
-| 源用例（`real-composition.test.js`） | zc 现状 | 处置 |
+| 源用例（`real-composition.test.js`） | 本仓现状 | 处置 |
 |---|---|---|
-| `:24` package.json loader 契约（`main` / `exports['.']` / `exports['./client']` / `dsh.bundle.patch`） | zc 版 `:171-176` 只断言了 `name` 与 `dsh.bundle.patch` | **补**：断言 `exports['.'] === './lib/host/index.js'`、`exports['./client'] === './client/client.js'`（值须与 `package.json` 实况一致，**不要照抄源仓的 `./dsh/index.js`**） |
-| `:33` host 模块真实形态：`default === undefined`、`name === 'fs'`、`inject` 数组、`apply` 可执行 | zc 版通过 Loader entry tree 间接覆盖了 `name`/`id` | **补 `default` 与 `inject` 的显式断言**。依据 `docs/testing.zh.md:40`：「需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言」（原文见 §9） |
-| `:43` loader 自引用（`await import('dsh-plugin-file-system')`）+ `t.skip` | **不应迁移** | **删除**。理由有硬依据：① 包名已改为 `dsh-plugin-file-system-zc`；② `docs/testing.zh.md:45` 原文要求「**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例」——zc 的 `exports['.']` 指向 `lib/host/index.js`，正是该条禁止的形态；③ zc 版已用真 Loader 取代 |
-| `:93` apply 装配：`webServer.register` 收到 `/api/fs` 前缀 + effect 清理可执行 | zc 版 `:135` 断言 `['prefix /api/fs']`；`afterEach` 的 `fiber.dispose()`（`:46-49`）覆盖可逆性 | **已覆盖，不重写**；若要更贴近源仓，可补一条「dispose 后路由表为空」的显式断言 |
-| `:116` `NODE_ENV !== 'test'` 时不挂 `__fsTest` | **zc 版缺失** | **必须补**。注意 P3 落地后 `__fsTest` 的挂载条件若变化，须以源码为准 |
-| `:133` `cordis.patch.yml` 插件行 `id: fs` + `name: <包名>` | zc 版 `:162-169` 覆盖 | **已覆盖** |
-| `:142` `agent.cordis.yml` 技能桥接行（`skill-filesystem` / `tool-skill` / `customSkillDirs` / `skills/`） | **zc 版缺失** | **补**（T-13 已把 `skills/` 迁入 zc，文件存在，可直接断言） |
-| `:150` `preset.yml` 元信息（`name: 文件系统` / `description:` / `order: \d+`） | **zc 版缺失** | **补** |
+| `:24` package.json loader 契约（`main` / `exports['.']` / `exports['./client']` / `dsh.bundle.patch`） | 本仓版 `:171-176` 只断言了 `name` 与 `dsh.bundle.patch` | **补**：断言 `exports['.'] === './lib/host/index.js'`、`exports['./client'] === './client/client.js'`（值须与 `package.json` 实况一致，**不要照抄原实现的 `./dsh/index.js`**） |
+| `:33` host 模块真实形态：`default === undefined`、`name === 'fs'`、`inject` 数组、`apply` 可执行 | 本仓版通过 Loader entry tree 间接覆盖了 `name`/`id` | **补 `default` 与 `inject` 的显式断言**。依据 `docs/testing.zh.md:40`：「需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言」（原文见 §9） |
+| `:43` loader 自引用（`await import('dsh-plugin-file-system')`）+ `t.skip` | **不应迁移** | **删除**。理由有硬依据：① 包名已改为 `dsh-plugin-file-system`；② `docs/testing.zh.md:45` 原文要求「**绝不会**经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例」——本仓的 `exports['.']` 指向 `lib/host/index.js`，正是该条禁止的形态；③ 本仓版已用真 Loader 取代 |
+| `:93` apply 装配：`webServer.register` 收到 `/api/fs` 前缀 + effect 清理可执行 | 本仓版 `:135` 断言 `['prefix /api/fs']`；`afterEach` 的 `fiber.dispose()`（`:46-49`）覆盖可逆性 | **已覆盖，不重写**；若要更贴近原实现，可补一条「dispose 后路由表为空」的显式断言 |
+| `:116` `NODE_ENV !== 'test'` 时不挂 `__fsTest` | **本仓版缺失** | **必须补**。注意 P3 落地后 `__fsTest` 的挂载条件若变化，须以源码为准 |
+| `:133` `cordis.patch.yml` 插件行 `id: fs` + `name: <包名>` | 本仓版 `:162-169` 覆盖 | **已覆盖** |
 
-> **lint 陷阱**：`.oxlintrc.json:160` 启用 `sonarjs/no-duplicate-test-title`（`files` 覆盖 `tests/**/*.ts`，见 `:152-155`）。合并时若标题与 zc 版既有 `it` 重名，**lint 会报错**。迁移时给每条用例起唯一标题。
+> **lint 陷阱**：`.oxlintrc.json:160` 启用 `sonarjs/no-duplicate-test-title`（`files` 覆盖 `tests/**/*.ts`，见 `:152-155`）。合并时若标题与 本仓版既有 `it` 重名，**lint 会报错**。迁移时给每条用例起唯一标题。
 
 ---
 
@@ -490,7 +483,7 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 
 ### R1 — `process.env` 顶层赋值 + vitest worker 语义未经实测（最高）
 
-`gen-scope.test.js:25-26, 29`、`host-routes.test.js:15-16, 19`、`task-timeout.test.js:23-24` 都在**模块顶层**改 `DSH_HOME` / `DSH_FS_ISSUES_DIR`，且**从不还原**。源仓 `node --test` 是每文件一进程、跑完即退，污染无后果。vitest 下：
+`gen-scope.test.js:25-26, 29`、`host-routes.test.js:15-16, 19`、`task-timeout.test.js:23-24` 都在**模块顶层**改 `DSH_HOME` / `DSH_FS_ISSUES_DIR`，且**从不还原**。原实现 `node --test` 是每文件一进程、跑完即退，污染无后果。vitest 下：
 
 - 若 `isolate: true`（**源码核实**为默认）成立，每个 spec 文件在独立进程中，污染不跨文件；
 - 但 vitest 的 worker **可能被复用于多个文件**（取决于 pool 实现与 `maxWorkers`），一旦复用且 `isolate` 被后续调整，`DSH_HOME` 会带着**上一个文件的临时目录**进入下一个文件 —— 而那个目录可能已被删，导致 `booksRoot()` 指向幽灵路径。
@@ -523,10 +516,10 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 | 1 | **T-51 的确切文件范围**：T-33（P3 后把 `src/host/index.ts` 移出 `coverage.exclude`）是否已执行？若已执行，那 494 行路由/状态机也在 100% 门槛内，T-51 的工作量会翻倍。同理，P4 拆出的多个 client 文件（除入口外）也在门槛内 | 本文写作时 `vitest.config.ts` 仍排除两个入口，`src/host/index.ts` 仍是桩 | **主智能体裁决**，并写回本文件 |
 | 2 | `assert.*` 各类调用的**精确计数**（`equal` 360 / `match` 97 等） | 本文引用的是 `contracts.md` §D2 的既有统计，本次预研用 grep 粗查与之一致，但**未逐文件精确重算** | P5 执行者可忽略（不影响迁移） |
 | 3 | V1–V6（见 §2.6） | 属于「必须实测才知道」的运行期事实 | P5 执行者动手前逐条实测 |
-| 4 | `real-composition.test.js` 的 8 例中，究竟哪几例已被 zc 版覆盖 | 本文按语义比对给出裁决表（§6.3），但「覆盖」是语义判断而非机械计数 | P5 执行者按 §6.3 逐条打勾 |
+| 4 | `real-composition.test.js` 的 8 例中，究竟哪几例已被 本仓版覆盖 | 本文按语义比对给出裁决表（§6.3），但「覆盖」是语义判断而非机械计数 | P5 执行者按 §6.3 逐条打勾 |
 | 5 | `src/client/index.js`（771 行 / 20 catch）的 100% 覆盖可行性 | P4 尚未落地，文件结构未知 | P4 完成后重估 |
 | 6 | `vi.resetModules()` 对本仓模块图（vite-node）的确切效果 | 无先例、未实测 | 若 M6 的缓存问题真出现，再处理 |
-| 7 | `import.meta.url` 在 vitest 下的确切值（`real-composition.spec.ts:28-30` 的注释称其为 non-file URL） | 未实测；若成立，源仓 `fileURLToPath(new URL(…, import.meta.url))` 的写法（`issues.test.js:19-20`、`real-composition.test.js:25/134/143/151`）迁移后会**抛错** | P5 执行者实测；失败则改用 `process.cwd()`（`real-composition.spec.ts:30` 已有先例） |
+| 7 | `import.meta.url` 在 vitest 下的确切值（`real-composition.spec.ts:28-30` 的注释称其为 non-file URL） | 未实测；若成立，原实现 `fileURLToPath(new URL(…, import.meta.url))` 的写法（`issues.test.js:19-20`、`real-composition.test.js:25/134/143/151`）迁移后会**抛错** | P5 执行者实测；失败则改用 `process.cwd()`（`real-composition.spec.ts:30` 已有先例） |
 
 ---
 
@@ -558,13 +551,13 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 
 > `:40` 一个守卫只有在回归能让它失败时才有效。对于没有 `inject` 的插件（bundle/组合插件），Loader 冒烟测试在默认导出替换必需的具名导出时仍然绿着——需要添加显式的 `expect('default' in mod).toBe(false)` 加 `unwrapExports` 往返断言，并证明它有效：引入回归、观察变红、回退。
 
-**对应**：§6.3（zc 版 real-composition 已是真 Loader，正是 `:39` 要求的形态；`:40` 直接给出 `default` 断言的写法）。
+**对应**：§6.3（本仓版 real-composition 已是真 Loader，正是 `:39` 要求的形态；`:40` 直接给出 `default` 断言的写法）。
 
 ### 9.5 `docs/testing.zh.md:45`（测试解析：仅限源码）
 
 > - 每个 vitest 配置都将 vite-tsconfig-paths 指向 `tsconfig.base.json`；工作区包的裸导入解析到 `src`，绝不会经由包的 `exports` 解析到构建后的 `lib/`，因为其中的陈旧产物会加载第二份模块单例。
 
-**对应**：§6.3 第 3 行（**删除**源仓的包自引用用例 `real-composition.test.js:43-58` 的硬依据）。
+**对应**：§6.3 第 3 行（**删除**原实现的包自引用用例 `real-composition.test.js:43-58` 的硬依据）。
 
 ### 9.6 `.agents/skills/dsh-ci-test-reliability/SKILL.md:77` 与 `:81`（同步纪律）
 
@@ -607,7 +600,7 @@ zc 已有的 `tests/real-composition.spec.ts`（178 行）与源仓 `tests/real-
 - [ ] 每个 host 侧 spec 首行加了 `// @vitest-environment node`（§4.2 M5）
 - [ ] 所有 `Date.now()` 命名的临时路径已改 `mkdtemp`（§4.2 M1）
 - [ ] 所有 `process.env` 改动已改为 `beforeAll` 赋值 + `afterAll` 还原（§4.2 M3/M4）
-- [ ] `waitSettled` / `waitTaskRegistered` / `waitTaskSettled` 的**循环体与判据**已与源仓逐字比对（§3.2/§3.3）
+- [ ] `waitSettled` / `waitTaskRegistered` / `waitTaskSettled` 的**循环体与判据**已与原实现逐字比对（§3.2/§3.3）
 - [ ] `skeletonPathFrom` / `docAbsFrom` 仍按**当次会话**的 followup 取值（§3.3 S4）
 - [ ] `real-composition` 按 §6.3 裁决表逐条打勾，**未迁移包自引用那一条**，且无重复 `it` 标题（lint `sonarjs/no-duplicate-test-title`）
 - [ ] 覆盖率缺口只用**真实用例**补，无 `v8 ignore` / `istanbul ignore` / `c8 ignore` / 删逻辑 / 加白名单 / 放宽阈值（§5.3）

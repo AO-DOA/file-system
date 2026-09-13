@@ -1,8 +1,6 @@
-# 台账 — dsh-plugin-file-system-zc
+# 台账 — dsh-plugin-file-system
 
 > **本文件只记「当前态 + 后续待办」**，保持简约。
-> 完整过程台账（337 行：全部决策、逐条证据、验收记录、变更日志）已归档：
-> [docs/archive/PROGRESS-full-2026-09-11.md](docs/archive/PROGRESS-full-2026-09-11.md)
 > 时间戳规范：`YYYY-MM-DD HH:MM:SS`（用户 2026-09-11 要求）。
 
 ---
@@ -14,11 +12,10 @@
 | 项 | 值 |
 |---|---|
 | **入场必读**（新人 / 新子代理开工前） | [docs/agent/README.md](docs/agent/README.md)：三层存储（会话上下文 / 仓库文件 / `dsh知识库`）各放什么、谁写谁读、**入场阅读顺序**；已验证的负结果看 [docs/agent/lessons.md](docs/agent/lessons.md) |
-| 包名 | `dsh-plugin-file-system-zc`（非 scoped，决策 D-1） |
-| 仓库 | `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system-zc` |
-| 迁移源（**只读，全程未改动一字节**） | `../dsh-plugin-file-system` @ `3a3f89e` |
-| profile | `~/.dsh/profiles/web`：`dependencies` 与 `dsh.profile.bundles` 均已指向 `-zc` |
-| 运行态 | dsh web 运行中，端口 3080；boot manifest 已装载 `-zc`（rev `ceedbcfa…`）。PID 每次重启都变：以 `~/.dsh/logs/web.log` 最近一次「启动命令」行或 `pgrep -f 'dsh web'` 为准（2026-09-11 05:18 实测 516551） |
+| 包名 | `dsh-plugin-file-system`（非 scoped，决策 D-1） |
+| 仓库 | `/home/xuepeng/DSH/DSHworkPace/plugins/dsh-plugin-file-system` |
+| profile | `~/.dsh/profiles/web`：`dependencies` 与 `dsh.profile.bundles` 均已指向 `dsh-plugin-file-system` |
+| 运行态 | dsh web 运行中，端口 3080；boot manifest 装载本插件。PID 每次重启都变：以 `~/.dsh/logs/web.log` 最近一次「启动命令」行或 `pgrep -f 'dsh web'` 为准 |
 | 五项门禁 | **全绿**：typecheck 0 输出 / lint 0 错 0 警告 / **564 例** / coverage 100×4 / build 成功。数字口径：`typecheck`（exit 0、无输出）与 `npm test`（**19 spec / 564 例全过**）为 2026-09-11 字典化后**本轮实测**；`lint` / `coverage` / `build` 沿用字典化前的最近一次实测——本轮纪律未重跑这三项，故不声称其覆盖了字典化改动 |
 | 五项门禁（**四段 UI 改造后重测**） | **全绿**（2026-09-11 23:29:46 实测）：`npm run typecheck` exit 0 无输出 / `npm run lint` **0 错 0 警告**（47 files、80 rules）/ `npm test` **19 spec / 582 例**全过 / `npx vitest run --coverage` = All files **100 / 100 / 100 / 100** + `node scripts/verify-coverage-scope.mjs` **19/19 ✓ 分母完整**。**`build` 未跑**（不在本段授权内，用户否决），故运行中的 `client/client.js` 仍是旧产物。上面的 564 例是字典化轮的快照，已被本行取代 |
 | 五项门禁（**探针复刻 DOM 同步 + 保存判据收口后重测**） | **全绿**（2026-09-12 00:29:48 实测，工作树未提交）：范围守卫 **PASS**（改动面 = `src/client/index.tsx` / `tests/client-view.spec.ts` / `tools/ui-probe/` / `PROGRESS.md`，4 项全在授权面内、无越界）/ `npm run typecheck` exit 0 无输出 / `npm run lint` **0 错 0 警告**（48 files、80 rules）/ `npm test` **19 spec / 594 例** / `npx vitest run --coverage` = All files **100 / 100 / 100 / 100** + `node scripts/verify-coverage-scope.mjs` **19/19 ✓ 分母完整**。**`build` 未跑**（授权否决），故运行中的 `client/client.js` 仍是旧产物。**口径落差订正**：上一行记的 582 例是「四段 UI 改造后」那次的快照，其后 menu-clipping 段实测 **586 例**（见 §3 那节）、本段 **594 例**——三个数字分属三次不同的用例集快照，不是同一口径的漂移；引用门禁例数时以本行为最新。原始输出 `/tmp/verify-sync-a.txt`（运行产物，不进仓库） |
@@ -293,11 +290,10 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
 **0 档被裁**、可见高恒等于面板高（64 / 176 / 232），且注入打开态不改顶栏四项读数（与不带 `--menus` 的
 760 / 504 / 0 / 0 / `{48}` 逐档一致）。
 
-**零消费者文案键 `btnView` / `a11yViewPick`：经裁决保留（不删）**。本段实测 `grep -rn "btnView\|a11yViewPick" src/ tests/ docs/baseline/client.md`：`btnView` 命中 `src/shared/locale.ts:40`（定义）、`tests/locale.spec.ts:49`（对照表）、`tests/client-view.spec.ts` 的一条**反向**断言（「右列没有 aria-label＝查看 的按钮」，用的是键名）、以及 `docs/baseline/client.md` 的两处基线记录；`a11yViewPick` 命中 `locale.ts:36` 与 `locale.spec.ts:45`。即 **`src/` 里两个键都已无消费者**。保留的三条理由：① 字典是**产品文案注册表**，117 键里本就有只经直连 API / 失败
+**零消费者文案键 `btnView` / `a11yViewPick`：经裁决保留（不删）**。本段实测 `grep -rn "btnView\|a11yViewPick" src/ tests/`：`btnView` 命中 `src/shared/locale.ts:40`（定义）、`tests/locale.spec.ts:49`（对照表）、`tests/client-view.spec.ts` 的一条**反向**断言（「右列没有 aria-label＝查看 的按钮」，用的是键名）；`a11yViewPick` 命中 `locale.ts:36` 与 `locale.spec.ts:45`。即 **`src/` 里两个键都已无消费者**。保留的三条理由：① 字典是**产品文案注册表**，117 键里本就有只经直连 API / 失败
 路径才出现的串（B 类协议串、C 类诊断串），「今天没有 UI 路径渲染它」不是成员判据；② 删键必须手改
 `tests/locale.spec.ts` 的**三重硬断言**（键序逐位 + `toHaveLength` + 全等表），而那道断言存在的意义正是
-让字典变动成为一次**刻意的、被复审的**动作，为省一个条目去重写它不划算；③ `docs/baseline/client.md`
-仍把 `btnView` 列为迁移基线的按钮之一，保留键让它继续与基线口径一致。代价：字典里留着不再被消费的
+让字典变动成为一次**刻意的、被复审的**动作，为省一个条目去重写它不划算。代价：字典里留着不再被消费的
 键（明细与判别方法见经验卡 B-7）。**不要顺手删键。**
 
 **方法论教训（本段之前的真实事故，正文见经验卡 B-4 / B-6，此处只留一句指针）**：主代理做对照实验时
@@ -370,12 +366,12 @@ enter/leave 按 **fiber 树**判定，portal 出去的面板在 React 树里仍�
   而 `client/client.js` 的 mtime 是 **01:10:18**（对应提交 `d99eae4`「分栏分隔条改紧凑细线」），
   **比进程启动晚 15 分钟**、期间**没有任何重启**。
 - 带 cookie 请求页面 → 取插件自身 bundle URL：
-  `/plugins/??dsh-plugin-file-system-zc/client.js&rev=df24c8832f06`
+  `/plugins/??dsh-plugin-file-system/client.js&rev=df24c8832f06`
 - 请求该 URL：HTTP **200**、**70251** 字节、`cache-control: public, max-age=31536000, immutable`；
   内容含**新**样式标记 `dsw-alias-border-l4` **1 处**、旧标记 `width:5px;cursor:col-resize` **0 处**。
 - 与本地 `client/client.js`（70160 字节）`cmp`：**前 70160 字节逐字节相同**（对 `head -c 70160` 的切片
   `cmp` 退出码 **0**）；响应只多 **91** 字节，即 combo 追加的
-  `;\n//# sourceMappingURL=/plugins/??dsh-plugin-file-system-zc/client.js.map&rev=df24c8832f06`。
+  `;\n//# sourceMappingURL=/plugins/??dsh-plugin-file-system/client.js.map&rev=df24c8832f06`。
 - **rev 就是内容哈希**（可独立复算）：按 `artifactRevision` 的 `framedHash('plugin-artifact', [bundle])`
   = `sha1("plugin-artifact\0" + "70160:" + bundle)` 取前 12 位 hex，得 **`df24c8832f06`**，
   与页面分发 URL 的 rev **完全相同** ⇒ 内存里的 bundle 字节**就是**那份 01:10 落盘的产物。
@@ -532,13 +528,13 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
   --setenv=DSH_SESSION_ID="$DSH_SESSION_ID" ~/.local/bin/dsh-restart
 ```
 
-步骤与风险详见 [docs/p6-cutover-runbook.md](docs/p6-cutover-runbook.md)（582 行）。
+步骤见上方代码块（备份 → 还原 → 重启）。
 
 ## 5. 后续待办（低优先级，均不影响运行）
 
 | # | 待办 | 说明 |
 |---|---|---|
-| 1 | ~~T-62 交付摘要~~ | ✅ **2026-09-11 已完成**（commit `cf13458`；新增 `docs/delivery-summary-2026-09-11.md`，实测 **238 行**。含「G-1 已加固」（唯一有意的行为差异 + 运行时前后对照）+ G-2~G-12 逐字保留项 + 与主仓风格差异 + D-13 覆盖率例外 + 回滚；文内对未独立核实项逐条显式标注「（转述，未独立核实）」） |
+| 1 | ~~T-62 交付摘要~~ | ✅ **2026-09-11 已完成**（commit `cf13458`；含「G-1 已加固」（唯一有意的行为差异 + 运行时前后对照）、G-2~G-12 逐字保留项、D-13 覆盖率例外；交付摘要文档已随本仓整理移除） |
 | 2 | ~~`src/host/abilities/README.md` 的 4 处 `.js` 文件名~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **6 处**替换点 / 6 个位置 —— L16、L34 行内 3 个不同文件名、L115、L116。原记「4 处」为误） |
 | 3 | ~~`docs/spec-p5-tests-detail.md` 的 2 处行号~~ | ✅ **2026-09-11 已完成**（commit `a268910`；实为 **10 项**替换 / **9 个位置** —— 第一轮 6 处 L477/L478/L555/L559/L561/L563 + 补改 L419、L425 行内 2 项（行号 + 加粗）、L549。原记「2 处」为误。与 #2 合计 **16 项替换 / 15 个位置 / 2 文件**） |
 | 4 | ~~G-1 是否开新账目修~~ | ✅ **2026-09-11 已完成**（见 §3，两道闸门 + 运行时对照 + 80 例测试） |
@@ -558,6 +554,16 @@ systemd-run --user --unit=dsh-restart-$(date +%s) --collect \
 
 ## 6. 未做且明确不做的
 
-- **旧「目录概览」文档孤儿化（2026-09-13 命名规则变更的直接后果）** —— 规则从「文件夹 basename」改为「含父目录层级」后，按旧规则生成的目录概览（如 deepseekHARNESS 桶里那本 `目录概览/packages.md`，讲不清是 native/system/packages 还是根下 packages）不再被任何目录的 `/tree` 判定匹配（圆点消失），文件留在书库当孤儿。**不做迁移脚本**：旧文档语义本就不全，用户在 UI 对这些目录重新点「生成/重新生成」即可得到新命名文档。本次未动 `skills/folder-doc`（其 `folder-doc.mjs` 的 `--name` 默认值仍是 basename，技能仅供会话内人工调用、宿主已不再依赖它——见报告 §「遗留」）。
-- **`translate-doc` / `session-review` 两个技能仍不可见** —— 切换前就不可见（`~/.agents/skills/` 下实测共 **18 条软链、目标全部存在**，其中指向本插件的只有 `folder-doc`/`file-doc`/`source-doc` 三条；这两个名字在该目录下**没有任何条目**，既非活链也非断链），保持行为等价。
-- **旧插件仓 `../dsh-plugin-file-system` 保留** —— 冻结于 `3a3f89e`、工作树干净，可作回滚参照。
+- **旧「目录概览」文档孤儿化（2026-09-13 命名规则变更的直接后果）** —— 规则从「文件夹 basename」改为「含父目录层级」后，按旧规则生成的目录概览（如 deepseekHARNESS 桶里那本 `目录概览/packages.md`，讲不清是 native/system/packages 还是根下 packages）不再被任何目录的 `/tree` 判定匹配（圆点消失），文件留在书库当孤儿。**不做迁移脚本**：旧文档语义本就不全，用户在 UI 对这些目录重新点「生成/重新生成」即可得到新命名文档。
+
+## 7. 变更日志
+
+### 2026-09-15 整理：包名去后缀 + 清迁移史 + 删技能链路
+
+- **包名去后缀**：`dsh-plugin-file-system-zc` → `dsh-plugin-file-system`（目录改名、`package.json`、profile 两处引用、全仓 40 文件 94 处引用一次替换到底）。
+- **删技能链路**：`skills/`（5 技能 / 13 文件）、`agent.cordis.yml`、`preset.yml` 全删——插件从「bundle + agent 预设」双身份退回**纯 bundle 单身份**。连带：`package.json` 的 `files` 去掉三项；`gen-executor.ts` 的 `SKILLS_ROOT` 变量与 `skillsRoot` 渲染变量删除（四层 prompt 从不引用它，宿主生成能力全在 `src/host/abilities/`，功能不变）；`~/.agents/skills/` 下 file-doc / folder-doc / source-doc 三条已断软链清除。
+- **删问题台账**：`issues/`（21 篇）删除。`issuesDir()` 因目录不存在返回空串，宿主生成/翻译任务据此跳过台账步骤（该能力随之关闭；如需恢复，设 `DSH_FS_ISSUES_DIR` 指向外部目录即可）。
+- **清迁移史**：删 `docs/archive/`（整目录）、`docs/baseline/`（整目录，旧仓取证三份）、`docs/p6-cutover-runbook.md`、`docs/delivery-summary-2026-09-11.md`、`docs/t14-stale-refs.md`、`docs/p1c-skills-migration.md`、`docs/p2a-tsconfig-d6.md`、`docs/spec-p2-pure-logic.md`、`docs/spec-p3-host-routes.md`、`docs/spec-p4-client.md`、`docs/spec-p5-p6-tests-and-cutover.md`、`docs/p5-migration-matrix.md` 共 12 项；`README.md` / `docs/feature-baseline.md` / `docs/spec-*` 里的迁移源、旧仓对照、已删文件引用一并清除。清理后 `docs/` 只剩：`agent/`、`feature-baseline.md`、`spec-p1-skeleton.md`、`spec-p5-tests-detail.md`、`spec-ui-revamp.md`。
+- **门禁**：typecheck / lint / test（**19 spec / 602 例**）/ coverage（**100×4**，分母 19/19）全绿；`build` 已跑（包名变更后须重建产物并通过 banner 校验）。
+- **例外裁决记录**：本次用户明确裁决「`-zc` 引用全部替换**含历史快照**」，覆盖本仓「历史时态保留」惯例。
+- **报告**：`docs/agent/reports/2026-09-14-rename-drop-zc.md`（改名 + 孤儿盘点）、`docs/agent/reports/2026-09-15-doc-cleanup-migration-history.md`（文档清理）。

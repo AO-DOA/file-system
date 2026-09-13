@@ -9,8 +9,8 @@
  * 装置说明（三处客观约束决定写法）：
  *   1. `@deepseek-ai/dsh-llm` 是 peerDependency，本仓 node_modules 里没有——用 vi.mock 提供
  *      `createUserMessage` 桩，成功路径才可达；mock 未安装模块已实测可行。
- *   2. `SKILLS_ROOT` 是**模块顶层**三元（源码直载形态恒走第一支），要覆盖第二支只能把
- *      `existsSync` 虚拟成 false 再让模块重新求值。实测出两条硬约束（否则「钩子设了却没用」）：
+ *   2. 模块顶层求值的依赖要在不同用例下呈现不同结果时，只能虚拟化该依赖再让模块重新求值。实测出两条硬约束
+ *      （否则「钩子设了却没用」）：
  *      ① 必须**用例内** `vi.doMock` + `vi.resetModules()`——顶层 `vi.mock` 的模块实例会被缓存，
  *      表现为「单跑绿、全量跑红」；② 工厂返回的对象**只能**覆盖 `existsSync`，一并覆盖 `promises`
  *      会让 vitest 整体放弃该 mock、被测模块拿回真实 node:fs。故 prevStat/postStat 的 mtime/size
@@ -100,7 +100,6 @@ const TEMPLATE = [
   'layer=${layer}',
   'arr=${arr}',
   'skill=${skill}',
-  'skillsRoot=${skillsRoot}',
   'issueDir=${issueDir}',
   'issueDate=${issueDate}',
   'issueNo=${issueNo}',
@@ -125,7 +124,7 @@ beforeEach(async () => {
   // 预设探测开关不参与本 spec：显式清掉，保证 genAgentPreset() 走默认值 ptc。
   vi.stubEnv('FS_GEN_PRESET', undefined)
   LLM.messages.length = 0
-  // 每个用例都重新求值模块顶层（SKILLS_ROOT 因此按本用例的 existsSync 钩子取值）。
+  // 每个用例都重新求值模块顶层（vi.doMock 注入的钩子因此按本用例取值）。
   vi.resetModules()
 })
 
@@ -327,7 +326,6 @@ describe('L1（folder）成功路径', () => {
     expect(text).toContain('issueDir=' + join(h.tmpRoot, 'issues'))
     // 描述符里没有 skill 字段（去技能化后不再有），渲染时未知值原样保留——与源取值逐字一致。
     expect(text).toContain('skill=${skill}')
-    expect(text).toContain('skillsRoot=' + join(process.cwd(), 'skills'))
     // 骨架整篇注入（L1 骨架不落盘，由模型整篇写回）。
     expect(text).toContain('生成时间')
     expect(text.length).toBeGreaterThan(200)
@@ -697,29 +695,3 @@ describe('能力自带钩子的缺席路径（注入假描述符触达）', () =
   })
 })
 
-describe('SKILLS_ROOT 的两个候选目录', () => {
-  it('源码直载形态：<插件根>/skills', async () => {
-    const h = await harness(TARGETS.folder, {
-      promptTemplate: 'skillsRoot=${skillsRoot}',
-      onIdle: async (hh): Promise<void> => { await writeDoc(hh) },
-    })
-    await h.run('src', 'folder', 't13')
-    expect(promptOf()).toBe('skillsRoot=' + join(process.cwd(), 'skills'))
-  })
-
-  it('插件根下无 skills 时回落 <插件根>/src/skills（虚拟化 existsSync）', async () => {
-    // 模块顶层三元的第二支：源码形态下 <插件根>/skills 真实存在，只能把 existsSync 虚拟成 false
-    // 再让模块重新求值。doMock 与 resetModules 都必须在本用例内（见文件头第 2 条）。
-    vi.doMock('node:fs', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('node:fs')>()
-      return { ...actual, existsSync: (): boolean => false }
-    })
-    vi.resetModules()
-    const h = await harness(TARGETS.folder, {
-      promptTemplate: 'skillsRoot=${skillsRoot}',
-      onIdle: async (hh): Promise<void> => { await writeDoc(hh) },
-    })
-    await h.run('src', 'folder', 't14')
-    expect(promptOf()).toBe('skillsRoot=' + join(process.cwd(), 'src', 'skills'))
-  })
-})

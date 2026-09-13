@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 
 const ARTIFACT = 'client/client.js'
 /** Package name, which is also the loader id the shell resolves the artifact by. */
-const EXPECTED_NAME = 'dsh-plugin-file-system-zc'
+const EXPECTED_NAME = 'dsh-plugin-file-system'
 
 const name = JSON.parse(readFileSync('package.json', 'utf8')).name
 if (name !== EXPECTED_NAME) {

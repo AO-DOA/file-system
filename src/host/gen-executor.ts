@@ -3,9 +3,7 @@
 // 不再出现按 kind 的硬编码分支；能力的骨架、校验、提示词都在 src/host/abilities/<name>/ 内。
 import { promises as fsp } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename, join } from 'node:path'
 import {
   GEN_CWD_SEG, booksRoot, formatStamp, renderPromptTemplate, resolveIn,
 } from './fs-utils.ts'
@@ -156,13 +154,6 @@ export interface GenExecutorDeps {
 /** runGenDoc 的形状：rel 为工作区相对路径、kind 为能力 kind、taskId 为任务状态机里的 id。 */
 export type RunGenDoc = (rel: string, kind: string, taskId: string) => Promise<void>
 
-// 技能根 <插件根>/skills：四层模板均已不引用（L1/L2/L3 已去技能化，翻译层本就无技能），
-// 变量仍渲染，仅为兼容旧模板与「技能保留供人工调用」的场景。
-// 两个候选覆盖源码直载（src/host → 插件根）与打包后（dsh/ → 插件根）。
-const HERE: string = dirname(fileURLToPath(import.meta.url))
-const SKILLS_ROOT: string = existsSync(join(HERE, '..', '..', 'skills'))
-  ? resolve(HERE, '..', '..', 'skills')
-  : resolve(HERE, '..', 'skills')
 
 /**
  * 生成执行器工厂。
@@ -302,7 +293,6 @@ export function createGenExecutor(deps: GenExecutorDeps): RunGenDoc {
             ? '更新前先读现有文档 ' + docAbs + '，记下已写明的职责与措辞作基线（必须在写产物之前完成）；只改与当前实际内容不符的部分，保留仍正确的措辞。'
             : '更新前先读现有文档 ' + docAbs + '，记下已写明的职责、子项与措辞（必须在步骤 2 之前完成——步骤 2 会把它打回模板占位符）；以旧文档为基线，只改与当前实际内容不符的部分，保留仍正确的措辞。'))
         : '从零读目标自身建立语义。',
-      skillsRoot: SKILLS_ROOT,
       // 问题台账：由执行任务的子 agent 本人写（它才知道现场出了什么错）；宿主只下发
       // 目录/日期/序号，并在收尾时把索引表补一行。
       issueDir: issuesDir(),
