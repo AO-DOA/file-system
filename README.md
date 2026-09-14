@@ -11,6 +11,7 @@ DSH 打包插件（bundle）：为 DSH web 装载「文件」页签（插件名 
 
 ## 目录
 
+- [仓库](#仓库)
 - [安装](#安装)
 - [功能](#功能)
 - [快速使用](#快速使用)
@@ -21,6 +22,23 @@ DSH 打包插件（bundle）：为 DSH web 装载「文件」页签（插件名 
 - [实现进度](#实现进度)
 - [开发](#开发)
 - [相关文档](#相关文档)
+
+## 仓库
+
+代码托管于 GitHub。
+
+| 项 | 值 |
+|---|---|
+| 地址 | `git@github.com:AO-DOA/file-system.git` |
+| 账号 | `AO-DOA` |
+| 默认分支 | `main` |
+| 认证 | SSH（ed25519 专用密钥，非 HTTPS/PAT） |
+
+```bash
+git clone git@github.com:AO-DOA/file-system.git
+```
+
+本机认证配置：密钥 `~/.ssh/id_ed25519_github`，`~/.ssh/config` 已将 `github.com` 固定指向该密钥并启用 `IdentitiesOnly yes`（与本机 gitee 用的 `id_ed25519` 互不干扰）。
 
 ## 安装
 
